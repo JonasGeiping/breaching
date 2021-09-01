@@ -1,0 +1,24 @@
+# @package _global_
+# Configuration defaults
+# Settings are separated into [WIP]
+defaults:
+  - case: single_image_basic
+  - attack: invertinggradients
+
+
+  - analysis: none
+  - override hydra/job_logging: custom
+
+hydra:
+  sweep:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+seed: # Optional: Set initial seed
+name: # A name for this run [will be used for the summary table]
+
+
+# debug implementation by running every loop just once.
+# This is even allowed on CPU.
+dryrun: False

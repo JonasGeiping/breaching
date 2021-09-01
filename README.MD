@@ -8,7 +8,12 @@ Subfolders:
 - scripts  -> shell scripts that contain experimental evaluations of attacks and cases
 - _models   -> pure data folder to store prepared models for convenience reasons [not in .git]
 
-Requirements:
+Design Tenets:
 - Attacks should be as case-agnostic as possible, based on only a single (for now) transmission of captured user data, e.g. gradients, and the model state
 - To implement a new use-case or threat model should only require creation of a new "case" with the appropriate config and possible novel code
 - To implement a new attack (or attack variation) should only require new attack code and configuration
+
+Package Requirements:
+- PyTorch 1.9.*
+- hydra-core 1.1
+- in the future probably a cool FL package

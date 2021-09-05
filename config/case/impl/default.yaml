@@ -1,0 +1,26 @@
+# Dataloader implementation choices:
+shuffle: False #  Shuffle data randomly every epoch!
+sample_with_replacement: False # Train with mini-batches drawn WITH replacement, only active if also shuffle=True and if the mode is non-distributed!
+
+
+# PyTorch configuration
+dtype: float # this has to be float when mixed_precision is True
+memory: contiguous # channels-last is only really beneficial if mixed_precision is also True, but even then really machine-specific??
+non_blocking: True
+
+benchmark: True  # CUDNN benchmarking
+deterministic: False # This option will disable non-deterministic ops
+
+pin_memory: True
+threads: 8  # maximal number of cpu dataloader workers used per GPU
+persistent_workers: True # this clashes with pin_memory in pytorch 1.7.1 -> set this to true later
+
+mixed_precision: False
+grad_scaling: True  # this is a no-op if mixed-precision is off
+JIT:  # script currently break autocast mixed precision and trace breaks training
+
+validate_every_nth_step: 10
+
+checkpoint:
+  name:
+  save_every_nth_step: 10

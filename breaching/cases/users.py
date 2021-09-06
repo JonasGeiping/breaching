@@ -52,7 +52,7 @@ class UserSingleStep(torch.nn.Module):
 
             Data:
             Dataset: {self.dataloader.dataset.__class__.__name__}
-            data_idx: {self.data_idx.item()}
+            data_idx: {self.data_idx.item() if isinstance(self.data_idx, torch.Tensor) else self.data_idx}
         """
 
 

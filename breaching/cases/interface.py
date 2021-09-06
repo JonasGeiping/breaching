@@ -21,7 +21,8 @@ def construct_case(cfg_case, setup, dryrun=False):
     loss = torch.nn.CrossEntropyLoss()
 
     if cfg_case.server.name == 'honest_but_curious':
-        server = HonestServer(model, loss, cfg_case.server.model_state, cfg_case.num_queries, cfg_case.data)
+        server = HonestServer(model, loss, cfg_case.server.model_state, cfg_case.num_queries,
+                              cfg_case.data, cfg_case.user.batch_norm_training)
     else:
         raise ValueError(f'Invalid server settings {cfg_case.server} given.')
 

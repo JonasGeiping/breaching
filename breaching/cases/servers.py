@@ -10,9 +10,13 @@ Each entry in the list of payloads contains at least the keys "parameters" and "
 class HonestServer():
     """Implement an honest server protocol."""
 
-    def __init__(self, model, loss, model_state='untrained', num_queries=1, cfg_data=None):
+    def __init__(self, model, loss, model_state='untrained', num_queries=1, cfg_data=None, training=False):
         """Inialize the server settings."""
         self.model = model
+        if training:
+            self.model.training()
+        else:
+            self.model.eval()
         self.loss = loss
 
         self.num_queries = num_queries

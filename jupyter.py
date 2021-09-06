@@ -53,6 +53,9 @@ if args.qos == 'high' and args.timelimit > 48:
 
 username = getpass.getuser()
 token = secrets.token_urlsafe(10)
+authkey = secrets.token_urlsafe(5)
+
+
 
 # 4) Construct the sbatch launch file
 if args.qos == 'scav':
@@ -75,38 +78,40 @@ SBATCH_PROTOTYPE = \
 #SBATCH --partition={"dpart" if args.qos != "scav" else "scavenger"}
 #SBATCH --mem={args.mem}gb
 
+#SBATCH --output .notebook_{authkey}.log
+
 source {"/".join(args.conda.split("/")[:-2])}/etc/profile.d/conda.sh
 conda activate {args.conda}
 
 export JUPYTER_PORT=$(shuf -i 2000-65000 -n 1)
 export HOSTNAME=`/bin/hostname -s`
 
-jupyter notebook --no-browser --port=$JUPYTER_PORT --ip $HOSTNAME --NotebookApp.token={token}
-
-echo -e "
+printf "
 Run this command for the ssh connection:
-ssh -N -f -L localhost:$(JUPYTER_PORT):$(HOSTNAME):$(JUPYTER_PORT) {username}@$cmlsub00.umiacs.umd.edu
+ssh -N -f -L localhost:${{JUPYTER_PORT}}:${{HOSTNAME}}:${{JUPYTER_PORT}} {username}@cmlsub00.umiacs.umd.edu
 
 and open the following web adress in your local browser:
-http://localhost:$(JUPYTER_PORT)/?token={token}
-"
-"""
+http://localhost:${{JUPYTER_PORT}}/?token={token}
+" >> .notebook_{authkey}.log
 
+
+jupyter notebook --no-browser --port=${{JUPYTER_PORT}} --ip ${{HOSTNAME}} --NotebookApp.token={token}
+
+"""
 # Write launch commands to file
 with open(f".cml_launch_{authkey}.temp.sh", "w") as file:
     file.write(SBATCH_PROTOTYPE)
 
 
-# 5) Print launch information
-
-print('Launch prototype is ...')
-print('---------------')
-print(SBATCH_PROTOTYPE)
-print('---------------')
-print(f'Preparing jupyter job as user {username}')
+# 5) Launch
 
 # Execute file with sbatch
 subprocess.run(["/usr/bin/sbatch", f".cml_launch_{authkey}.temp.sh"])
 print('Subprocess launched ...')
-time.sleep(3)
-subprocess.run("squeue")
+time.sleep(1)
+subprocess.run("squeue -u")
+
+# 6) Print login info from logfile
+with open(f'.notebook_{authkey}.log') as file:
+    for line in file:
+        print(line, end="")

@@ -10,6 +10,7 @@ and convers subsequent developments such as
 
 import torch
 from collections import defaultdict
+import time
 
 from .base_attacker import _BaseAttacker
 from .utils import CosineSimilarity, Euclidean, TotalVariation
@@ -65,7 +66,7 @@ class OptimizationBasedAttack(_BaseAttacker):
 
         candidate = self._initialize_data([shared_data['num_data_points'], *self.data_shape])
         optimizer, scheduler = self._init_optimizer(candidate)
-
+        current_wallclock = time.time()
         try:
             for iteration in range(self.cfg.optim.max_iterations):
 
@@ -79,8 +80,10 @@ class OptimizationBasedAttack(_BaseAttacker):
                     if self.cfg.optim.boxed:
                         candidate.data = torch.max(torch.min(candidate, (1 - self.dm) / self.ds), -self.dm / self.ds)
 
-                if iteration + 1 == self.cfg.optim.max_iterations or iteration % 100 == 0:
-                    print(f'It: {iteration + 1}. Rec. loss: {objective_value.item():2.4f}.')
+                if iteration + 1 == self.cfg.optim.max_iterations or iteration % self.cfg.optim.callback == 0:
+                    timestamp = time.time()
+                    print(f'It: {iteration + 1}. Rec. loss: {objective_value.item():2.4f}. Timing: {timestamp - current_wallclock}')
+                    current_wallclock = timestamp
 
                 if not torch.isfinite(objective_value):
                     print(f'Recovery loss is non-finite in iteration {iteration}. Cancelling reconstruction!')

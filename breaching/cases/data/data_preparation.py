@@ -58,7 +58,7 @@ def _build_dataset(cfg_data, split, can_download=True):
     else:
         raise ValueError(f'Invalid dataset {cfg_data.name} provided.')
 
-    if cfg_data.mean is None:
+    if cfg_data.mean is None and cfg_data.normalize:
         data_mean, data_std = _get_meanstd(dataset)
         cfg_data.mean = data_mean
         cfg_data.std = data_std
@@ -67,6 +67,11 @@ def _build_dataset(cfg_data, split, can_download=True):
 
     # Apply transformations
     dataset.transform = transforms if transforms is not None else None
+
+    # Save data mean and data std for easy access:
+    if cfg_data.normalize:
+        dataset.mean = cfg_data.mean
+        dataset.std = cfg_data.std
 
     # Reduce train dataset according to cfg_data.size:
     if cfg_data.size < len(dataset):

@@ -24,13 +24,17 @@ class HonestServer():
         """Reinitialize, continue training or otherwise modify model parameters in a benign way."""
         for name, module in self.model.named_modules():
             if model_state == 'untrained':
-                module.reset_weights()
+                if hasattr(module, 'reset_parameters'):
+                    module.reset_parameters()
             elif model_state == 'trained':
                 pass  # model was already loaded as pretrained model
             elif model_state == 'orthogonal':
                 # reinit model with orthogonal parameters:
+                if hasattr(module, 'reset_parameters'):
+                    module.reset_parameters()
                 if 'conv' in name or 'linear' in name:
                     torch.nn.init.orthogonal_(module.weight, gain=1)
+
 
     def distribute_payload(self):
         """Server payload to send to users. These are only references, to simplfiy the simulation."""

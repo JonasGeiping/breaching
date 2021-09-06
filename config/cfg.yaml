@@ -1,6 +1,6 @@
 # @package _global_
 # Configuration defaults
-# Settings are separated into [WIP]
+# Settings are separated into case, attack analysis
 defaults:
   - case: single_image_basic
   - attack: invertinggradients

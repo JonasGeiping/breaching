@@ -36,6 +36,26 @@ class UserSingleStep(torch.nn.Module):
         self.dataloader = dataloader
         self.loss = copy.deepcopy(loss)  # Just in case the loss contains state
 
+    def __repr__(self):
+        return f"""User (of type {self.__class__.__name__} with settings:
+            number of local updates: {self.num_local_updates}
+            number of data points: {self.num_data_points}
+            number of user queries {self.num_user_queries}
+
+            Threat model:
+            User provides labels: {self.provide_labels}
+            User provides number of data points: {self.provide_num_data_points}
+
+            Model:
+            model specification: {str(self.model.__class__.__name__)}
+            loss function: {str(self.loss)}
+
+            Data:
+            Dataset: {self.dataloader.dataset.__class__.__name__}
+            data_idx: {self.data_idx.item()}
+        """
+
+
     def compute_local_updates(self, server_payload):
         """Compute local updates to the given model based on server payload."""
 
@@ -76,3 +96,25 @@ class UserSingleStep(torch.nn.Module):
         true_user_data = dict(data=data, labels=labels)
 
         return shared_data, true_user_data
+
+
+    def plot(self, user_data):
+        """Plot user data to output. Probably best called from a jupyter notebook."""
+        import matplotlib.pyplot as plt  # lazily import this here
+
+        dm = torch.as_tensor(self.dataloader.dataset.mean, **self.setup)[None, :, None, None]
+        ds = torch.as_tensor(self.dataloader.dataset.std, **self.setup)[None, :, None, None]
+        classes = self.dataloader.dataset.classes
+
+        data = user_data['data'].clone().detach()
+        labels = user_data['labels'].clone().detach()
+
+        data.mul_(ds).add_(dm).clamp_(0, 1)
+        if data.shape[0] == 1:
+            plt.imshow(data[0].permute(1, 2, 0).cpu())
+            plt.title(f'Data with label {classes[labels]}')
+        else:
+            fig, axes = plt.subplots(1, data.shape[0], figsize=(12, tensor.shape[0] * 12))
+            for i, im in enumerate(data):
+                axes[i].imshow(im.permute(1, 2, 0).cpu())
+                axes[i].title(f'{classes[labels[i]]}')

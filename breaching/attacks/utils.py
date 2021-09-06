@@ -33,6 +33,7 @@ class CosineSimilarity(torch.nn.Module):
 class TotalVariation(torch.nn.Module):
     """Computes the total variation value of an (image) tensor, based on its last two dimensions."""
     def __init__(self, scale=0.1):
+        super().__init__()
         self.scale = scale
 
     def forward(self, tensor):

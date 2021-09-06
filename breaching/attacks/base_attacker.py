@@ -9,10 +9,12 @@ import copy
 class _BaseAttacker():
     """This is a template class for an attack."""
 
-    def __init__(model, cfg_attack, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
+    def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
         self.cfg = cfg_attack
         self.setup = setup
         self.model_template = copy.deepcopy(model)
+        self.loss_fn = copy.deepcopy(loss_fn)
+
 
     def reconstruct(self, server_payload, shared_data):
 
@@ -29,7 +31,7 @@ class _BaseAttacker():
 
         # Load states into multiple models if necessary
         models = []
-        for payload in server_payload:
+        for payload in server_payload['queries']:
             parameters = payload['parameters']
             buffers = payload['buffers']
             new_model = copy.deepcopy(self.model_template)
@@ -51,25 +53,24 @@ class _BaseAttacker():
             candidate = (torch.rand(data_shape, **self.setup) * 2) - 1.0
         elif init_type == 'zeros':
             candidate = torch.zeros(data_shape, **self.setup)
-
         candidate.requires_grad = True
         return candidate
 
     def _init_optimizer(self, candidate):
-        optim_name = cfg.optim.optimizer
+        optim_name = self.cfg.optim.optimizer
         if optim_name == 'adam':
-            optimizer = torch.optim.Adam(candidate, lr=cfg.optim.step_size)
+            optimizer = torch.optim.Adam([candidate], lr=self.cfg.optim.step_size)
         elif optim_name == 'momGD':
-            optimizer = torch.optim.SGD(candidate, lr=cfg.optim.step_size, momentum=0.9, nesterov=True)
+            optimizer = torch.optim.SGD([candidate], lr=self.cfg.optim.step_size, momentum=0.9, nesterov=True)
         elif optim_name == 'GD':
-            optimizer = torch.optim.SGD(candidate, lr=cfg.optim.step_size, momentum=0.0)
+            optimizer = torch.optim.SGD([candidate], lr=self.cfg.optim.step_size, momentum=0.0)
         elif optim_name == 'L-BFGS':
-            optimizer = torch.optim.LBFGS(candidate, lr=cfg.optim.step_size)
+            optimizer = torch.optim.LBFGS([candidate], lr=self.cfg.optim.step_size)
         else:
             raise ValueError(f'Invalid optimizer {optim_name} given.')
 
-        if cfg.optim.step_size_decay:
-            max_iterations = cfg.optim.max_iterations
+        if self.cfg.optim.step_size_decay:
+            max_iterations = self.cfg.optim.max_iterations
             scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
                                                              milestones=[max_iterations // 2.667, max_iterations // 1.6,
                                                                          max_iterations // 1.142], gamma=0.1)

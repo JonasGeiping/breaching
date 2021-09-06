@@ -6,7 +6,7 @@ attack_type: optimization   # analytic, equation solver
 objective: cosine-similarity
 restarts:
   num_trials: 1
-  scoring_choice: 'cosine-similarity'
+  scoring: 'cosine-similarity'
 
 init: randn
 

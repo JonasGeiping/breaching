@@ -1,3 +1,5 @@
 
+name: malicious
 communication: arbitrary_model
 goal: information_leakage
+model_state: trained

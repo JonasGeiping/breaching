@@ -33,7 +33,7 @@ def construct_dataloader(cfg_data, cfg_impl, split, dryrun=False):
     else:
         data_sampler = torch.utils.data.SequentialSampler(dataset)
 
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=min(cfg_data.batch_size, len(trainset)),
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=min(cfg_data.batch_size, len(dataset)),
                                              sampler=data_sampler, drop_last=True,  # just throw these images away :> :>
                                              num_workers=num_workers, pin_memory=cfg_impl.pin_memory,
                                              persistent_workers=cfg_impl.persistent_workers if num_workers > 0 else False)
@@ -50,7 +50,7 @@ def _build_dataset(cfg_data, split, can_download=True):
         dataset = torchvision.datasets.CIFAR100(root=cfg_data.path, train=split == 'training',
                                                 download=can_download, transform=torchvision.transforms.ToTensor())
     elif cfg_data.name == 'ImageNet':
-        dataset = torchvision.datasets.ImageNet(root=cfg_data.path, split=split,
+        dataset = torchvision.datasets.ImageNet(root=cfg_data.path, split='train' if 'train' in split else 'val',
                                                 transform=torchvision.transforms.ToTensor())
     elif cfg_data.name == 'TinyImageNet':
         dataset = TinyImageNet(root=cfg_data.path, split=split, download=can_download,
@@ -66,7 +66,7 @@ def _build_dataset(cfg_data, split, can_download=True):
     transforms = _parse_data_augmentations(cfg_data, split)
 
     # Apply transformations
-    dataset.transform = train_transforms if transforms is not None else None
+    dataset.transform = transforms if transforms is not None else None
 
     # Reduce train dataset according to cfg_data.size:
     if cfg_data.size < len(dataset):
@@ -76,7 +76,7 @@ def _build_dataset(cfg_data, split, can_download=True):
 
 
 def _get_meanstd(dataset):
-    cc = torch.cat([trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1)
+    cc = torch.cat([dataset[i][0].reshape(3, -1) for i in range(len(dataset))], dim=1)
     data_mean = torch.mean(cc, dim=1).tolist()
     data_std = torch.std(cc, dim=1).tolist()
     return data_mean, data_std
@@ -89,9 +89,9 @@ def _parse_data_augmentations(cfg_data, split, PIL_only=False):
         if hasattr(cfg_dict, 'keys'):
             for key in cfg_dict.keys():
                 try:  # ducktype iterable
-                    transform = getattr(transforms, key)(*cfg_dict[key])
+                    transform = getattr(torchvision.transforms, key)(*cfg_dict[key])
                 except TypeError:
-                    transform = getattr(transforms, key)(cfg_dict[key])
+                    transform = getattr(torchvision.transforms, key)(cfg_dict[key])
                 list_of_transforms.append(transform)
         return list_of_transforms
 

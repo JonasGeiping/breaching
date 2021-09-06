@@ -14,7 +14,7 @@ import logging
 import breaching
 
 import os
-os.environ["HYDRA_FULL_ERROR"] = "1"
+os.environ["HYDRA_FULL_ERROR"] = "0"
 log = logging.getLogger(__name__)
 
 
@@ -51,10 +51,12 @@ def main_process(process_idx, local_group_size, cfg):
 
     # Simulate an attacked FL protocol
     server_payload = server.distribute_payload()
-    shared_data, true_user_data = user.compute_local_update(server_payload)  # True user data is returned only for analysis
+    shared_data, true_user_data = user.compute_local_updates(server_payload)  # True user data is returned only for analysis
     reconstructed_user_data, stats = attacker.reconstruct(server_payload, shared_data, dryrun=cfg.dryrun)
 
-    breaching.utils.save_summary(cfg, stats, time.time() - local_time)
+    # How good is the reconstruction?
+    metrics = breaching.analysis.report(reconstructed_user_data, true_user_data, server_payload, server.model, setup)
+    # breaching.utils.save_summary(cfg, stats, time.time() - local_time)
 
 
 if __name__ == "__main__":

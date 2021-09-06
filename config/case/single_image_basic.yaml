@@ -1,15 +1,14 @@
 
 name: single_image_basic
-data: ImageNet
-model: ResNet152
+
+defaults:
+  - data: ImageNet
+  - impl: default
+  - server: honest_but_curious
 loss: CrossEntropy
+model: ResNet152
 
-impl: default
-
-# Server:
-server: honest_but_curious
-server_model_state: trained
-
+# Server and user:
 num_queries: 1
 
 # User data:

@@ -5,8 +5,9 @@ sample_with_replacement: False # Train with mini-batches drawn WITH replacement,
 
 # PyTorch configuration
 dtype: float # this has to be float when mixed_precision is True
-memory: contiguous # channels-last is only really beneficial if mixed_precision is also True, but even then really machine-specific??
+# memory: contiguous # channels-last is only really beneficial if mixed_precision is also True, but even then really machine-specific??
 non_blocking: True
+sharing_strategy: file_descriptor
 
 benchmark: True  # CUDNN benchmarking
 deterministic: False # This option will disable non-deterministic ops

@@ -18,12 +18,8 @@ from .utils import CosineSimilarity, Euclidean, TotalVariation
 class OptimizationBasedAttack(_BaseAttacker):
     """Implements a wide spectrum of optimization-based attacks."""
 
-    def __init__(model, loss, cfg_attack, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
-        self.cfg = cfg_attack
-        self.setup = setup
-
-        self.model_template = copy.deepcopy(model)
-        self.loss_fn = copy.deepcopy(loss)
+    def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
+        super().__init__(model, loss_fn, cfg_attack, setup)
 
         self.objective = CosineSimilarity() if self.cfg.objective == 'cosine-similarity' else Euclidean()
         if self.cfg.regularization.total_variation > 0:
@@ -57,6 +53,7 @@ class OptimizationBasedAttack(_BaseAttacker):
             scores[trial] = self._score_trial(candidate_solutions[trial], labels, rec_model, shared_data)
 
         optimal_solution = self._select_optimal_reconstruction(candidate_solutions, scores, stats)
+        reconstructed_data = dict(data=optimal_solution, labels=labels)
 
         return reconstructed_data, stats
 
@@ -66,9 +63,9 @@ class OptimizationBasedAttack(_BaseAttacker):
         candidate = self._initialize_data([shared_data['num_data_points'], *self.data_shape])
         optimizer, scheduler = self._init_optimizer(candidate)
 
-        for iteration in range(cfg.optim.max_iterations):
+        for iteration in range(self.cfg.optim.max_iterations):
 
-            closure = self._objective_function(self, candidate, labels, rec_model, optimizer, shared_data)
+            closure = self._objective_function(candidate, labels, rec_model, optimizer, shared_data)
             objective_value = optimizer.step(closure)
 
             scheduler.step()
@@ -78,7 +75,7 @@ class OptimizationBasedAttack(_BaseAttacker):
                 if self.cfg.optim.boxed:
                     candidate.data = torch.max(torch.min(candidate, (1 - self.dm) / self.ds), -self.dm / self.ds)
 
-            if iteration + 1 == max_iterations or iteration % 100 == 0:
+            if iteration + 1 == self.cfg.optim.max_iterations or iteration % 100 == 0:
                 print(f'It: {iteration + 1}. Rec. loss: {objective_value.item():2.4f}.')
 
             if not torch.isfinite(objective_value):
@@ -115,28 +112,31 @@ class OptimizationBasedAttack(_BaseAttacker):
 
     def _score_trial(self, candidate, labels, rec_model, shared_data):
         """Score candidate solutions based on some criterion."""
-        def _compute_objective_fast(candidate, obective):
-            objective = 0
+        def _compute_objective_fast(candidate, objective):
+            val = 0
             for model, shared_grad in zip(rec_model, shared_data['gradients']):
                 model.zero_grad()
                 spoofed_loss = self.loss_fn(model(candidate), labels)
                 gradient = torch.autograd.grad(spoofed_loss, model.parameters(), create_graph=False)
-            return gradient
+                val += objective(gradient, shared_grad)
+            return val
 
-        if self.cfg.scoring == 'euclidean':
+        if self.cfg.restarts.scoring == 'euclidean':
             score = _compute_objective_fast(candidate, Euclidean())
-        elif self.cfg.scoring == 'cosine-similarity':
+        elif self.cfg.restarts.scoring == 'cosine-similarity':
             score = _compute_objective_fast(candidate, CosineSimilarity())
-        elif self.cfg.scoring in ['TV', 'total-variation']:
+        elif self.cfg.restarts.scoring in ['TV', 'total-variation']:
             score = TotalVariation(scale=1.0)(candidate)
         else:
             raise ValueError(f'Scoring mechanism {self.cfg.scoring} not implemented.')
-        return score if scores.isfinite() else float('inf')
+        return score if score.isfinite() else float('inf')
 
     def _select_optimal_reconstruction(self, candidate_solutions, scores, stats):
         """Choose one of the candidate solutions based on their scores (for now).
 
         More complicated combinations are possible in the future."""
-        optimal_index = torch.argmin(scores)
+        optimal_val, optimal_index = torch.min(scores, dim=0)
         optimal_solution = candidate_solutions[optimal_index]
+        stats['opt_value'] = optimal_val.item()
+        print(f'Optimal condidate solution with rec. loss {optimal_val.item():2.4f} selected.')
         return optimal_solution

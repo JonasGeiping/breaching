@@ -1,3 +1,5 @@
 
+name: honest_but_curious
 communication: true_model_state
 goal: information_leakage
+model_state: trained

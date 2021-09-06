@@ -1,20 +1,36 @@
+"""System utilities."""
+
+import socket
+import sys
+
+import os
+import csv
+
+import torch
+import random
+import numpy as np
+
+import hydra
+from omegaconf import OmegaConf, open_dict
+
+import logging
 
 def system_startup(process_idx, local_group_size, cfg):
     """Decide and print GPU / CPU / hostname info. Generate local distributed setting if running in distr. mode."""
     log = get_log(cfg)
-    torch.backends.cudnn.benchmark = cfg.impl.benchmark
-    torch.multiprocessing.set_sharing_strategy(cfg.impl.setup.strategy)
+    torch.backends.cudnn.benchmark = cfg.case.impl.benchmark
+    torch.multiprocessing.set_sharing_strategy(cfg.case.impl.sharing_strategy)
     # 100% reproducibility?
-    if cfg.impl.deterministic:
+    if cfg.case.impl.deterministic:
         set_deterministic()
     if cfg.seed is not None:
         set_random_seed(cfg.seed + 10 * process_idx)
 
-    dtype = getattr(torch, cfg.impl.dtype)  # :> dont mess this up
-    memory_format = torch.contiguous_format if cfg.impl.memory == 'contiguous' else torch.channels_last
+    dtype = getattr(torch, cfg.case.impl.dtype)  # :> dont mess this up
+    # memory_format = torch.contiguous_format if cfg.case.impl.memory == 'contiguous' else torch.channels_last
 
     device = torch.device(f'cuda:{process_idx}') if torch.cuda.is_available() else torch.device('cpu')
-    setup = dict(device=device, dtype=dtype, memory_format=memory_format)
+    setup = dict(device=device, dtype=dtype)  # memory_format=memory_format)
     python_version = sys.version.split(" (")[0]
     log.info(f'Platform: {sys.platform}, Python: {python_version}, PyTorch: {torch.__version__}')
     # log.info(torch.__config__.show())

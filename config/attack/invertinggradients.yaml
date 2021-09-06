@@ -12,11 +12,11 @@ init: randn
 
 optim:
   optimizer: adam
-  signed: False
+  signed: True
   step_size: 0.1
   boxed: True
-  max_iterations: 4800
+  max_iterations: 24_000
   step_size_decay: True
 
 regularization:
-  total_variation: 0.0
+  total_variation: 0.1

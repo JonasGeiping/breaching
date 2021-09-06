@@ -48,10 +48,13 @@ class OptimizationBasedAttack(_BaseAttacker):
         # Main reconstruction loop starts here:
         scores = torch.zeros(self.cfg.restarts.num_trials)
         candidate_solutions = []
-        for trial in range(self.cfg.restarts.num_trials):
-            candidate_solutions += [self._run_trial(rec_model, shared_data, labels, stats, trial, dryrun)]
-            scores[trial] = self._score_trial(candidate_solutions[trial], labels, rec_model, shared_data)
-
+        try:
+            for trial in range(self.cfg.restarts.num_trials):
+                candidate_solutions += [self._run_trial(rec_model, shared_data, labels, stats, trial, dryrun)]
+                scores[trial] = self._score_trial(candidate_solutions[trial], labels, rec_model, shared_data)
+        except KeyboardInterrupt:
+            print('Trial procedure manually interruped.')
+            pass
         optimal_solution = self._select_optimal_reconstruction(candidate_solutions, scores, stats)
         reconstructed_data = dict(data=optimal_solution, labels=labels)
 
@@ -63,29 +66,33 @@ class OptimizationBasedAttack(_BaseAttacker):
         candidate = self._initialize_data([shared_data['num_data_points'], *self.data_shape])
         optimizer, scheduler = self._init_optimizer(candidate)
 
-        for iteration in range(self.cfg.optim.max_iterations):
+        try:
+            for iteration in range(self.cfg.optim.max_iterations):
 
-            closure = self._objective_function(candidate, labels, rec_model, optimizer, shared_data)
-            objective_value = optimizer.step(closure)
+                closure = self._objective_function(candidate, labels, rec_model, optimizer, shared_data)
+                objective_value = optimizer.step(closure)
 
-            scheduler.step()
+                scheduler.step()
 
-            with torch.no_grad():
-                # Project into image space
-                if self.cfg.optim.boxed:
-                    candidate.data = torch.max(torch.min(candidate, (1 - self.dm) / self.ds), -self.dm / self.ds)
+                with torch.no_grad():
+                    # Project into image space
+                    if self.cfg.optim.boxed:
+                        candidate.data = torch.max(torch.min(candidate, (1 - self.dm) / self.ds), -self.dm / self.ds)
 
-            if iteration + 1 == self.cfg.optim.max_iterations or iteration % 100 == 0:
-                print(f'It: {iteration + 1}. Rec. loss: {objective_value.item():2.4f}.')
+                if iteration + 1 == self.cfg.optim.max_iterations or iteration % 100 == 0:
+                    print(f'It: {iteration + 1}. Rec. loss: {objective_value.item():2.4f}.')
 
-            if not torch.isfinite(objective_value):
-                print(f'Recovery loss is non-finite in iteration {iteration}. Cancelling reconstruction!')
-                break
+                if not torch.isfinite(objective_value):
+                    print(f'Recovery loss is non-finite in iteration {iteration}. Cancelling reconstruction!')
+                    break
 
-            stats[f'Trial_{trial}_Val'].append(objective_value.item())
+                stats[f'Trial_{trial}_Val'].append(objective_value.item())
 
-            if dryrun:
-                break
+                if dryrun:
+                    break
+        except KeyboardInterrupt:
+            print(f'Recovery interrupted manually in iteration {iteration}!')
+            pass
 
         return candidate.detach()
 

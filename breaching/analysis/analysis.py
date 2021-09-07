@@ -6,6 +6,9 @@ from .metrics import psnr_compute
 
 
 def report(reconstructed_user_data, true_user_data, server_payload, model, setup):
+    import lpips   # lazily import this only if report is used.
+    lpips_scorer = lpips.LPIPS(net='alex')
+
     dm = torch.as_tensor(server_payload['data'].mean, **setup)[None, :, None, None]
     ds = torch.as_tensor(server_payload['data'].std, **setup)[None, :, None, None]
     model.to(**setup)
@@ -16,6 +19,10 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, setup
 
     test_mse = (rec_denormalized - ground_truth_denormalized).pow(2).mean().item()
     test_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1)
+
+    # Hint: This part switches to the lpips [-1, 1] normalization:
+    test_lpips = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True).item()
+
 
     feat_mse = 0.0
     for payload in server_payload['queries']:
@@ -32,7 +39,7 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, setup
             feat_mse += (model(reconstructed_user_data['data']) - model(true_user_data['data'])).pow(2).mean().item()
 
     # Print report:
-    print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} |")
+    print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}")
 
     metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse)
     return metrics

@@ -1,19 +1,18 @@
-# Cool attacks against privacy in federated learning scenarios.
+# Modular Attacks against privacy in federated learning scenarios.
 
 ## Repo Setup:
 Subfolders:
 - config   -> contains all configurations
-- cases    -> code to train and present neural networks to the attacker
+- cases    -> code to train and present neural networks to the attacker, provides "user" and "server" objects
 - attacks  -> implementations of attacks
-- scripts  -> shell scripts that contain experimental evaluations of attacks and cases
-- _models   -> pure data folder to store prepared models for convenience reasons [not in .git]
 
 Design Tenets:
-- Attacks should be as case-agnostic as possible, based on only a single (for now) transmission of captured user data, e.g. gradients, and the model state
+- Attacks should be as case-agnostic as possible, based on transmission of captured user data and server data, e.g. gradients
 - To implement a new use-case or threat model should only require creation of a new "case" with the appropriate config and possible novel code
 - To implement a new attack (or attack variation) should only require new attack code and configuration
 
 Package Requirements:
 - PyTorch 1.9.*
-- hydra-core 1.1
+- hydra-core 1.1  [install from pip]
+- lpips  [install from pip]
 - in the future probably a cool FL package

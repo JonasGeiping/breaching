@@ -103,7 +103,7 @@ with open(f".cml_launch_{authkey}.temp.sh", "w") as file:
 subprocess.run(["/usr/bin/sbatch", f".cml_launch_{authkey}.temp.sh"])
 print('Subprocess launched ...')
 time.sleep(1)
-subprocess.run("/usr/bin/squeue -u jonas0 -l")
+subprocess.run(["/usr/bin/squeue", "-u jonas0 -l"])
 
 # 6) Print login info from logfile
 with open(f'.notebook_{authkey}.log') as file:

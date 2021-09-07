@@ -115,6 +115,8 @@ class UserSingleStep(torch.nn.Module):
             plt.title(f'Data with label {classes[labels]}')
         else:
             fig, axes = plt.subplots(1, data.shape[0], figsize=(12, data.shape[0] * 12))
+            label_classes = []
             for i, im in enumerate(data):
                 axes[i].imshow(im.permute(1, 2, 0).cpu())
-                axes[i].title(f'{classes[labels[i]]}')
+                label_classes.append(classes[labels[i]])
+            print(label_classes)

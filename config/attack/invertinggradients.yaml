@@ -16,7 +16,9 @@ optim:
   step_size: 0.1
   boxed: True
   max_iterations: 24_000
-  step_size_decay: True
+  step_size_decay: step-lr
+  langevin_noise: 0.0
+  warmup: 0
 
   callback: 500  # Print objective value every callback many iterations
 

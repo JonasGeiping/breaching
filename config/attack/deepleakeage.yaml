@@ -15,7 +15,9 @@ optim:
   step_size: 1.0
   boxed: False
   max_iterations: 400
-  step_size_decay: False
+  step_size_decay:
+  langevin_noise: 0.0
+  warmup: 0
 
   callback: 100  # Print objective value every callback many iterations
 
@@ -24,5 +26,3 @@ regularization:
     scale: 0.0
     inner_exp: 1
     outer_exp: 1
-  orthogonality:
-    scale: 0.0

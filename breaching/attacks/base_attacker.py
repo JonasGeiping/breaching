@@ -6,6 +6,8 @@ import torch
 from collections import defaultdict
 import copy
 
+from .additional_optimizers import GradualWarmupScheduler
+
 class _BaseAttacker():
     """This is a template class for an attack."""
 
@@ -57,7 +59,9 @@ class _BaseAttacker():
         return candidate
 
     def _init_optimizer(self, candidate):
+        max_iterations = self.cfg.optim.max_iterations
         optim_name = self.cfg.optim.optimizer
+
         if optim_name == 'adam':
             optimizer = torch.optim.Adam([candidate], lr=self.cfg.optim.step_size)
         elif optim_name == 'momGD':
@@ -69,13 +73,19 @@ class _BaseAttacker():
         else:
             raise ValueError(f'Invalid optimizer {optim_name} given.')
 
-        if self.cfg.optim.step_size_decay:
-            max_iterations = self.cfg.optim.max_iterations
+        if self.cfg.optim.step_size_decay == 'step-lr':
+
             scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
                                                              milestones=[max_iterations // 2.667, max_iterations // 1.6,
                                                                          max_iterations // 1.142], gamma=0.1)
+        elif self.cfg.optim.step_size_decay == 'cosine-decay':
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, max_iterations, eta_min=0.0)
         else:
             scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[], gamma=1)
+
+        if self.cfg.optim.warmup > 0:
+            scheduler = GradualWarmupScheduler(optimizer, multiplier=1.0,
+                                               total_epoch=self.cfg.optim.warmup, after_scheduler=scheduler)
 
         return optimizer, scheduler
 

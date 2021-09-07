@@ -1,16 +1,10 @@
 """Launch a jupyter notebook on SLURM.
 
-Before running this script, run
-jupyter
+After launching, the cmd-line (MacOS + Linux) option for port forwaring will be printed.
+Execute the port forwarding and then open the given http adress.
 
-and
-
-
-on CML to initialize your jupyter notebook and set your password.
-
+If you're finished, shut down the jupyter server by using the "quit" option in the notebook overview.
 """
-
-
 
 import argparse
 import secrets
@@ -23,7 +17,7 @@ import getpass
 parser = argparse.ArgumentParser(description='Launch a jupyter notebook on the CML cluster')
 # Central:
 parser.add_argument('--conda', default='/cmlscratch/jonas0/miniconda3/envs/dl', type=str, help='Path to conda env')
-parser.add_argument('--qos', default='default', type=str, help='QOS, choose default, medium, high, scav')
+parser.add_argument('--qos', default='default', type=str, help='QOS, choose default, medium, high, very_high, scav')
 parser.add_argument('--gpus', default='1', type=int, help='Requested GPUs PER job')
 parser.add_argument('--mem', default='32', type=int, help='Requested memory PER job')
 parser.add_argument('--timelimit', default=8, type=int, help='Requested hour limit PER job')
@@ -109,7 +103,7 @@ with open(f".cml_launch_{authkey}.temp.sh", "w") as file:
 subprocess.run(["/usr/bin/sbatch", f".cml_launch_{authkey}.temp.sh"])
 print('Subprocess launched ...')
 time.sleep(1)
-subprocess.run("squeue -u jonas0 -l")
+subprocess.run("/usr/bin/squeue -u jonas0 -l")
 
 # 6) Print login info from logfile
 with open(f'.notebook_{authkey}.log') as file:

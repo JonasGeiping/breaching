@@ -29,7 +29,6 @@ def main_launcher(cfg):
     if cfg.seed is None:
         cfg.seed = torch.randint(0, 2**32 - 1, (1,)).item()
 
-    ngpus_per_node = torch.cuda.device_count()
     log.info(OmegaConf.to_yaml(cfg))
     breaching.utils.initialize_multiprocess_log(cfg)  # manually save log configuration
     main_process(0, 1, cfg)

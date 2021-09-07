@@ -82,7 +82,7 @@ class OptimizationBasedAttack(_BaseAttacker):
 
                 if iteration + 1 == self.cfg.optim.max_iterations or iteration % self.cfg.optim.callback == 0:
                     timestamp = time.time()
-                    print(f'It: {iteration + 1}. Rec. loss: {objective_value.item():2.4f}. Timing: {timestamp - current_wallclock:4.2f}s')
+                    print(f'It: {iteration + 1}. Rec. loss: {objective_value.item():2.4f}. T: {timestamp - current_wallclock:4.2f}s')
                     current_wallclock = timestamp
 
                 if not torch.isfinite(objective_value):

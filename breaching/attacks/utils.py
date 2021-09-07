@@ -10,9 +10,11 @@ class Euclidean(torch.nn.Module):
 
     def forward(self, gradient_rec, gradient_data):
         objective = 0
+        param_count = 0
         for rec, data in zip(gradient_rec, gradient_data):
             objective += (rec - data).pow(2).sum()
-        return objective
+            param_count += rec.numel()
+        return 0.5 * objective / param_count
 
 class CosineSimilarity(torch.nn.Module):
     """Gradient matching based on cosine similarity of two gradient vectors."""

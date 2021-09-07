@@ -1,4 +1,3 @@
-
 type: invertinggradients
 
 attack_type: optimization   # analytic, equation solver
@@ -12,10 +11,10 @@ init: randn
 
 optim:
   optimizer: adam
-  signed: True
+  signed: False
   step_size: 0.1
   boxed: True
-  max_iterations: 24_000
+  max_iterations: 8_000
   step_size_decay: True
 
   callback: 500  # Print objective value every callback many iterations
@@ -23,7 +22,7 @@ optim:
 regularization:
   total_variation:
     scale: 0.1
-    inner_exp: 1
-    outer_exp: 1
+    inner_exp: 2
+    outer_exp: 0.5
   orthogonality:
-    scale: 0.0
+    scale: 0.1

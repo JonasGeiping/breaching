@@ -1,0 +1,32 @@
+# This is the attack of Wang et al. "Beyond Inferring Class Representatives: User-Level
+# Privacy Leakage From Federated Learning"
+# However currently still without the multitask-GAN employed therein for refinement
+
+type: beyond-infering
+
+attack_type: optimization   # analytic, equation solver
+
+objective: euclidean
+restarts:
+  num_trials: 1
+  scoring: euclidean
+
+init: randn
+
+optim:
+  optimizer: L-BFGS
+  signed: False
+  step_size: 1.0
+  boxed: True
+  max_iterations: 400
+  step_size_decay: False
+
+  callback: 100  # Print objective value every callback many iterations
+
+regularization:
+  total_variation:
+    scale: 0.1176  # This is 0.00015 from the original work multiplied by 28^2 (the number of MNIST pixels)
+    inner_exp: 2
+    outer_exp: 1.25
+  orthogonality:
+    scale: 0.0

@@ -3,10 +3,10 @@ type: invertinggradients
 
 attack_type: optimization   # analytic, equation solver
 
-objective: euclidean
+objective: cosine-similarity
 restarts:
   num_trials: 8
-  scoring: 'registered-mean'
+  scoring: cosine-similarity
 
 init: randn
 
@@ -33,6 +33,6 @@ regularization:
     scale: 1e-5
     pnorm: 2
   deep_inversion:  # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
-    scale: 0.1
+    scale: 0.0
   # group_regularization: # Not implemented. Unclear how this was done without accesss to the source code
   #  scale: 0.01

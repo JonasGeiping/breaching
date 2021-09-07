@@ -43,8 +43,14 @@ class HonestServer():
         if model_state == 'moco':
             try:
                 url = 'https://dl.fbaipublicfiles.com/moco/moco_checkpoints/moco_v2_800ep/moco_v2_800ep_pretrain.pth.tar'
-                state_dict = load_state_dict_from_url(url, progress=True)
-                self.model.load_state_dict(state_dict)
+                # url = 'https://dl.fbaipublicfiles.com/moco/moco_checkpoints/moco_v2_200ep/moco_v2_200ep_pretrain.pth.tar'
+                state_dict = load_state_dict_from_url(url, progress=True)['state_dict']
+                for key in list(state_dict.keys()):
+                    val = state_dict.pop(key)
+                    sanitized_key = key.replace('module.encoder_q.', '')
+                    state_dict[sanitized_key] = val
+
+                self.model.load_state_dict(state_dict, strict=False)  # The fc layer is not actually loaded here
             except FileNotFoundError:
                 raise ValueError('no MoCo data found for this architecture.')
 

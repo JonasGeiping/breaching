@@ -5,7 +5,7 @@
 payload should be a dict containing the key data and a list of payloads. The length of this list is num_queries.
 Each entry in the list of payloads contains at least the keys "parameters" and "buffers".
 """
-
+from torch.hub import load_state_dict_from_url
 
 class HonestServer():
     """Implement an honest server protocol."""

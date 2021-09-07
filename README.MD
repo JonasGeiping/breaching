@@ -13,6 +13,9 @@ Design Tenets:
 
 Package Requirements:
 - PyTorch 1.9.*
-- hydra-core 1.1  [install from pip]
-- lpips  [install from pip]
+- `hydra-core` 1.1  [install from pip]
+- `scikit-image`
+- `lpips`  [install from pip]
 - in the future probably a cool FL package
+
+`scikit-image` and `lpips` are only imported during analyis.

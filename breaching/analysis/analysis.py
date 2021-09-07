@@ -2,7 +2,7 @@
 import torch
 
 
-from .metrics import psnr_compute
+from .metrics import psnr_compute, registered_psnr_compute
 
 
 def report(reconstructed_user_data, true_user_data, server_payload, model, setup):
@@ -21,7 +21,10 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, setup
     test_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1)
 
     # Hint: This part switches to the lpips [-1, 1] normalization:
-    test_lpips = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True).item()
+    test_lpips = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True).mean().item()
+
+    # Compute registered psnr. This is a bit computationally intensive:
+    test_rpsnr = registered_psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1)
 
 
     feat_mse = 0.0
@@ -39,7 +42,8 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, setup
             feat_mse += (model(reconstructed_user_data['data']) - model(true_user_data['data'])).pow(2).mean().item()
 
     # Print report:
-    print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}")
+    print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}|"
+          f" R-PSNR: {test_rpsnr:4.2f}")
 
     metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse)
     return metrics

@@ -1,7 +1,6 @@
 """Various metrics."""
 import torch
 
-
 def psnr_compute(img_batch, ref_batch, batched=False, factor=1.0, clip=False):
     """Standard PSNR."""
     if clip:
@@ -24,3 +23,39 @@ def psnr_compute(img_batch, ref_batch, batched=False, factor=1.0, clip=False):
             return torch.tensor(float('nan'), device=img_batch.device)
         else:
             return (10 * torch.log10(factor**2 / mse_per_example)).mean()
+
+
+def registered_psnr_compute(img_batch, ref_batch, factor=1.0):
+    """Use ORB features to register images onto reference before computing PSNR scores."""
+    import skimage.feature  # Lazy metric stuff import
+    import skimage.measure
+    import skimage.transform
+
+
+    descriptor_extractor = skimage.feature.ORB(n_keypoints=800)
+
+    psnr_vals = torch.zeros(img_batch.shape[0])
+    for idx, (img, ref) in enumerate(zip(img_batch, ref_batch)):
+        default_psnr = psnr_compute(img, ref, factor=1.0, batched=True)
+        try:
+            img_np, ref_np = img.numpy(), ref.numpy()  # move to numpy
+            descriptor_extractor.detect_and_extract(ref_np.mean(axis=0))  # and grayscale for ORB
+            keypoints_src, descriptors_src = descriptor_extractor.keypoints, descriptor_extractor.descriptors
+            descriptor_extractor.detect_and_extract(img_np.mean(axis=0))
+            keypoints_tgt, descriptors_tgt = descriptor_extractor.keypoints, descriptor_extractor.descriptors
+
+            matches = skimage.feature.match_descriptors(descriptors_src, descriptors_tgt, cross_check=True)
+            # Look for an affine transform and search with RANSAC over matches:
+            model_robust, inliers = skimage.measure.ransac((keypoints_src[matches[:, 0]],
+                                                           keypoints_tgt[matches[:, 1]]), skimage.transform.AffineTransform,
+                                                           min_samples=16, residual_threshold=2, max_trials=250)
+            warped_img = skimage.transform.warp(img_np, model_robust, output_shape=ref_np.shape)
+            # Compute normal PSNR from here:
+            registered_psnr = psnr_compute(torch.as_tensor(warped_img), ref, factor=1.0, batched=True)
+            if registered_psnr.isfinite():
+                psnr_vals[idx] = max(registered_psnr, default_psnr)
+            else:
+                psnr_vals[idx] = default_psnr
+        except (TypeError, IndexError):  # TypeError if RANSAC fails # Index error if not enough matches are found
+            psnr_vals[idx] = default_psnr
+    return psnr_vals.mean()

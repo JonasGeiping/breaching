@@ -100,8 +100,9 @@ with open(f".cml_launch_{authkey}.temp.sh", "w") as file:
 # 5) Launch
 
 # Execute file with sbatch
-subprocess.run(["/usr/bin/sbatch", f".cml_launch_{authkey}.temp.sh"])
-print('Subprocess launched ...')
+output_status = subprocess.run(["/usr/bin/sbatch", f".cml_launch_{authkey}.temp.sh"], capture_output=True)
+process_id = output_stats.stdout.split('Submitted batch job ')[1].split('\n')[0]
+print(f'Subprocess queued with id {process_id}...')
 time.sleep(1)
 subprocess.run(["/usr/bin/squeue", "-u jonas0 -l"])
 

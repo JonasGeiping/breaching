@@ -93,3 +93,27 @@ class OrthogonalityRegularization(torch.nn.Module):
             idx = torch.arange(0, B, out=torch.LongTensor())
             full_products[idx, idx] = 0
             return full_products.sum()
+
+class NormRegularization(torch.nn.Module):
+    """Implement basic norm-based regularization, e.g. an L2 penalty."""
+
+    def __init__(self, scale=0.1, pnorm=2.0):
+        super().__init__()
+        self.scale = scale
+        self.pnorm = pnorm
+
+    def forward(self, tensor):
+        return 1 / self.pnorm * tensor.pow(self.pnorm).mean() * self.scale
+
+
+class DeepInversion(torch.nn.Module):
+    """Implement a DeepInversion based regularization as proposed in DeepInversion as used for reconstruction in
+       Yin et al, "See through Gradients: Image Batch Recovery via GradInversion".
+    """
+
+    def __init__(self, scale=0.1):
+        super().__init__()
+        self.scale = scale
+
+    def forward(self, tensor):
+        raise NotImplementedError()

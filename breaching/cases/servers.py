@@ -32,12 +32,21 @@ class HonestServer():
                     module.reset_parameters()
             elif model_state == 'trained':
                 pass  # model was already loaded as pretrained model
+            elif model_state == 'moco':
+                pass  # will be loaded below
             elif model_state == 'orthogonal':
                 # reinit model with orthogonal parameters:
                 if hasattr(module, 'reset_parameters'):
                     module.reset_parameters()
                 if 'conv' in name or 'linear' in name:
                     torch.nn.init.orthogonal_(module.weight, gain=1)
+        if model_state == 'moco':
+            try:
+                url = 'https://dl.fbaipublicfiles.com/moco/moco_checkpoints/moco_v2_800ep/moco_v2_800ep_pretrain.pth.tar'
+                state_dict = load_state_dict_from_url(url, progress=True)
+                self.model.load_state_dict(state_dict)
+            except FileNotFoundError:
+                raise ValueError('no MoCo data found for this architecture.')
 
 
     def distribute_payload(self):

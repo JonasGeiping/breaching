@@ -13,7 +13,14 @@ from collections import defaultdict
 import time
 
 from .base_attacker import _BaseAttacker
-from .utils import CosineSimilarity, Euclidean, TotalVariation, OrthogonalityRegularization
+from .utils import CosineSimilarity, Euclidean, TotalVariation, OrthogonalityRegularization, NormRegularization
+
+regularizer_lookup = dict(
+    total_variation=TotalVariation,
+    orthogonality=OrthogonalityRegularization,
+    norm=NormRegularization,
+    deep_inversion=DeepInversion,
+)
 
 
 class OptimizationBasedAttack(_BaseAttacker):
@@ -24,10 +31,9 @@ class OptimizationBasedAttack(_BaseAttacker):
 
         self.objective = CosineSimilarity() if self.cfg.objective == 'cosine-similarity' else Euclidean()
         self.regularizers = []
-        if self.cfg.regularization.total_variation.scale > 0:
-            self.regularizers += [TotalVariation(**self.cfg.regularization.total_variation)]
-        if self.cfg.regularization.orthogonality.scale > 0:
-            self.regularizers += [OrthogonalityRegularization(**self.cfg.regularization.orthogonality)]
+        for key in self.cfg.regularization.keys():
+            if self.cfg.regularization[key].scale > 0:
+                self.regularizers += [regularizer_lookup(key)(**self.cfg.regularization[key])]
 
     def reconstruct(self, server_payload, shared_data, dryrun=False):
         # Initialize stats module for later usage:
@@ -118,6 +124,8 @@ class OptimizationBasedAttack(_BaseAttacker):
 
             if self.cfg.optim.signed:
                 candidate.grad.sign_()
+            if self.cfg.optim.langevin_noise > 0:
+                candidate.grad += self.cfg.optim.langevin_noise * torch.randn_like(candidate.grad)
             return total_objective
         return closure
 

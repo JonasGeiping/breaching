@@ -13,7 +13,7 @@ from collections import defaultdict
 import time
 
 from .base_attacker import _BaseAttacker
-from .utils import CosineSimilarity, Euclidean, TotalVariation
+from .utils import CosineSimilarity, Euclidean, TotalVariation, OrthogonalityRegularization
 
 
 class OptimizationBasedAttack(_BaseAttacker):
@@ -23,10 +23,11 @@ class OptimizationBasedAttack(_BaseAttacker):
         super().__init__(model, loss_fn, cfg_attack, setup)
 
         self.objective = CosineSimilarity() if self.cfg.objective == 'cosine-similarity' else Euclidean()
-        if self.cfg.regularization.total_variation > 0:
-            self.regularizer = TotalVariation(scale=self.cfg.regularization.total_variation)
-        else:
-            self.regularizer = None
+        self.regularizers = []
+        if self.cfg.regularization.total_variation.scale > 0:
+            self.regularizers += [TotalVariation(**self.cfg.regularization.total_variation)]
+        if self.cfg.regularization.orthogonality.scale > 0:
+            self.regularizers += [OrthogonalityRegularization(**self.cfg.regularization.orthogonality)]
 
     def reconstruct(self, server_payload, shared_data, dryrun=False):
         # Initialize stats module for later usage:
@@ -111,8 +112,8 @@ class OptimizationBasedAttack(_BaseAttacker):
 
                 total_objective += self.objective(gradient, shared_grad)
 
-            if self.regularizer is not None:
-                total_objective += self.regularizer(candidate)
+            for regularizer in self.regularizers:
+                total_objective += regularizer(candidate)
             total_objective.backward()
 
             if self.cfg.optim.signed:

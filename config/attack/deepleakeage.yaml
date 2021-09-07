@@ -1,0 +1,28 @@
+type: deep-leakage
+
+attack_type: optimization   # analytic, equation solver
+
+objective: euclidean
+restarts:
+  num_trials: 1
+  scoring: euclidean
+
+init: randn
+
+optim:
+  optimizer: L-BFGS
+  signed: False
+  step_size: 1.0
+  boxed: False
+  max_iterations: 400
+  step_size_decay: False
+
+  callback: 100  # Print objective value every callback many iterations
+
+regularization:
+  total_variation:
+    scale: 0.0
+    inner_exp: 1
+    outer_exp: 1
+  orthogonality:
+    scale: 0.0

@@ -18,13 +18,13 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, setup
     ground_truth_denormalized = torch.clamp(true_user_data['data'] * ds + dm, 0, 1).cpu()
 
     test_mse = (rec_denormalized - ground_truth_denormalized).pow(2).mean().item()
-    test_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1)
+    test_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1).item()
 
     # Hint: This part switches to the lpips [-1, 1] normalization:
     test_lpips = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True).mean().item()
 
     # Compute registered psnr. This is a bit computationally intensive:
-    test_rpsnr = registered_psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1)
+    test_rpsnr = registered_psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1).item()
 
 
     feat_mse = 0.0

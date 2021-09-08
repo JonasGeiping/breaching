@@ -28,7 +28,7 @@ regularization:
     inner_exp: 2
     outer_exp: 0.5
   orthogonality:
-    scale: 0.1
+    scale: 0.0
   norm:
     scale: 1e-5
     pnorm: 2

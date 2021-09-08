@@ -20,6 +20,12 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
             if 'nfnet' in cfg_model.name:
                 model = NFNet(channels, classes, variant='F0', stochdepth_rate=0.25, alpha=0.2, se_ratio=0.5,
                               activation='ReLU', stem='ImageNet', use_dropout=True)
+            elif 'ResNetWSL' in cfg_model.name:
+                model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x48d_wsl')
+            elif 'ResNet50SWSL' in cfg_model.name:
+                model = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnet50_swsl')
+            elif 'ResNet50SSL' in cfg_model.name:
+                model = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnet50_ssl')
             else:
                 raise ValueError(f'Could not find ImageNet model {cfg_model} in torchvision.models or custom models.')
     else:

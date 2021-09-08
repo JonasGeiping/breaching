@@ -56,6 +56,9 @@ def registered_psnr_compute(img_batch, ref_batch, factor=1.0):
                 psnr_vals[idx] = max(registered_psnr, default_psnr)
             else:
                 psnr_vals[idx] = default_psnr
-        except (TypeError, IndexError):  # TypeError if RANSAC fails # Index error if not enough matches are found
+        except (TypeError, IndexError, RuntimeError):
+            # TypeError if RANSAC fails
+            # IndexError if not enough matches are found
+            # RunTimeError if ORB does not find enough features
             psnr_vals[idx] = default_psnr
     return psnr_vals.mean()

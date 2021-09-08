@@ -54,10 +54,8 @@ authkey = secrets.token_urlsafe(5)
 # 4) Construct the sbatch launch file
 if args.qos == 'scav':
     cml_account = 'scavenger'
-elif args.qos in ['high', 'very_high']:
+else: 
     cml_account = 'tomg'
-else:
-    cml_account = 'cml'
 
 SBATCH_PROTOTYPE = \
     f"""#!/bin/bash
@@ -103,24 +101,27 @@ with open(f".cml_launch_{authkey}.temp.sh", "w") as file:
 output_status = subprocess.run(["/usr/bin/sbatch", f".cml_launch_{authkey}.temp.sh"], capture_output=True)
 process_id = output_status.stdout.decode("utf-8").split('batch job ')[1].split('\n')[0]
 print(f'Subprocess queued with id {process_id}...')
-time.sleep(3)
-job_launched = False
-while not job_launched:
-    raw_status = subprocess.run(["/usr/bin/squeue", "-u", "jonas0"], capture_output=True)
-    cluster_status = [s.split() for s in str(raw_status.stdout).split('\\n')]
-    for entry in cluster_status[1:-1]:
-        if entry[0] == process_id and entry[4] == 'R':
-            job_launched = True
-        elif entry[0] == process_id and entry[4] == 'PD':
-            print('Job still pending. Waiting 30 seconds.')
-        elif entry[0] == process_id:
-            print(f'Job status unknown code: {entry[4]}. Waiting 30 seconds.')
-        else:
-            pass
-    if not job_launched:
-        time.sleep(30)
-
-# 6) Print login info from logfile
-with open(f'.notebook_{authkey}.log') as file:
-    for line in file:
-        print(line, end="")
+try:
+    time.sleep(3)
+    job_launched = False
+    while not job_launched:
+        raw_status = subprocess.run(["/usr/bin/squeue", "-u", "jonas0"], capture_output=True)
+        cluster_status = [s.split() for s in str(raw_status.stdout).split('\\n')]
+        for entry in cluster_status[1:-1]:
+            if entry[0] == process_id and entry[4] == 'R':
+                job_launched = True
+            elif entry[0] == process_id and entry[4] == 'PD':
+                print('Job still pending. Waiting 30 seconds.')
+            elif entry[0] == process_id:
+                print(f'Job status unknown code: {entry[4]}. Waiting 30 seconds.')
+            else:
+                pass
+        if not job_launched:
+            time.sleep(30)
+    # 6) Print login info from logfile
+    with open(f'.notebook_{authkey}.log') as file:
+        for line in file:
+            print(line, end="")
+except KeyboardInterrupt:
+     subprocess.run(["/usr/bin/scancel", process_id])
+     print('Pending job cancelled.')

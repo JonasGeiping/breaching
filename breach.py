@@ -55,8 +55,9 @@ def main_process(process_idx, local_group_size, cfg):
 
     # How good is the reconstruction?
     metrics = breaching.analysis.report(reconstructed_user_data, true_user_data, server_payload, server.model, setup)
-    # breaching.utils.save_summary(cfg, stats, time.time() - local_time)
+    breaching.utils.save_summary(cfg, metrics, stats, time.time() - local_time)
 
+    # breach.utils.save_image()
 
 if __name__ == "__main__":
     main_launcher()

@@ -12,10 +12,10 @@ Design Tenets:
 - To implement a new attack (or attack variation) should only require new attack code and configuration
 
 Package Requirements:
-- PyTorch 1.9.*
+- `pytorch` 1.9.* and matching `torchvision`
 - `hydra-core` 1.1  [install from pip]
 - `scikit-image`
 - `lpips`  [install from pip]
 - in the future probably a cool FL package
 
-`scikit-image` and `lpips` are only imported during analyis.
+`scikit-image` and `lpips` are only imported during analysis.

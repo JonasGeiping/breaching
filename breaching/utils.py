@@ -73,7 +73,7 @@ def initialize_multiprocess_log(cfg):
         cfg.original_cwd = hydra.utils.get_original_cwd()
 
 
-def save_summary(cfg, stats, local_time):
+def save_summary(cfg, metrics, stats, local_time):
     """Save two summary tables. A detailed table of iterations/loss+acc and a summary of the end results."""
     log = get_log(cfg)
     # 1) detailed table:
@@ -81,7 +81,7 @@ def save_summary(cfg, stats, local_time):
         iteration = dict()
         for key in stats:
             iteration[key] = stats[key][step] if step < len(stats[key]) else None
-        save_to_table('.', f'{cfg.name}_convergence_results', dryrun=cfg.dryrun, **iteration)
+        save_to_table('.', f'{cfg.attack.type}_convergence_results', dryrun=cfg.dryrun, **iteration)
 
     def _maybe_record(key):
         if len(stats[key]) > 0:
@@ -91,13 +91,13 @@ def save_summary(cfg, stats, local_time):
 
     # 2) save a reduced summary
     summary = dict(name=cfg.name,
-                   # valid_acc=_maybe_record('valid_acc'),
-                   # **cfg.hyp,
-                   # **{k: v for k, v in cfg.impl.items() if k != 'setup'},
+                   usecase=cfg.case.name,
+                   attack=cfg.attack.type,
+                   **metrics,
                    seed=cfg.seed,
                    folder=os.getcwd().split('outputs/')[1])
     save_to_table(os.path.join(cfg.original_cwd, 'tables'),
-                  f'fb_{cfg.data.name}_runs', dryrun=cfg.dryrun, **summary)
+                  f'breach_{cfg.case.name}_reports', dryrun=cfg.dryrun, **summary)
 
 
 def save_to_table(out_dir, table_name, dryrun, **kwargs):

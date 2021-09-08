@@ -5,8 +5,8 @@ attack_type: optimization   # analytic, equation solver
 
 objective: euclidean
 restarts:
-  num_trials: 8
-  scoring: 'registered-mean'
+  num_trials: 1
+  scoring: euclidean #'registered-mean' # todo: implement this option
 
 init: randn
 
@@ -32,7 +32,7 @@ regularization:
   norm:
     scale: 1e-5
     pnorm: 2
-  deep_inversion:  # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
-    scale: 0.1
+  # deep_inversion:  # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
+  #   scale: 0.1
   # group_regularization: # Not implemented. Unclear how this was done without accesss to the source code
   #  scale: 0.01

@@ -45,5 +45,5 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, setup
     print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}|"
           f" R-PSNR: {test_rpsnr:4.2f}")
 
-    metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse)
+    metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse, lpips=test_lpips, rpsnr=test_rpsnr)
     return metrics

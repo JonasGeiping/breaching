@@ -14,8 +14,8 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, setup
     model.to(**setup)
 
 
-    rec_denormalized = torch.clamp(reconstructed_user_data['data'] * ds + dm, 0, 1)
-    ground_truth_denormalized = torch.clamp(true_user_data['data'] * ds + dm, 0, 1)
+    rec_denormalized = torch.clamp(reconstructed_user_data['data'] * ds + dm, 0, 1).cpu()
+    ground_truth_denormalized = torch.clamp(true_user_data['data'] * ds + dm, 0, 1).cpu()
 
     test_mse = (rec_denormalized - ground_truth_denormalized).pow(2).mean().item()
     test_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1)

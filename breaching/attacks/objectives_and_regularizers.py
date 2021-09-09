@@ -146,7 +146,7 @@ class TotalVariation(torch.nn.Module):
                                 tensor[:, 1:2, :, :] - tensor[:, 2:3, :, :]], dim=1)
         diffs = torch.nn.functional.conv2d(tensor, self.weight, None, stride=1,
                                            padding=1, dilation=1, groups=self.groups)
-        squares = diffs.pow(self.inner_exp)
+        squares = diffs.abs().pow(self.inner_exp)
         squared_sums = (squares[:, 0::2] + squares[:, 1::2]).pow(self.outer_exp)
         return squared_sums.mean()
 

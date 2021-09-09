@@ -13,14 +13,7 @@ from collections import defaultdict
 import time
 
 from .base_attacker import _BaseAttacker
-from .utils import CosineSimilarity, Euclidean, TotalVariation, OrthogonalityRegularization, NormRegularization, DeepInversion
-
-regularizer_lookup = dict(
-    total_variation=TotalVariation,
-    orthogonality=OrthogonalityRegularization,
-    norm=NormRegularization,
-    deep_inversion=DeepInversion,
-)
+from .objectives_and_regularizers import regularizer_lookup, Euclidean, CosineSimilarity, TotalVariation
 
 
 class OptimizationBasedAttack(_BaseAttacker):
@@ -33,7 +26,7 @@ class OptimizationBasedAttack(_BaseAttacker):
         self.regularizers = []
         for key in self.cfg.regularization.keys():
             if self.cfg.regularization[key].scale > 0:
-                self.regularizers += [regularizer_lookup[key](**self.cfg.regularization[key])]
+                self.regularizers += [regularizer_lookup[key](setup, **self.cfg.regularization[key])]
 
     def reconstruct(self, server_payload, shared_data, dryrun=False):
         # Initialize stats module for later usage:
@@ -119,7 +112,7 @@ class OptimizationBasedAttack(_BaseAttacker):
                 total_objective += self.objective(gradient, shared_grad)
 
             for regularizer in self.regularizers:
-                total_objective += regularizer(candidate)
+                total_objective += regularizer(candidate, models=rec_model, buffers=shared_data['buffers'])
             total_objective.backward()
 
             if self.cfg.optim.signed:

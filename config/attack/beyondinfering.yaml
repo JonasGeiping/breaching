@@ -27,6 +27,6 @@ optim:
 
 regularization:
   total_variation:
-    scale: 0.1176  # This is 0.00015 from the original work multiplied by 28^2 (the number of MNIST pixels)
+    scale: 0.2352  # This is 0.00015 from the original work multiplied by 28^2*2 (the number of MNIST pixels and filters)
     inner_exp: 2
     outer_exp: 1.25

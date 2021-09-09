@@ -73,6 +73,7 @@ class UserSingleStep(torch.nn.Module):
 
         # Compute local updates
         shared_grads = []
+        shared_buffers = []
         for query in range(self.num_user_queries):
             payload = server_payload['queries'][query]
             parameters = payload['parameters']
@@ -89,8 +90,9 @@ class UserSingleStep(torch.nn.Module):
             loss = self.loss(outputs, labels)
 
             shared_grads += [torch.autograd.grad(loss, self.model.parameters())]
+            shared_buffers += [b.clone().detach() for b in self.model.buffers()]
 
-        shared_data = dict(gradients=shared_grads, buffers=[b.clone().detach() for b in self.model.buffers()],
+        shared_data = dict(gradients=shared_grads, buffers=shared_buffers,
                            num_data_points=self.num_data_points if self.provide_num_data_points else None,
                            labels=labels if self.provide_labels else None)
         true_user_data = dict(data=data, labels=labels)

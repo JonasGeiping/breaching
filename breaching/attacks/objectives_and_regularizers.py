@@ -1,7 +1,7 @@
 """Various utility functions that can be re-used for multiple attacks."""
 
 import torch
-
+from .deepinversion import DeepInversionFeatureHook
 
 # @torch.jit.script  # ?
 class Euclidean(torch.nn.Module):
@@ -134,6 +134,9 @@ class TotalVariation(torch.nn.Module):
         grad_weight = torch.cat([grad_weight] * self.groups, 0)
         self.weight = grad_weight
 
+    def initialize(self, models, **kwargs):
+        pass
+
     def forward(self, tensor, **kwargs):
         """Use a convolution-based approach."""
         if self.double_opponents:
@@ -159,6 +162,9 @@ class OrthogonalityRegularization(torch.nn.Module):
         self.setup = setup
         self.scale = scale
 
+    def initialize(self, models, **kwargs):
+        pass
+
     def forward(self, tensor, **kwargs):
         if tensor.shape[0] == 1:
             return 0
@@ -179,6 +185,9 @@ class NormRegularization(torch.nn.Module):
         self.scale = scale
         self.pnorm = pnorm
 
+    def initialize(self, models, **kwargs):
+        pass
+
     def forward(self, tensor, **kwargs):
         return 1 / self.pnorm * tensor.pow(self.pnorm).mean() * self.scale
 
@@ -188,13 +197,27 @@ class DeepInversion(torch.nn.Module):
        Yin et al, "See through Gradients: Image Batch Recovery via GradInversion".
     """
 
-    def __init__(self, setup, scale=0.1):
+    def __init__(self, setup, scale=0.1, first_bn_multiplier=10):
         super().__init__()
         self.setup = setup
         self.scale = scale
+        self.first_bn_multiplier = first_bn_multiplier
 
-    def forward(self, tensor, models=None, buffers=None, **kwargs):
-        raise NotImplementedError()
+    def initialize(self, models, **kwargs):
+        """Initialize forward hooks."""
+        self.losses = [list() for model in models]
+        for idx, model in enumerate(models):
+            for module in model.modules():
+                if isinstance(module, torch.nn.BatchNorm2d):
+                    self.losses[idx].append(DeepInversionFeatureHook(module))
+
+
+    def forward(self, tensor, **kwargs):
+        rescale = [self.first_bn_multiplier] + [1. for _ in range(len(self.losses[0]) - 1)]
+        feature_reg = 0
+        for loss in self.losses:
+            feature_reg += sum([mod.r_feature * rescale[idx] for (idx, mod) in enumerate(loss)])
+        return feature_reg
 
 
 regularizer_lookup = dict(

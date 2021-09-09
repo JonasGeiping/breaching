@@ -38,7 +38,7 @@ class OptimizationBasedAttack(_BaseAttacker):
         self.data_shape = server_payload['data'].shape
 
         # Load server_payload into state:
-        rec_model = self._construct_models_from_payload(server_payload)
+        rec_model = self._construct_models_from_payload_and_buffers(server_payload, shared_data['buffers'])
 
         # Consider label information
         if shared_data['labels'] is None:
@@ -63,6 +63,8 @@ class OptimizationBasedAttack(_BaseAttacker):
 
     def _run_trial(self, rec_model, shared_data, labels, stats, trial, dryrun=False):
         """Run a single reconstruction trial."""
+        for regularizer in self.regularizers:
+            regularizer.initialize(rec_model)
 
         candidate = self._initialize_data([shared_data['num_data_points'], *self.data_shape])
         optimizer, scheduler = self._init_optimizer(candidate)
@@ -112,7 +114,7 @@ class OptimizationBasedAttack(_BaseAttacker):
                 total_objective += self.objective(gradient, shared_grad)
 
             for regularizer in self.regularizers:
-                total_objective += regularizer(candidate, models=rec_model, buffers=shared_data['buffers'])
+                total_objective += regularizer(candidate)
             total_objective.backward()
 
             if self.cfg.optim.signed:
@@ -150,5 +152,9 @@ class OptimizationBasedAttack(_BaseAttacker):
         optimal_val, optimal_index = torch.min(scores, dim=0)
         optimal_solution = candidate_solutions[optimal_index]
         stats['opt_value'] = optimal_val.item()
-        print(f'Optimal condidate solution with rec. loss {optimal_val.item():2.4f} selected.')
-        return optimal_solution
+        if optimal_val.isfinite():
+            print(f'Optimal condidate solution with rec. loss {optimal_val.item():2.4f} selected.')
+            return optimal_solution
+        else:
+            print('No valid reconstruction could be found.')
+            return torch.zeros_like(optimal_solution)

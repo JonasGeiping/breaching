@@ -28,14 +28,17 @@ class _BaseAttacker():
 
         return reconstructed_data, stats
 
-    def _construct_models_from_payload(self, server_payload):
-        """Construct the model (or multiple) that is sent by the server."""
+    def _construct_models_from_payload_and_buffers(self, server_payload, user_buffers):
+        """Construct the model (or multiple) that is sent by the server and include user buffers if any."""
 
         # Load states into multiple models if necessary
         models = []
-        for payload in server_payload['queries']:
+        for idx, payload in enumerate(server_payload['queries']):
             parameters = payload['parameters']
-            buffers = payload['buffers']
+            if user_buffers is not None and idx < len(user_buffers):
+                buffers = user_buffers[idx]
+            else:
+                buffers = payload['buffers']
             new_model = copy.deepcopy(self.model_template)
             new_model.to(**self.setup)
 

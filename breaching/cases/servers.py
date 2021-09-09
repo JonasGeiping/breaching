@@ -65,7 +65,7 @@ class HonestServer():
         for round in range(self.num_queries):
             self.reconfigure_model(self.model_state)
 
-            honest_model_parameters = self.model.parameters()
-            honest_model_buffers = self.model.buffers()
+            honest_model_parameters = [p for p in self.model.parameters()]  # do not send only the generators
+            honest_model_buffers = [b for b in self.model.buffers()]
             queries.append(dict(parameters=honest_model_parameters, buffers=honest_model_buffers))
         return dict(queries=queries, data=self.cfg_data)

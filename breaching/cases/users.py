@@ -90,7 +90,7 @@ class UserSingleStep(torch.nn.Module):
             loss = self.loss(outputs, labels)
 
             shared_grads += [torch.autograd.grad(loss, self.model.parameters())]
-            shared_buffers += [b.clone().detach() for b in self.model.buffers()]
+            shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
 
         shared_data = dict(gradients=shared_grads, buffers=shared_buffers,
                            num_data_points=self.num_data_points if self.provide_num_data_points else None,

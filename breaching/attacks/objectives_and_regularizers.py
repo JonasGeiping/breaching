@@ -76,6 +76,9 @@ class TotalVariationOld(torch.nn.Module):
             else:
                 self.forward = self._forward_variso
 
+    def initialize(self, model, **kwargs):
+        pass
+
     def _forward_simplified(self, tensor, **kwargs):
         """Anisotropic TV."""
         dx = torch.mean(torch.abs(tensor[:, :, :, :-1] - tensor[:, :, :, 1:]))
@@ -113,7 +116,7 @@ class TotalVariation(torch.nn.Module):
     """Computes the total variation value of an (image) tensor, based on its last two dimensions.
        Optionally also Color TV based on its last three dimensions."""
 
-    def __init__(self, setup, scale=0.1, inner_exp=1, outer_exp=1, double_opponents=False):
+    def __init__(self, setup, scale=0.1, inner_exp=1, outer_exp=1, double_opponents=False, eps=1e-8):
         """scale is the overall scaling. inner_exp and outer_exp control isotropy vs anisotropy.
            Optionally also includes proper color TV via double opponents."""
         super().__init__()
@@ -121,6 +124,7 @@ class TotalVariation(torch.nn.Module):
         self.scale = scale
         self.inner_exp = inner_exp
         self.outer_exp = outer_exp
+        self.eps = eps
         self.double_opponents = double_opponents
 
         grad_weight = torch.tensor([[0, 0, 0],
@@ -132,7 +136,7 @@ class TotalVariation(torch.nn.Module):
         else:
             self.groups = 3
         grad_weight = torch.cat([grad_weight] * self.groups, 0)
-        self.weight = grad_weight
+        self.register_buffer('weight', grad_weight)
 
     def initialize(self, models, **kwargs):
         pass
@@ -147,7 +151,7 @@ class TotalVariation(torch.nn.Module):
         diffs = torch.nn.functional.conv2d(tensor, self.weight, None, stride=1,
                                            padding=1, dilation=1, groups=self.groups)
         squares = diffs.abs().pow(self.inner_exp)
-        squared_sums = (squares[:, 0::2] + squares[:, 1::2]).pow(self.outer_exp)
+        squared_sums = (squares[:, 0::2] + squares[:, 1::2] + self.eps).pow(self.outer_exp)
         return squared_sums.mean()
 
 

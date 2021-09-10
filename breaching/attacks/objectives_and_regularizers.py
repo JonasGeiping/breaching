@@ -7,8 +7,9 @@ from .deepinversion import DeepInversionFeatureHook
 class Euclidean(torch.nn.Module):
     """Gradient matching based on the euclidean distance of two gradient vectors."""
 
-    def __init__(self):
+    def __init__(self, scale=1.0):
         super().__init__()
+        self.scale = scale
 
     def forward(self, gradient_rec, gradient_data):
         objective = 0
@@ -16,14 +17,15 @@ class Euclidean(torch.nn.Module):
         for rec, data in zip(gradient_rec, gradient_data):
             objective += (rec - data).pow(2).sum()
             param_count += rec.numel()
-        return 0.5 * objective / param_count
+        return 0.5 * self.scale * objective / param_count
 
 
 class CosineSimilarity(torch.nn.Module):
     """Gradient matching based on cosine similarity of two gradient vectors."""
 
-    def __init__(self):
+    def __init__(self, scale=1.0):
         super().__init__()
+        self.scale = scale
 
     def forward(self, gradient_rec, gradient_data):
         scalar_product, rec_norm, data_norm = 0.0, 0.0, 0.0
@@ -34,7 +36,7 @@ class CosineSimilarity(torch.nn.Module):
 
         objective = 1 - scalar_product / rec_norm.sqrt() / data_norm.sqrt()
 
-        return objective
+        return objective * self.scale
 
 
 class CosineSimilarityFast(torch.nn.Module):

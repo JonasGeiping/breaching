@@ -21,8 +21,10 @@ class OptimizationBasedAttack(_BaseAttacker):
 
     def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
         super().__init__(model, loss_fn, cfg_attack, setup)
-
-        self.objective = CosineSimilarity() if self.cfg.objective == 'cosine-similarity' else Euclidean()
+        if self.cfg.objective.type == 'cosine-similarity':
+            self.objective = CosineSimilarity(self.cfg.objective.scale)
+        else:
+            self.objective = Euclidean(self.cfg.objective.scale)
         self.regularizers = []
         for key in self.cfg.regularization.keys():
             if self.cfg.regularization[key].scale > 0:

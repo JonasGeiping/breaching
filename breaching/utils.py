@@ -9,6 +9,7 @@ import csv
 import torch
 import random
 import numpy as np
+import datetime
 
 import hydra
 from omegaconf import OmegaConf, open_dict
@@ -92,12 +93,18 @@ def save_summary(cfg, metrics, stats, local_time):
     # 2) save a reduced summary
     summary = dict(name=cfg.name,
                    usecase=cfg.case.name,
+                   model=cfg.case.model,
+                   model_state=cfg.case.server.model_state,
                    attack=cfg.attack.type,
                    **metrics,
+                   score=stats['opt_value'],
+                   total_time=str(datetime.timedelta(seconds=local_time)).replace(',', ''),
                    seed=cfg.seed,
+                   **cfg.attack,
+                   **{k: v for k, v in cfg.case.items() if k not in ['name', 'model']},
                    folder=os.getcwd().split('outputs/')[1])
     save_to_table(os.path.join(cfg.original_cwd, 'tables'),
-                  f'breach_{cfg.case.name}_reports', dryrun=cfg.dryrun, **summary)
+                  f'breach_{cfg.case.name}_{cfg.case.data.name}_reports', dryrun=cfg.dryrun, **summary)
 
 
 def save_to_table(out_dir, table_name, dryrun, **kwargs):

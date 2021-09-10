@@ -3,7 +3,10 @@ type: see-through-gradients
 
 attack_type: optimization   # analytic, equation solver
 
-objective: euclidean
+objective:
+  type: euclidean
+  scale: 2555.7032  # This is 0.0001 from the original paper times the number of parameters to recover the correct scaling
+
 restarts:
   num_trials: 1
   scoring: euclidean #'registered-mean' # todo: implement this option
@@ -30,9 +33,9 @@ regularization:
   orthogonality:
     scale: 0.0
   norm:
-    scale: 1e-5
+    scale: 1e-6
     pnorm: 2
-  # deep_inversion:  # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
-  #   scale: 0.1
+  deep_inversion:  # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
+    scale: 0.1
   # group_regularization: # Not implemented. Unclear how this was done without accesss to the source code
   #  scale: 0.01

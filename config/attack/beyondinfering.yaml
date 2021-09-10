@@ -6,7 +6,10 @@ type: beyond-infering
 
 attack_type: optimization   # analytic, equation solver
 
-objective: euclidean
+objective:
+  type: euclidean
+  scale: 1.0
+
 restarts:
   num_trials: 1
   scoring: euclidean

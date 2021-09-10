@@ -3,7 +3,10 @@ type: invertinggradients
 
 attack_type: optimization   # analytic, equation solver
 
-objective: cosine-similarity
+objective:
+  type: cosine-similarity
+  scale: 1.0
+
 restarts:
   num_trials: 1
   scoring: 'cosine-similarity'

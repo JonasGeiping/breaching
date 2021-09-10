@@ -2,7 +2,6 @@
 # This is a test ablation.
 # A better ablation would have a cooler dataset and multiple datapoints to be checked.
 
-python breach.py name=ig case.user.data_idx=0 case.model=resnet50
 
 # IG ablation stuff:
 python breach.py name=ig_fewer_steps case.user.data_idx=0 case.model=resnet50 attack.optim.max_iterations=10_000
@@ -16,10 +15,23 @@ python breach.py name=ig_euclidean case.user.data_idx=0 case.model=resnet50 atta
 python breach.py name=ig_euclidean_unsigned case.user.data_idx=0 case.model=resnet50 attack.optim.signed=False attack.objective=euclidean
 
 # Other attacks:
+python breach.py name=ig case.user.data_idx=0 case.model=resnet50
 python breach.py name=deepleakage case.user.data_idx=0 case.model=resnet50 attack=deepleakage
 python breach.py name=beyond case.user.data_idx=0 case.model=resnet50 attack=beyondinfering
 python breach.py name=seethrough_kindof case.user.data_idx=0 case.model=resnet50 attack=seethroughgradients
 python breach.py name=modern case.user.data_idx=0 case.model=resnet50 attack=modern
+
+# modern ablations:
+python breach.py name=modern_notv case.user.data_idx=0 case.model=resnet50 attack=modern attack.regularization.total_variation.scale=0.0
+python breach.py name=modern_nol2 case.user.data_idx=0 case.model=resnet50 attack=modern attack.regularization.norm.scale=0.0
+python breach.py name=modern_nodi case.user.data_idx=0 case.model=resnet50 attack=modern attack.regularization.deep_inversion.scale=0.0
+python breach.py name=modern_di10 case.user.data_idx=0 case.model=resnet50 attack=modern attack.regularization.deep_inversion.scale=0.1
+python breach.py name=modern_di100 case.user.data_idx=0 case.model=resnet50 attack=modern attack.regularization.deep_inversion.scale=1.0
+
+python breach.py name=modern_ll case.user.data_idx=0 case.model=resnet50 attack=modern attack.optim.langevin_noise=0.0
+python breach.py name=modern_l01 case.user.data_idx=0 case.model=resnet50 attack=modern attack.optim.langevin_noise=0.1
+python breach.py name=modern_l001 case.user.data_idx=0 case.model=resnet50 attack=modern attack.optim.langevin_noise=0.01
+python breach.py name=modern_nw case.user.data_idx=0 case.model=resnet50 attack=modern attack.optim.warmup=0
 
 # Other inits:
 python breach.py name=modern_moco case.user.data_idx=0 case.model=resnet50 attack=modern case.server.model_state=moco
@@ -31,11 +43,11 @@ python breach.py name=ig_untrained case.user.data_idx=0 case.model=resnet50 case
 python breach.py name=modern_untrained4 case.user.data_idx=0 case.model=resnet50 attack=modern case.server.model_state=untrained case.num_queries=4
 python breach.py name=ig_untrained4 case.user.data_idx=0 case.model=resnet50 case.server.model_state=untrained case.num_queries=4
 
-python breach.py name=modern_SSL case.user.data_idx=0 case.model=ResNet50SSL attack=modern
-python breach.py name=ig_SSL case.user.data_idx=0 case.model=ResNet50SSL
+python breach.py name=modern_SSL case.user.data_idx=0 case.model=resnet50ssl attack=modern
+python breach.py name=ig_SSL case.user.data_idx=0 case.model=resnet50ssl
 
-python breach.py name=modern_SWSL case.user.data_idx=0 case.model=ResNet50SWSL attack=modern
-python breach.py name=ig_SWSL case.user.data_idx=0 case.model=ResNet50SWSL
+python breach.py name=modern_SWSL case.user.data_idx=0 case.model=resnet50swsl attack=modern
+python breach.py name=ig_SWSL case.user.data_idx=0 case.model=resnet50swsl
 
 
 python breach.py name=modern_ortho case.user.data_idx=0 case.model=resnet50 attack=modern case.server.model_state=orthogonal

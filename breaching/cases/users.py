@@ -70,7 +70,7 @@ class UserSingleStep(torch.nn.Module):
             data += [datum]
             labels += [torch.as_tensor(label)]
             pointer += server_payload['data'].classes
-            pointer = pointer % server_payload['data'].classes 
+            pointer = pointer % len(self.dataloader.dataset)
         data = torch.stack(data).to(**self.setup)
         labels = torch.stack(labels).to(device=self.setup['device'])
 

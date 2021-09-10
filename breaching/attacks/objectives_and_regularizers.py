@@ -223,7 +223,7 @@ class DeepInversion(torch.nn.Module):
         feature_reg = 0
         for loss in self.losses:
             feature_reg += sum([mod.r_feature * rescale[idx] for (idx, mod) in enumerate(loss)])
-        return feature_reg
+        return self.scale * feature_reg
 
 
 regularizer_lookup = dict(

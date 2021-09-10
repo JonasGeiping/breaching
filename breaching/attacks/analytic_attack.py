@@ -47,8 +47,7 @@ class AnalyticAttacker(_BaseAttacker):
             inputs_from_queries += [inputs]
 
         final_reconstruction = torch.stack(inputs_from_queries).mean(dim=0)
-        print(final_reconstruction.shape)
-        reconstructed_data = dict(data=inputs, labels=labels[0])
+        reconstructed_data = dict(data=inputs, labels=labels)
 
         return reconstructed_data, stats
 

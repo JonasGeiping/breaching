@@ -7,15 +7,15 @@ from .metrics import psnr_compute, registered_psnr_compute
 
 def report(reconstructed_user_data, true_user_data, server_payload, model, setup):
     import lpips   # lazily import this only if report is used.
-    lpips_scorer = lpips.LPIPS(net='alex')
+    lpips_scorer = lpips.LPIPS(net='alex').to(**setup)
 
     dm = torch.as_tensor(server_payload['data'].mean, **setup)[None, :, None, None]
     ds = torch.as_tensor(server_payload['data'].std, **setup)[None, :, None, None]
     model.to(**setup)
 
 
-    rec_denormalized = torch.clamp(reconstructed_user_data['data'] * ds + dm, 0, 1).cpu()
-    ground_truth_denormalized = torch.clamp(true_user_data['data'] * ds + dm, 0, 1).cpu()
+    rec_denormalized = torch.clamp(reconstructed_user_data['data'] * ds + dm, 0, 1)
+    ground_truth_denormalized = torch.clamp(true_user_data['data'] * ds + dm, 0, 1)
 
     test_mse = (rec_denormalized - ground_truth_denormalized).pow(2).mean().item()
     test_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1).item()
@@ -24,7 +24,7 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, setup
     test_lpips = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True).mean().item()
 
     # Compute registered psnr. This is a bit computationally intensive:
-    test_rpsnr = registered_psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1).item()
+    test_rpsnr = registered_psnr_compute(rec_denormalized.cpu(), ground_truth_denormalized.cpu(), factor=1).item()
 
 
     feat_mse = 0.0

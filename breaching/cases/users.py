@@ -119,9 +119,12 @@ class UserSingleStep(torch.nn.Module):
             plt.imshow(data[0].permute(1, 2, 0).cpu())
             plt.title(f'Data with label {classes[labels]}')
         else:
-            fig, axes = plt.subplots(1, data.shape[0], figsize=(12, data.shape[0] * 12))
+            grid_shape = int(torch.as_tensor(data.shape[0]).sqrt().ceil())
+            s = 24 if data.shape[3] > 150 else 6
+            fig, axes = plt.subplots(grid_shape, grid_shape, figsize=(s, s))
             label_classes = []
-            for i, im in enumerate(data):
-                axes[i].imshow(im.permute(1, 2, 0).cpu())
+            for i, (im, axis) in enumerate(zip(data, axes.flatten())):
+                axis.imshow(im.permute(1, 2, 0).cpu())
                 label_classes.append(classes[labels[i]])
+                axis.axis('off')
             print(label_classes)

@@ -11,8 +11,8 @@ python breach.py name=ig_warmup case.user.data_idx=0 case.model=resnet50 attack.
 python breach.py name=ig_large_step case.user.data_idx=0 case.model=resnet50 attack.optim.step_size=0.5
 python breach.py name=ig_langevin case.user.data_idx=0 case.model=resnet50 attack.optim.langevin_noise=0.2
 python breach.py name=ig_iso case.user.data_idx=0 case.model=resnet50 attack.regularization.total_variation.inner_exp=2 attack.regularization.total_variation.outer_exp=0.5
-python breach.py name=ig_euclidean case.user.data_idx=0 case.model=resnet50 attack.objective=euclidean
-python breach.py name=ig_euclidean_unsigned case.user.data_idx=0 case.model=resnet50 attack.optim.signed=False attack.objective=euclidean
+python breach.py name=ig_euclidean case.user.data_idx=0 case.model=resnet50 attack.objective.type=euclidean
+python breach.py name=ig_euclidean_unsigned case.user.data_idx=0 case.model=resnet50 attack.optim.signed=False attack.objective.type=euclidean
 
 # Other attacks:
 python breach.py name=ig case.user.data_idx=0 case.model=resnet50

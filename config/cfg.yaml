@@ -2,7 +2,7 @@
 # Configuration defaults
 # Settings are separated into case, attack analysis
 defaults:
-  - case: single_image_basic
+  - case: 2_single_imagenet
   - attack: invertinggradients
 
 

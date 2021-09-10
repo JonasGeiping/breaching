@@ -8,13 +8,15 @@ class UserSingleStep(torch.nn.Module):
     """A user who computes a single local update step."""
 
     def __init__(self, model, loss, dataloader, setup, num_data_points=1, num_user_queries=1, batch_norm_training=False,
-                 provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1):
+                 provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1,
+                 num_data_per_local_update_step=None):
         """Initialize but do not propagate the cfg_case.user dict further."""
         super().__init__()
 
         self.num_local_updates = num_local_updates
         self.num_data_points = num_data_points
         self.num_user_queries = num_user_queries
+        self.num_data_per_local_update_step = num_data_per_local_update_step
 
         self.provide_labels = provide_labels
         self.provide_num_data_points = provide_num_data_points

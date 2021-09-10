@@ -12,8 +12,8 @@ import torch
 from collections import defaultdict
 import time
 
-from .base_attacker import _BaseAttacker
-from .objectives_and_regularizers import regularizer_lookup, Euclidean, CosineSimilarity, TotalVariation
+from .base_attack import _BaseAttacker
+from .auxiliaries.objectives_and_regularizers import regularizer_lookup, Euclidean, CosineSimilarity, TotalVariation
 
 
 class OptimizationBasedAttack(_BaseAttacker):

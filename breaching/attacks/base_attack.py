@@ -6,7 +6,7 @@ import torch
 from collections import defaultdict
 import copy
 
-from .additional_optimizers import GradualWarmupScheduler
+from .auxiliaries.additional_optimizers import GradualWarmupScheduler
 
 class _BaseAttacker():
     """This is a template class for an attack."""

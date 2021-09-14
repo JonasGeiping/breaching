@@ -46,16 +46,19 @@ def registered_psnr_compute(img_batch, ref_batch, factor=1.0):
 
             matches = skimage.feature.match_descriptors(descriptors_src, descriptors_tgt, cross_check=True)
             # Look for an affine transform and search with RANSAC over matches:
-            model_robust, inliers = skimage.measure.ransac((keypoints_src[matches[:, 0]],
-                                                           keypoints_tgt[matches[:, 1]]), skimage.transform.AffineTransform,
-                                                           min_samples=16, residual_threshold=2, max_trials=250)
-            warped_img = skimage.transform.warp(img_np, model_robust, output_shape=ref_np.shape)
+            model_robust, inliers = skimage.measure.ransac((keypoints_tgt[matches[:, 1]],
+                                                           keypoints_src[matches[:, 0]]), skimage.transform.EuclideanTransform,
+                                                           min_samples=len(matches) - 1, residual_threshold=4, max_trials=2500)  # :>
+            warped_img = skimage.transform.warp(img_np.transpose(1, 2, 0), model_robust, mode='wrap', order=1)
             # Compute normal PSNR from here:
-            registered_psnr = psnr_compute(torch.as_tensor(warped_img), ref, factor=1.0, batched=True)
+            registered_psnr = psnr_compute(torch.as_tensor(warped_img), ref.permute(1, 2, 0), factor=1.0, batched=True)
             if registered_psnr.isfinite():
                 psnr_vals[idx] = max(registered_psnr, default_psnr)
             else:
                 psnr_vals[idx] = default_psnr
-        except (TypeError, IndexError):  # TypeError if RANSAC fails # Index error if not enough matches are found
+        except (TypeError, IndexError, RuntimeError):
+            # TypeError if RANSAC fails
+            # IndexError if not enough matches are found
+            # RunTimeError if ORB does not find enough features
             psnr_vals[idx] = default_psnr
     return psnr_vals.mean()

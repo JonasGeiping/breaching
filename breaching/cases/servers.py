@@ -5,6 +5,7 @@
 payload should be a dict containing the key data and a list of payloads. The length of this list is num_queries.
 Each entry in the list of payloads contains at least the keys "parameters" and "buffers".
 """
+import torch
 from torch.hub import load_state_dict_from_url
 
 class HonestServer():
@@ -42,15 +43,17 @@ class HonestServer():
                     torch.nn.init.orthogonal_(module.weight, gain=1)
         if model_state == 'moco':
             try:
-                url = 'https://dl.fbaipublicfiles.com/moco/moco_checkpoints/moco_v2_800ep/moco_v2_800ep_pretrain.pth.tar'
+                # url = 'https://dl.fbaipublicfiles.com/moco/moco_checkpoints/moco_v2_800ep/moco_v2_800ep_pretrain.pth.tar'
                 # url = 'https://dl.fbaipublicfiles.com/moco/moco_checkpoints/moco_v2_200ep/moco_v2_200ep_pretrain.pth.tar'
-                state_dict = load_state_dict_from_url(url, progress=True)['state_dict']
+                url = 'https://dl.fbaipublicfiles.com/moco-v3/r-50-1000ep/linear-1000ep.pth.tar'
+                state_dict = load_state_dict_from_url(url, progress=True, map_location=torch.device('cpu'))['state_dict']
                 for key in list(state_dict.keys()):
                     val = state_dict.pop(key)
-                    sanitized_key = key.replace('module.encoder_q.', '')
+                    # sanitized_key = key.replace('module.encoder_q.', '') # for mocov2
+                    sanitized_key = key.replace('module.', '')
                     state_dict[sanitized_key] = val
 
-                self.model.load_state_dict(state_dict, strict=False)  # The fc layer is not actually loaded here
+                self.model.load_state_dict(state_dict, strict=True)  # The fc layer is not actually loaded here
             except FileNotFoundError:
                 raise ValueError('no MoCo data found for this architecture.')
 
@@ -62,7 +65,7 @@ class HonestServer():
         for round in range(self.num_queries):
             self.reconfigure_model(self.model_state)
 
-            honest_model_parameters = self.model.parameters()
-            honest_model_buffers = self.model.buffers()
+            honest_model_parameters = [p for p in self.model.parameters()]  # do not send only the generators
+            honest_model_buffers = [b for b in self.model.buffers()]
             queries.append(dict(parameters=honest_model_parameters, buffers=honest_model_buffers))
         return dict(queries=queries, data=self.cfg_data)

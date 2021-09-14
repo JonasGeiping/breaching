@@ -8,13 +8,15 @@ class UserSingleStep(torch.nn.Module):
     """A user who computes a single local update step."""
 
     def __init__(self, model, loss, dataloader, setup, num_data_points=1, num_user_queries=1, batch_norm_training=False,
-                 provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1):
+                 provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1,
+                 num_data_per_local_update_step=None):
         """Initialize but do not propagate the cfg_case.user dict further."""
         super().__init__()
 
         self.num_local_updates = num_local_updates
         self.num_data_points = num_data_points
         self.num_user_queries = num_user_queries
+        self.num_data_per_local_update_step = num_data_per_local_update_step
 
         self.provide_labels = provide_labels
         self.provide_num_data_points = provide_num_data_points
@@ -68,11 +70,13 @@ class UserSingleStep(torch.nn.Module):
             data += [datum]
             labels += [torch.as_tensor(label)]
             pointer += server_payload['data'].classes
+            pointer = pointer % len(self.dataloader.dataset)
         data = torch.stack(data).to(**self.setup)
         labels = torch.stack(labels).to(device=self.setup['device'])
 
         # Compute local updates
         shared_grads = []
+        shared_buffers = []
         for query in range(self.num_user_queries):
             payload = server_payload['queries'][query]
             parameters = payload['parameters']
@@ -89,8 +93,9 @@ class UserSingleStep(torch.nn.Module):
             loss = self.loss(outputs, labels)
 
             shared_grads += [torch.autograd.grad(loss, self.model.parameters())]
+            shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
 
-        shared_data = dict(gradients=shared_grads, buffers=[b.clone().detach() for b in self.model.buffers()],
+        shared_data = dict(gradients=shared_grads, buffers=shared_buffers,
                            num_data_points=self.num_data_points if self.provide_num_data_points else None,
                            labels=labels if self.provide_labels else None)
         true_user_data = dict(data=data, labels=labels)
@@ -114,9 +119,12 @@ class UserSingleStep(torch.nn.Module):
             plt.imshow(data[0].permute(1, 2, 0).cpu())
             plt.title(f'Data with label {classes[labels]}')
         else:
-            fig, axes = plt.subplots(1, data.shape[0], figsize=(12, data.shape[0] * 12))
+            grid_shape = int(torch.as_tensor(data.shape[0]).sqrt().ceil())
+            s = 24 if data.shape[3] > 150 else 6
+            fig, axes = plt.subplots(grid_shape, grid_shape, figsize=(s, s))
             label_classes = []
-            for i, im in enumerate(data):
-                axes[i].imshow(im.permute(1, 2, 0).cpu())
+            for i, (im, axis) in enumerate(zip(data, axes.flatten())):
+                axis.imshow(im.permute(1, 2, 0).cpu())
                 label_classes.append(classes[labels[i]])
+                axis.axis('off')
             print(label_classes)

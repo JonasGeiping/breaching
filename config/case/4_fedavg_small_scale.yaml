@@ -1,0 +1,25 @@
+
+name: fedavg_small_scale
+
+defaults:
+  - data: ImageNet
+  - impl: default
+  - server: honest_but_curious
+loss: CrossEntropy
+model: ResNet152
+
+# Server and user:
+num_queries: 1
+
+# User data:
+user:
+  num_local_updates: 4
+  num_data_points: 4
+  num_data_per_local_update_step: 1 # Every step is taken on a different sample
+
+  batch_norm_training: False
+  provide_labels: True
+  provide_num_data_points: True
+  data_idx:  # Evaluate training data starting from this index. If no index is given, data is chosen at random.
+
+examples_from_split: validation

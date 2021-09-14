@@ -3,7 +3,10 @@ type: invertinggradients
 
 attack_type: optimization   # analytic, equation solver
 
-objective: cosine-similarity
+objective:
+  type: cosine-similarity
+  scale: 1.0
+
 restarts:
   num_trials: 8
   scoring: cosine-similarity
@@ -20,19 +23,20 @@ optim:
   langevin_noise: 0.1
   warmup: 50
 
-  callback: 500  # Print objective value every callback many iterations
+  callback: 1000  # Print objective value every callback many iterations
 
 regularization:
   total_variation:
-    scale: 0.1
+    scale: 0.2
     inner_exp: 2
     outer_exp: 0.5
+    double_opponents: True
   orthogonality:
-    scale: 0.1
+    scale: 0.0
   norm:
-    scale: 1e-5
+    scale: 1e-6
     pnorm: 2
   deep_inversion:  # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
-    scale: 0.0
+    scale: 0.01
   # group_regularization: # Not implemented. Unclear how this was done without accesss to the source code
   #  scale: 0.01

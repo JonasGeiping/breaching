@@ -16,7 +16,7 @@ import getpass
 
 parser = argparse.ArgumentParser(description='Launch a jupyter notebook on the CML cluster')
 # Central:
-parser.add_argument('--conda', default='/cmlscratch/jonas0/miniconda3/envs/dl', type=str, help='Path to conda env')
+parser.add_argument('--conda', default='/cmlscratch/lfowl/miniconda3/envs/breaching', type=str, help='Path to conda env')
 parser.add_argument('--qos', default='default', type=str, help='QOS, choose default, medium, high, very_high, scav')
 parser.add_argument('--gpus', default='1', type=int, help='Requested GPUs PER job')
 parser.add_argument('--mem', default='32', type=int, help='Requested memory PER job')

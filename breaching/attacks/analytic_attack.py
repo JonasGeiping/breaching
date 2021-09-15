@@ -56,6 +56,7 @@ class AnalyticAttacker(_BaseAttacker):
         """The basic trick to invert a FC layer."""
         # By the way the labels are exactly at (bias_grad < 0).nonzero() if they are unique
         valid_classes = bias_grad != 0
+        labels = valid_classes # Here we're just looking for when any slices have nonzero grad? 
         intermediates = (weight_grad[valid_classes, :] / bias_grad[valid_classes, None])
         if len(labels) == 1:
             reconstruction_data = intermediates.mean(dim=0)

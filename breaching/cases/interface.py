@@ -18,7 +18,10 @@ def construct_case(cfg_case, setup, dryrun=False):
     # So that I don't need to have the ImageNet training set on my laptop:
     dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, cfg_case.examples_from_split, dryrun=dryrun)
     model = construct_model(cfg_case.model, cfg_case.data, pretrained=cfg_case.server.model_state == 'trained')
-    loss = torch.nn.CrossEntropyLoss()
+    if cfg_case.model == 'imprint':
+        loss = lambda x,y: torch.sum(x) # LF to fix later :) 
+    else:
+        loss = torch.nn.CrossEntropyLoss()
 
     if cfg_case.server.name == 'honest_but_curious':
         server = HonestServer(model, loss, cfg_case.server.model_state, cfg_case.num_queries,

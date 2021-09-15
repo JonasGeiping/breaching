@@ -7,6 +7,7 @@ from .resnets import ResNet, resnet_depths_to_config
 from .densenets import DenseNet, densenet_depths_to_config
 from .nfnets import NFNet
 from .vgg import VGG
+from .imprint import imprint_model
 
 
 def construct_model(cfg_model, cfg_data, pretrained=False):
@@ -34,7 +35,6 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
                 raise ValueError(f'Could not find ImageNet model {cfg_model} in torchvision.models or custom models.')
     else:
         # CIFAR Model from here:
-
         if 'resnet' in cfg_model.lower():
             block, layers = resnet_depths_to_config(int("".join(filter(str.isdigit, cfg_model))))
             model = ResNet(block, layers, channels, classes, stem='CIFAR', convolution_type='Standard',
@@ -63,6 +63,10 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
         elif 'linear' in cfg_model:
             input_dim = cfg_data.shape[0] * cfg_data.shape[1] * cfg_data.shape[2]
             model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(input_dim, classes))
+        elif 'imprint' in cfg_model:
+            input_dim = cfg_data.shape[0] * cfg_data.shape[1] * cfg_data.shape[2]
+            imprint = imprint_model(input_dim, 300) # 100 bins? Can be changed later :) hard coded for now
+            model = torch.nn.Sequential(torch.nn.Flatten(), imprint)
         elif 'nfnet' in cfg_model:
             model = NFNet(channels, classes, variant='F0', stochdepth_rate=0.25, alpha=0.2, se_ratio=0.5,
                           activation='ReLU', stem='CIFAR', use_dropout=True)

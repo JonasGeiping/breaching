@@ -31,6 +31,8 @@ class HonestServer():
             if model_state == 'untrained':
                 if hasattr(module, 'reset_parameters'):
                     module.reset_parameters()
+            elif model_state == 'imprint':
+                pass  # model was already initialized in an extra special way :) 
             elif model_state == 'trained':
                 pass  # model was already loaded as pretrained model
             elif model_state == 'moco':

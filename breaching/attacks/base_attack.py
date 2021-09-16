@@ -28,6 +28,25 @@ class _BaseAttacker():
 
         return reconstructed_data, stats
 
+    def prepare_attack(self, server_payload, shared_data):
+        """Basic startup common to many reconstruction methods."""
+        stats = defaultdict(list)
+
+        # Load preprocessing constants:
+        self.data_shape = server_payload['data'].shape
+        self.dm = torch.as_tensor(server_payload['data'].mean, **self.setup)[None, :, None, None]
+        self.ds = torch.as_tensor(server_payload['data'].std, **self.setup)[None, :, None, None]
+
+        # Load server_payload into state:
+        rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data['buffers'])
+
+        # Consider label information
+        if shared_data['labels'] is None:
+            labels = self._recover_label_information(shared_data)
+        else:
+            labels = shared_data['labels']
+        return rec_models, labels, stats
+
     def _construct_models_from_payload_and_buffers(self, server_payload, user_buffers):
         """Construct the model (or multiple) that is sent by the server and include user buffers if any."""
 

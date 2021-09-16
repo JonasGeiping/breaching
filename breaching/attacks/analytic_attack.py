@@ -1,7 +1,6 @@
 """Simple analytic attack that works for (dumb) fully connected models."""
 
 import torch
-from collections import defaultdict
 
 from .base_attack import _BaseAttacker
 
@@ -16,19 +15,7 @@ class AnalyticAttacker(_BaseAttacker):
 
     def reconstruct(self, server_payload, shared_data, dryrun=False):
         # Initialize stats module for later usage:
-        stats = defaultdict(list)
-
-        # Load preprocessing constants:
-        self.data_shape = server_payload['data'].shape
-
-        # Load server_payload into state:
-        rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data['buffers'])
-
-        # Consider label information
-        if shared_data['labels'] is None:
-            labels = self._recover_label_information(shared_data)
-        else:
-            labels = shared_data['labels']
+        rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)
 
         # Main reconstruction: loop starts here:
         inputs_from_queries = []

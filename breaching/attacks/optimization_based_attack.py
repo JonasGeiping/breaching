@@ -9,7 +9,6 @@ and convers subsequent developments such as
 """
 
 import torch
-from collections import defaultdict
 import time
 
 from .base_attack import _BaseAttacker
@@ -32,21 +31,7 @@ class OptimizationBasedAttack(_BaseAttacker):
 
     def reconstruct(self, server_payload, shared_data, dryrun=False):
         # Initialize stats module for later usage:
-        stats = defaultdict(list)
-
-        # Load preprocessing constants:
-        self.dm = torch.as_tensor(server_payload['data'].mean, **self.setup)[None, :, None, None]
-        self.ds = torch.as_tensor(server_payload['data'].std, **self.setup)[None, :, None, None]
-        self.data_shape = server_payload['data'].shape
-
-        # Load server_payload into state:
-        rec_model = self._construct_models_from_payload_and_buffers(server_payload, shared_data['buffers'])
-
-        # Consider label information
-        if shared_data['labels'] is None:
-            labels = self._recover_label_information(shared_data)
-        else:
-            labels = shared_data['labels']
+        rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)
 
         # Main reconstruction loop starts here:
         scores = torch.zeros(self.cfg.restarts.num_trials)

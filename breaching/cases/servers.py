@@ -8,10 +8,12 @@ Each entry in the list of payloads contains at least the keys "parameters" and "
 import torch
 from torch.hub import load_state_dict_from_url
 
+from .malicious_modifications import ImprintBlock
+
 class HonestServer():
     """Implement an honest server protocol."""
 
-    def __init__(self, model, loss, model_state='untrained', num_queries=1, cfg_data=None, training=False):
+    def __init__(self, model, loss, cfg_server, num_queries=1, cfg_data=None, training=False):
         """Inialize the server settings."""
         self.model = model
         if training:
@@ -21,9 +23,9 @@ class HonestServer():
         self.loss = loss
 
         self.num_queries = num_queries
-        self.model_state = model_state
 
         self.cfg_data = cfg_data  # Data configuration has to be shared across all parties to keep preprocessing consistent
+        self.cfg_server = cfg_server
 
     def reconfigure_model(self, model_state):
         """Reinitialize, continue training or otherwise modify model parameters in a benign way."""
@@ -63,9 +65,36 @@ class HonestServer():
 
         queries = []
         for round in range(self.num_queries):
-            self.reconfigure_model(self.model_state)
+            self.reconfigure_model(self.cfg_server.model_state)
 
             honest_model_parameters = [p for p in self.model.parameters()]  # do not send only the generators
             honest_model_buffers = [b for b in self.model.buffers()]
             queries.append(dict(parameters=honest_model_parameters, buffers=honest_model_buffers))
         return dict(queries=queries, data=self.cfg_data)
+
+    def prepare_model(self):
+        """This server is honest."""
+        return self.model
+
+
+class MaliciousServer(HonestServer):
+    """Implement a malicious server protocol."""
+
+    def __init__(self, model, loss, cfg_server, num_queries=1, cfg_data=None, training=False):
+        """Inialize the server settings."""
+        super().__init__(model, loss, cfg_server, num_queries, cfg_data, training)
+        self.model_state = 'custom'  # Do not mess with model parameters no matter what init is agreed upon
+
+    def prepare_model(self):
+        """This server is not honest :>"""
+        modified_model = self.model
+        for key, val in self.cfg_server.model_modification.items():
+            if key == 'ImprintBlock':
+                input_dim = self.cfg_data.shape[0] * self.cfg_data.shape[1] * self.cfg_data.shape[2]
+                block = ImprintBlock(input_dim, num_bins=val['num_bins'], alpha=val['alpha'])
+                modified_model = torch.nn.Sequential(torch.nn.Flatten(),
+                                                     block,
+                                                     torch.nn.Unflatten(dim=1, unflattened_size=tuple(self.cfg_data.shape)),
+                                                     modified_model)
+        self.model = modified_model
+        return self.model

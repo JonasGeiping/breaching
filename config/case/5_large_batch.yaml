@@ -4,7 +4,7 @@ name: large_batch
 defaults:
   - data: ImageNet
   - impl: default
-  - server: honest_but_curious
+  - server: honest-but-curious
 loss: CrossEntropy
 model: ResNet152
 

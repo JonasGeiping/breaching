@@ -1,0 +1,7 @@
+
+name: malicious_model
+model_state: trained
+model_modification:
+  ImprintBlock:
+    alpha: 0.375
+    num_bins: 300

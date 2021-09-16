@@ -4,7 +4,7 @@ name: single_image_small
 defaults:
   - data: CIFAR10
   - impl: default
-  - server: honest_but_curious
+  - server: honest-but-curious
 loss: CrossEntropy
 model: ConvNet
 

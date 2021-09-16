@@ -4,7 +4,7 @@ name: fedavg_small_scale
 defaults:
   - data: ImageNet
   - impl: default
-  - server: honest_but_curious
+  - server: honest-but-curious
 loss: CrossEntropy
 model: ResNet152
 

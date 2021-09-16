@@ -4,7 +4,7 @@ name: small_batch_imagenet
 defaults:
   - data: ImageNet
   - impl: default
-  - server: honest_but_curious
+  - server: honest-but-curious
 loss: CrossEntropy
 model: ResNet152
 

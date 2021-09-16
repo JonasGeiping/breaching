@@ -10,7 +10,6 @@ from .densenets import DenseNet, densenet_depths_to_config
 from .nfnets import NFNet
 from .vgg import VGG
 
-
 def construct_model(cfg_model, cfg_data, pretrained=False):
     """Construct the neural net that is used."""
     channels = cfg_data.shape[0]
@@ -36,7 +35,6 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
                 raise ValueError(f'Could not find ImageNet model {cfg_model} in torchvision.models or custom models.')
     else:
         # CIFAR Model from here:
-
         if 'resnet' in cfg_model.lower():
             block, layers = resnet_depths_to_config(int("".join(filter(str.isdigit, cfg_model))))
             model = ResNet(block, layers, channels, classes, stem='CIFAR', convolution_type='Standard',

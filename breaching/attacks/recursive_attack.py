@@ -11,6 +11,9 @@ from .auxiliaries.recursive_attack import r_gap, peeling, fcn_reconstruction, in
 class RecursiveAttacker(_BaseAttacker):
     """Implements a thin wrapper around the original R-GAP code.
     Check out the original implementation at https://github.com/JunyiZhu-AI/R-GAP/blob/main/main.py
+
+    This implements work (best/only) with cnn6, e.g.
+    python breach.py case=0_sanity_check attack=rgap case.model=cnn6 case/data=CIFAR10
     """
 
     def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device('cpu'))):

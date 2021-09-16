@@ -9,7 +9,8 @@ from .data import construct_dataloader
 from .models import construct_model
 
 from .users import UserSingleStep
-from .servers import HonestServer
+from .servers import HonestServer, MaliciousServer
+
 
 def construct_case(cfg_case, setup, dryrun=False):
     """Construct training splits (from which to draw examples) and model states and place into user and server objects."""
@@ -21,13 +22,19 @@ def construct_case(cfg_case, setup, dryrun=False):
     loss = torch.nn.CrossEntropyLoss()
 
     if cfg_case.server.name == 'honest_but_curious':
-        server = HonestServer(model, loss, cfg_case.server.model_state, cfg_case.num_queries,
-                              cfg_case.data, cfg_case.user.batch_norm_training)
+        server = HonestServer(model, loss, cfg_case.server, cfg_case.num_queries, cfg_case.data,
+                              cfg_case.user.batch_norm_training)
+    elif cfg_case.server.name == 'malicious_model':
+        server = MaliciousServer(model, loss, cfg_case.server, cfg_case.num_queries, cfg_case.data,
+                                 cfg_case.user.batch_norm_training)
     else:
         raise ValueError(f'Invalid server settings {cfg_case.server} given.')
 
+    model = server.prepare_model()
+
     if cfg_case.user.num_local_updates == 1:
-        user = UserSingleStep(model, loss, dataloader, setup, **cfg_case.user)  # The user will deepcopy this model to have their own
+        # The user will deepcopy this model to have their own
+        user = UserSingleStep(model, loss, dataloader, setup, **cfg_case.user)
     else:
         raise ValueError('User specifications not implemented.')
 

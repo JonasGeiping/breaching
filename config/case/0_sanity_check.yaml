@@ -4,7 +4,7 @@ name: sanity_check
 defaults:
   - data: ImageNet
   - impl: default
-  - server: honest_but_curious
+  - server: honest-but-curious
 loss: CrossEntropy
 model: linear
 

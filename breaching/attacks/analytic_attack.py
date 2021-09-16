@@ -27,7 +27,10 @@ class AnalyticAttacker(_BaseAttacker):
                 if isinstance(layer, torch.nn.Linear):
                     bias_grad = user_gradient[idx + 1]
                     weight_grad = user_gradient[idx]
-                    layer_inputs = self.invert_fc_layer(weight_grad, bias_grad, labels)
+
+                    # Overestimate image positions:
+                    image_positions = bias_grad.nonzero()
+                    layer_inputs = self.invert_fc_layer(weight_grad, bias_grad, image_positions)
                     break
                 elif isinstance(layer, (torch.nn.Conv2d, torch.nn.BatchNorm2d)):
                     idx += len(list(layer.parameters()))
@@ -38,7 +41,7 @@ class AnalyticAttacker(_BaseAttacker):
             if layer_inputs is None:
                 raise ValueError('No linear layer found for analytic reconstruction.')
             else:
-                inputs = layer_inputs.reshape(shared_data['num_data_points'], *self.data_shape)
+                inputs = layer_inputs.reshape(len(image_positions), *self.data_shape)
                 inputs_from_queries += [inputs]
 
         final_reconstruction = torch.stack(inputs_from_queries).mean(dim=0)
@@ -49,10 +52,5 @@ class AnalyticAttacker(_BaseAttacker):
 
     def invert_fc_layer(self, weight_grad, bias_grad, image_positions):
         """The basic trick to invert a FC layer."""
-        valid_classes = bias_grad != 0
-        intermediates = (weight_grad[valid_classes, :] / bias_grad[valid_classes, None])
-        if len(image_positions) == 1:
-            reconstruction_data = intermediates.mean(dim=0)
-        else:
-            reconstruction_data = intermediates[image_positions]
+        reconstruction_data = (weight_grad[image_positions, :] / bias_grad[image_positions, None])
         return reconstruction_data

@@ -27,6 +27,8 @@ class HonestServer():
         self.cfg_data = cfg_data  # Data configuration has to be shared across all parties to keep preprocessing consistent
         self.cfg_server = cfg_server
 
+        self.secrets = dict()  # Should be nothing in here
+
     def reconfigure_model(self, model_state):
         """Reinitialize, continue training or otherwise modify model parameters in a benign way."""
         for name, module in self.model.named_modules():
@@ -84,6 +86,7 @@ class MaliciousServer(HonestServer):
         """Inialize the server settings."""
         super().__init__(model, loss, cfg_server, num_queries, cfg_data, training)
         self.model_state = 'custom'  # Do not mess with model parameters no matter what init is agreed upon
+        self.secrets = dict()
 
     def prepare_model(self):
         """This server is not honest :>"""
@@ -96,5 +99,6 @@ class MaliciousServer(HonestServer):
                                                      block,
                                                      torch.nn.Unflatten(dim=1, unflattened_size=tuple(self.cfg_data.shape)),
                                                      modified_model)
+                self.secrets['ImprintBlock'] = dict(weight_idx=0, bias_idx=1)  # block position
         self.model = modified_model
         return self.model

@@ -51,7 +51,7 @@ def main_process(process_idx, local_group_size, cfg):
     # Simulate an attacked FL protocol
     server_payload = server.distribute_payload()
     shared_data, true_user_data = user.compute_local_updates(server_payload)  # True user data is returned only for analysis
-    reconstructed_user_data, stats = attacker.reconstruct(server_payload, shared_data, dryrun=cfg.dryrun)
+    reconstructed_user_data, stats = attacker.reconstruct(server_payload, shared_data, server.secrets, dryrun=cfg.dryrun)
 
     # How good is the reconstruction?
     metrics = breaching.analysis.report(reconstructed_user_data, true_user_data, server_payload, server.model, setup)

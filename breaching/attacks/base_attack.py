@@ -18,7 +18,7 @@ class _BaseAttacker():
         self.loss_fn = copy.deepcopy(loss_fn)
 
 
-    def reconstruct(self, server_payload, shared_data):
+    def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
 
         stats = defaultdict(list)
 

@@ -29,7 +29,7 @@ class OptimizationBasedAttack(_BaseAttacker):
             if self.cfg.regularization[key].scale > 0:
                 self.regularizers += [regularizer_lookup[key](setup, **self.cfg.regularization[key])]
 
-    def reconstruct(self, server_payload, shared_data, dryrun=False):
+    def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
         # Initialize stats module for later usage:
         rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)
 

@@ -30,7 +30,7 @@ class RecursiveAttacker(_BaseAttacker):
             inputs_from_queries += [torch.as_tensor(inputs, **self.setup)]
 
         final_reconstruction = torch.stack(inputs_from_queries).mean(dim=0)
-        reconstructed_data = dict(data=inputs, labels=labels)
+        reconstructed_data = dict(data=final_reconstruction, labels=labels)
 
         return reconstructed_data, stats
 
@@ -65,18 +65,17 @@ class RecursiveAttacker(_BaseAttacker):
             print(f'pred_: {u/y:.1e}, udldu: {udldu:.1e}, udldu_:{-u/(1+np.exp(u)):.1e}')
             k = -y / (1 + np.exp(u))
             k = k.reshape(1, -1).astype(np.float32)
+            x_, last_weight = fcn_reconstruction(k=k, gradient=g), w
         else:
-            g = original_dy_dx[grad_idx - 1].numpy()
-            grad_idx -= 2
             # Replace the old construction with a new one for multi-label classification:
-            bias_grad = original_dy_dx[grad_idx + 2]
-            weight_grad = original_dy_dx[grad_idx + 1]
+            # Using a bias in the last layer:
+            bias_grad = original_dy_dx[grad_idx].numpy()
+            weight_grad = original_dy_dx[grad_idx - 1].numpy()
+            grad_idx -= 2
             valid_classes = bias_grad != 0
-            layer_inputs = (weight_grad[valid_classes, :] / bias_grad[valid_classes, None]).mean(dim=0)
-            k = module(layer_inputs) - module.bias  # :>
-            k = k.reshape(-1, 1).detach().numpy().astype(np.float32)
-        x_, last_weight = fcn_reconstruction(k=k, gradient=g), w
-
+            layer_inputs = (weight_grad[valid_classes, :] / bias_grad[valid_classes, None]).mean(axis=0)
+            k = bias_grad.reshape(-1, 1).astype(np.float32)
+            x_, last_weight = layer_inputs, w
 
         # Recurse through all other layers. Expects an alternating structure  of activation and linear layer
         # For R-GAP the activation has to be invertible

@@ -3,6 +3,8 @@
 import torch
 import torchvision
 
+from collections import OrderedDict
+
 from .resnets import ResNet, resnet_depths_to_config
 from .densenets import DenseNet, densenet_depths_to_config
 from .nfnets import NFNet
@@ -69,7 +71,7 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
         elif 'convnet' == cfg_model.lower():
             model = ConvNet(width=64, num_channels=channels, num_classes=classes)
         elif 'convnet_beyond' == cfg_model.lower():
-            model = torch.nn.Sequential(dict([
+            model = torch.nn.Sequential(OrderedDict([
                 ('conv1', torch.nn.Conv2d(channels, 32, 3, stride=2, padding=1)),
                 ('relu0', torch.nn.LeakyReLU()),
                 ('conv2', torch.nn.Conv2d(32, 64, 3, stride=1, padding=1)),
@@ -86,6 +88,24 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
             ]))
         elif 'lenet_zhu' == cfg_model.lower():
             model = LeNetZhu(num_channels=channels, num_classes=classes)
+        elif 'cnn6' == cfg_model.lower():
+            # This is the model from R-GAP:
+            model = torch.nn.Sequential(OrderedDict([
+                ('layer0', torch.nn.Conv2d(channels, 12, kernel_size=4, padding=2, stride=2, bias=False)),
+                ('act0', torch.nn.LeakyReLU(negative_slope=0.2)),
+                ('layer1', torch.nn.Conv2d(12, 36, kernel_size=3, padding=1, stride=2, bias=False)),
+                ('act1', torch.nn.LeakyReLU(negative_slope=0.2)),
+                ('layer2', torch.nn.Conv2d(36, 36, kernel_size=3, padding=1, stride=1, bias=False)),
+                ('act2', torch.nn.LeakyReLU(negative_slope=0.2)),
+                ('layer3', torch.nn.Conv2d(36, 36, kernel_size=3, padding=1, stride=1, bias=False)),
+                ('act3', torch.nn.LeakyReLU(negative_slope=0.2)),
+                ('layer4', torch.nn.Conv2d(36, 64, kernel_size=3, padding=1, stride=2, bias=False)),
+                ('act4', torch.nn.LeakyReLU(negative_slope=0.2)),
+                ('layer5', torch.nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=1, bias=False)),
+                ('flatten', torch.nn.Flatten()),
+                ('act5', torch.nn.LeakyReLU(negative_slope=0.2)),
+                ('fc', torch.nn.Linear(3200, classes, bias=True))
+            ]))
         elif cfg_model == 'MLP':
             width = 1024
             model = torch.nn.Sequential(OrderedDict([
@@ -108,7 +128,7 @@ class ConvNet(torch.nn.Module):
     def __init__(self, width=32, num_classes=10, num_channels=3):
         """Init with width and num classes."""
         super().__init__()
-        self.model = torch.nn.Sequential(dict([
+        self.model = torch.nn.Sequential(OrderedDict([
             ('conv0', torch.nn.Conv2d(num_channels, 1 * width, kernel_size=3, padding=1)),
             ('bn0', torch.nn.BatchNorm2d(1 * width)),
             ('relu0', torch.nn.ReLU()),

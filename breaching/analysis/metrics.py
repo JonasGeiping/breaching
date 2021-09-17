@@ -56,9 +56,11 @@ def registered_psnr_compute(img_batch, ref_batch, factor=1.0):
                 psnr_vals[idx] = max(registered_psnr, default_psnr)
             else:
                 psnr_vals[idx] = default_psnr
-        except (TypeError, IndexError, RuntimeError):
+        except (TypeError, IndexError, RuntimeError, ValueError):
             # TypeError if RANSAC fails
             # IndexError if not enough matches are found
             # RunTimeError if ORB does not find enough features
+            # ValueError if empty match sequence
+            # This matching implementation fills me with joy
             psnr_vals[idx] = default_psnr
     return psnr_vals.mean()

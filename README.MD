@@ -16,6 +16,7 @@ Package Requirements:
 - `hydra-core` 1.1  [install from pip]
 - `scikit-image`
 - `lpips`  [install from pip]
+- `scipy`
 - in the future probably a cool FL package
 
-`scikit-image` and `lpips` are only imported during analysis.
+`scikit-image` and `lpips` are only imported during analysis. `scipy` only when ordering batched reconstruction

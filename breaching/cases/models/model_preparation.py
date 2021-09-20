@@ -39,7 +39,7 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
             block, layers = resnet_depths_to_config(int("".join(filter(str.isdigit, cfg_model))))
             model = ResNet(block, layers, channels, classes, stem='CIFAR', convolution_type='Standard',
                            nonlin='ReLU', norm='BatchNorm2d',
-                           downsample='C', width_per_group=64,
+                           downsample='B', width_per_group=64,
                            zero_init_residual=False)
         elif 'densenet' in cfg_model.lower():
             growth_rate, block_config, num_init_features = densenet_depths_to_config(

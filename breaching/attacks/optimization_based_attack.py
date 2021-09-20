@@ -38,8 +38,8 @@ class OptimizationBasedAttack(_BaseAttacker):
         candidate_solutions = []
         try:
             for trial in range(self.cfg.restarts.num_trials):
-                candidate_solutions += [self._run_trial(rec_model, shared_data, labels, stats, trial, dryrun)]
-                scores[trial] = self._score_trial(candidate_solutions[trial], labels, rec_model, shared_data)
+                candidate_solutions += [self._run_trial(rec_models, shared_data, labels, stats, trial, dryrun)]
+                scores[trial] = self._score_trial(candidate_solutions[trial], labels, rec_models, shared_data)
         except KeyboardInterrupt:
             print('Trial procedure manually interruped.')
             pass

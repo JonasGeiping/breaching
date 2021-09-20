@@ -6,7 +6,7 @@ import torch
 from collections import defaultdict
 import copy
 
-from .auxiliaries.additional_optimizers import GradualWarmupScheduler
+from ..common import optimizer_lookup
 
 class _BaseAttacker():
     """This is a template class for an attack."""
@@ -16,7 +16,6 @@ class _BaseAttacker():
         self.setup = setup
         self.model_template = copy.deepcopy(model)
         self.loss_fn = copy.deepcopy(loss_fn)
-
 
     def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
 
@@ -81,36 +80,10 @@ class _BaseAttacker():
         return candidate
 
     def _init_optimizer(self, candidate):
-        max_iterations = self.cfg.optim.max_iterations
-        optim_name = self.cfg.optim.optimizer
 
-        if optim_name == 'adam':
-            optimizer = torch.optim.Adam([candidate], lr=self.cfg.optim.step_size)
-        elif optim_name == 'momGD':
-            optimizer = torch.optim.SGD([candidate], lr=self.cfg.optim.step_size, momentum=0.9, nesterov=True)
-        elif optim_name == 'GD':
-            optimizer = torch.optim.SGD([candidate], lr=self.cfg.optim.step_size, momentum=0.0)
-        elif optim_name == 'L-BFGS':
-            optimizer = torch.optim.LBFGS([candidate], lr=self.cfg.optim.step_size)
-        else:
-            raise ValueError(f'Invalid optimizer {optim_name} given.')
-
-        if self.cfg.optim.step_size_decay == 'step-lr':
-
-            scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                             milestones=[max_iterations // 2.667, max_iterations // 1.6,
-                                                                         max_iterations // 1.142], gamma=0.1)
-        elif self.cfg.optim.step_size_decay == 'cosine-decay':
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, max_iterations, eta_min=0.0)
-        else:
-            scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[], gamma=1)
-
-        if self.cfg.optim.warmup > 0:
-            scheduler = GradualWarmupScheduler(optimizer, multiplier=1.0,
-                                               total_epoch=self.cfg.optim.warmup, after_scheduler=scheduler)
-
-        return optimizer, scheduler
-
+        optimizer, scheduler = optimizer_lookup([candidate], self.cfg.optim.optimizer, self.cfg.optim.step_size,
+                                                scheduler=self.cfg.optim.step_size_decay, warmup=self.cfg.optim.warmup,
+                                                max_iterations=self.cfg.optim.max_iterations)
 
     def _recover_label_information(self, user_data):
         raise NotImplementedError()

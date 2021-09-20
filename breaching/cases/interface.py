@@ -9,7 +9,7 @@ from .data import construct_dataloader
 from .models import construct_model
 
 from .users import UserSingleStep
-from .servers import HonestServer, MaliciousServer
+from .servers import HonestServer, MaliciousModelServer, MaliciousParameterServer
 
 
 def construct_case(cfg_case, setup, dryrun=False):
@@ -22,11 +22,12 @@ def construct_case(cfg_case, setup, dryrun=False):
     loss = torch.nn.CrossEntropyLoss()
 
     if cfg_case.server.name == 'honest_but_curious':
-        server = HonestServer(model, loss, cfg_case.server, cfg_case.num_queries, cfg_case.data,
-                              cfg_case.user.batch_norm_training)
+        server = HonestServer(model, loss, cfg_case, setup)
     elif cfg_case.server.name == 'malicious_model':
-        server = MaliciousServer(model, loss, cfg_case.server, cfg_case.num_queries, cfg_case.data,
-                                 cfg_case.user.batch_norm_training)
+        server = MaliciousModelServer(model, loss, cfg_case, setup)
+    elif cfg_case.server.name == 'malicious_parameters':
+        external_dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, 'training', dryrun=dryrun)
+        server = MaliciousParameterServer(model, loss, cfg_case, setup, external_data=external_dataloader)
     else:
         raise ValueError(f'Invalid server settings {cfg_case.server} given.')
 

@@ -78,3 +78,4 @@ class ImprintAttacker(AnalyticAttacker):
 
         reconstructed_data = dict(data=inputs, labels=labels)
         return reconstructed_data, stats
+    

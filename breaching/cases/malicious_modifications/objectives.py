@@ -1,6 +1,7 @@
 """Implement objective functions."""
 
 import torch
+import scipy.fft
 
 class DeepLayerRatioMatching(torch.nn.Module):
     """Recover inputs from the ratio of the given layers.
@@ -26,6 +27,7 @@ class DeepLayerRatioMatching(torch.nn.Module):
         maximal_batch_size = torch.div(torch.prod(torch.as_tensor(weight_shape)),
                                        torch.prod(torch.as_tensor(target_shape[1:])),
                                        rounding_mode='floor')
+        maximal_batch_size = torch.as_tensor(4)
         if maximal_batch_size < target_shape[0]:
             print(f'Reducing targeted batch size to {maximal_batch_size} due to layer shapes.')
             target_shape[0] = maximal_batch_size.item()
@@ -42,6 +44,10 @@ class DeepLayerRatioMatching(torch.nn.Module):
         differentiable_ratio = weight / (bias**2 + eps**2).sqrt() * bias.sign()
         inputs_prototype = differentiable_ratio.view(-1)[:self.target_block_size].reshape(self.target_shape)
 
-        final_loss = (inputs[:self.target_shape[0]] - inputs_prototype).pow(2).mean()
 
-        return inputs_prototype, final_loss, default_loss
+        input_frequencies = torch.as_tensor(scipy.fft.dctn(inputs.cpu().numpy(), axes=[2,3], norm='ortho'), device=inputs.device, dtype=inputs.dtype)
+        final_loss = (input_frequencies[:self.target_shape[0]] - inputs_prototype).pow(2).mean()
+
+        outputs = torch.as_tensor(scipy.fft.idctn(inputs_prototype.detach().cpu().numpy(), axes=[2,3], norm='ortho'), device=inputs.device, dtype=inputs.dtype)
+
+        return outputs, final_loss, default_loss

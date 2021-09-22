@@ -45,6 +45,8 @@ class RecoveryOptimizer():
 
         if self.cfg_optim.objective == 'deep-layer-ratio-matching':
             self.objective = DeepLayerRatioMatching(model, loss, cfg_optim.target_shape, cfg_optim.layers)
+        elif self.cfg_optim.objective == 'pixel-matching':
+            self.objective = PixelMatching(model, loss, cfg_optim.target_shape)
         else:
             raise ValueError(f'Invalid objective {self.cfg_optim.objective} given.')
         self.effective_batch_size = self.objective.target_shape[0]
@@ -106,7 +108,7 @@ class RecoveryOptimizer():
                         if not final_loss.isfinite():
                             raise ValueError('Nonfinite values introduced in param optimization!')
                 print(f'Block: {block} | Time: {time.time() - time_stamp:4.2f}|Obj:{final_loss.item():7.4f}|PSNR:{psnr:4.2f}')
-            print(f'|Iteration {iteration} | Time: {time.time() - time_stamp:4.2f}s | '
+            print(f'|Iteration {iteration:<4} | Time: {time.time() - time_stamp:4.2f}s | '
                   f'Objective: {step_final_loss / num_blocks / chunks_in_block:7.4f} | '
                   f'Data Loss: {step_default_loss / num_blocks / chunks_in_block:7.4f} | '
                   f'PSNR: {step_psnr / num_blocks / chunks_in_block:4.2f} |')

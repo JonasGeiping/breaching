@@ -18,7 +18,7 @@ def construct_case(cfg_case, setup, dryrun=False):
     # Load multiple splits only if necessary
     # So that I don't need to have the ImageNet training set on my laptop:
     dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, cfg_case.examples_from_split, dryrun=dryrun)
-    model = construct_model(cfg_case.model, cfg_case.data, pretrained=cfg_case.server.model_state == 'trained')
+    model = construct_model(cfg_case.model, cfg_case.data, pretrained='trained' in cfg_case.server.model_state)
     loss = torch.nn.CrossEntropyLoss()
 
     if cfg_case.server.name == 'honest_but_curious':

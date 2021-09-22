@@ -1,7 +1,8 @@
 """Implement objective functions."""
 
 import torch
-import scipy.fft
+# import scipy.fft
+
 
 class DeepLayerRatioMatching(torch.nn.Module):
     """Recover inputs from the ratio of the given layers.
@@ -13,7 +14,6 @@ class DeepLayerRatioMatching(torch.nn.Module):
     def __init__(self, model, loss, target_shape=(64, 3, 32, 32), layers=['layer2.0.conv2', 'layer2.0.bn2']):
         """Enforce that input data matches this gradient vector."""
         super().__init__()
-        self.model = model
         self.loss = loss
 
         for idx, (name, val) in enumerate(model.named_parameters()):
@@ -33,21 +33,60 @@ class DeepLayerRatioMatching(torch.nn.Module):
             target_shape[0] = maximal_batch_size.item()
         self.target_block_size = torch.prod(torch.as_tensor(target_shape))
         self.target_shape = list(target_shape)
-        self.decoder = torch.nn.Linear(self.target_block_size, self.target_block_size)
+        # self.decoder = torch.nn.Linear(self.target_block_size, self.target_block_size)
 
-    def forward(self, inputs, labels, eps=1e-4):
-        default_loss = self.loss(self.model(inputs), labels)
-        grads = torch.autograd.grad(default_loss, self.model.parameters(), create_graph=True)
+    def forward(self, model, inputs, labels, eps=1e-4):
+        default_loss = self.loss(model(inputs), labels)
+        grads = torch.autograd.grad(default_loss, model.parameters(), create_graph=True)
         # maybe need to guard against zero here in a smart way:
         weight = grads[self.weight_idx]
         bias = grads[self.bias_idx][:, None, None, None]
         differentiable_ratio = weight / (bias**2 + eps**2).sqrt() * bias.sign()
-        inputs_prototype = self.decoder(differentiable_ratio.view(-1)[:self.target_block_size]).reshape(self.target_shape)
+        inputs_prototype = differentiable_ratio.view(-1)[:self.target_block_size].reshape(self.target_shape)
 
 
         # input_frequencies = torch.as_tensor(scipy.fft.dctn(inputs.cpu().numpy(), axes=[2,3], norm='ortho'), device=inputs.device, dtype=inputs.dtype)
         final_loss = (inputs[:self.target_shape[0]] - inputs_prototype).pow(2).mean()
         outputs = inputs_prototype
-        # outputs = torch.as_tensor(scipy.fft.idctn(inputs_prototype.detach().cpu().numpy(), axes=[2,3], norm='ortho'), device=inputs.device, dtype=inputs.dtype)
+        # outputs = torch.as_tensor(scipy.fft.idctn(inputs_prototype.detach().cpu().numpy(), axes=[2, 3], norm='ortho'),
+        #                           device=inputs.device, dtype=inputs.dtype)
+        outputs = inputs_prototype
+
+        return outputs, final_loss, default_loss
+
+
+class PixelMatching(torch.nn.Module):
+    """Recover inputs on a per-pixel basis from gradient information.
+
+    By default a random subset of gradient positions is declared to return input indices.
+    """
+
+    def __init__(self, model, loss, target_shape=(64, 3, 32, 32)):
+        """Enforce that input data matches this gradient vector."""
+        super().__init__()
+        self.loss = loss
+
+        model_parameter_vector = torch.stack([p.view(-1) for p in model.parameters()])
+        self.target_block_size = torch.prod(torch.as_tensor(target_shape))
+        self.target_shape = list(target_shape)
+
+        self.locations = torch.multinomial(torch.ones_like(model_parameter_vector),   # could put more weight on later layers?
+                                           self.target_block_size, replacement=False)
+        self.scale = torch.nn.Parameter(model_parameter_vector.new_ones(self.target_block_size))
+
+    def forward(self, model, inputs, labels):
+        default_loss = self.loss(model(inputs), labels)
+        grads = torch.autograd.grad(default_loss, model.parameters(), create_graph=True)
+
+        grad_vec_subset = torch.stack([g.view(-1) for g in grads])[self.locations]
+        inputs_prototype = self.scale(grad_vec_subset).reshape(self.target_shape)
+
+        # inputs = torch.as_tensor(scipy.fft.dctn(inputs.cpu().numpy(), axes=[2, 3], norm='ortho'),
+        #                         device=inputs.device, dtype=inputs.dtype)
+        final_loss = (inputs[:self.target_shape[0]] - inputs_prototype).pow(2).mean()
+
+        # outputs = torch.as_tensor(scipy.fft.idctn(inputs_prototype.detach().cpu().numpy(), axes=[2, 3], norm='ortho'),
+        #                           device=inputs.device, dtype=inputs.dtype)
+        outputs = inputs_prototype
 
         return outputs, final_loss, default_loss

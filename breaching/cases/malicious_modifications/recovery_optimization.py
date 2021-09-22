@@ -29,7 +29,7 @@ class RecoveryOptimizer():
         """Initialize with info from the server. Data could be optional in the future."""
         self.model = model.to(**setup)
 
-        self.model.train()
+        # self.model.train()
         self.loss = loss
         self.setup = setup
 
@@ -44,7 +44,7 @@ class RecoveryOptimizer():
         self.feature_shapes = self._introspect_model()
 
         if self.cfg_optim.objective == 'deep-layer-ratio-matching':
-            self.objective = DeepLayerRatioMatching(model, loss, cfg_optim.target_shape, cfg_optim.layers)
+            self.objective = DeepLayerRatioMatching(model, loss, cfg_optim.target_shape, cfg_optim.layers).to(**setup)
         else:
             raise ValueError(f'Invalid objective {self.cfg_optim.objective} given.')
         self.effective_batch_size = self.objective.target_shape[0]
@@ -74,7 +74,7 @@ class RecoveryOptimizer():
     def optimize_recovery(self):
         """Run an optimization-based algorithm to minimize the target objective over the given real or synth. data."""
 
-        optimizer, scheduler = optimizer_lookup(self.model.parameters(), **self.cfg_optim.optim)
+        optimizer, scheduler = optimizer_lookup([*self.model.parameters(), *self.objective.parameters()], **self.cfg_optim.optim)
         num_blocks = len(self.dataloader)
         for iteration in range(self.cfg_optim.optim.max_iterations):
             step_final_loss, step_default_loss, step_psnr = 0, 0, 0

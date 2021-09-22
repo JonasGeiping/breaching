@@ -33,7 +33,7 @@ class DeepLayerRatioMatching(torch.nn.Module):
             target_shape[0] = maximal_batch_size.item()
         self.target_block_size = torch.prod(torch.as_tensor(target_shape))
         self.target_shape = list(target_shape)
-
+        self.decoder = torch.nn.Linear(self.target_block_size, self.target_block_size)
 
     def forward(self, inputs, labels, eps=1e-4):
         default_loss = self.loss(self.model(inputs), labels)
@@ -42,12 +42,12 @@ class DeepLayerRatioMatching(torch.nn.Module):
         weight = grads[self.weight_idx]
         bias = grads[self.bias_idx][:, None, None, None]
         differentiable_ratio = weight / (bias**2 + eps**2).sqrt() * bias.sign()
-        inputs_prototype = differentiable_ratio.view(-1)[:self.target_block_size].reshape(self.target_shape)
+        inputs_prototype = self.decoder(differentiable_ratio.view(-1)[:self.target_block_size]).reshape(self.target_shape)
 
 
-        input_frequencies = torch.as_tensor(scipy.fft.dctn(inputs.cpu().numpy(), axes=[2,3], norm='ortho'), device=inputs.device, dtype=inputs.dtype)
-        final_loss = (input_frequencies[:self.target_shape[0]] - inputs_prototype).pow(2).mean()
-
-        outputs = torch.as_tensor(scipy.fft.idctn(inputs_prototype.detach().cpu().numpy(), axes=[2,3], norm='ortho'), device=inputs.device, dtype=inputs.dtype)
+        # input_frequencies = torch.as_tensor(scipy.fft.dctn(inputs.cpu().numpy(), axes=[2,3], norm='ortho'), device=inputs.device, dtype=inputs.dtype)
+        final_loss = (inputs[:self.target_shape[0]] - inputs_prototype).pow(2).mean()
+        outputs = inputs_prototype
+        # outputs = torch.as_tensor(scipy.fft.idctn(inputs_prototype.detach().cpu().numpy(), axes=[2,3], norm='ortho'), device=inputs.device, dtype=inputs.dtype)
 
         return outputs, final_loss, default_loss

@@ -8,6 +8,7 @@ import copy
 
 from ..common import optimizer_lookup
 
+
 class _BaseAttacker():
     """This is a template class for an attack."""
 
@@ -81,9 +82,9 @@ class _BaseAttacker():
 
     def _init_optimizer(self, candidate):
 
-        optimizer, scheduler = optimizer_lookup([candidate], self.cfg.optim.optimizer, self.cfg.optim.step_size,
-                                                scheduler=self.cfg.optim.step_size_decay, warmup=self.cfg.optim.warmup,
-                                                max_iterations=self.cfg.optim.max_iterations)
+        return optimizer_lookup([candidate], self.cfg.optim.optimizer, self.cfg.optim.step_size,
+                                scheduler=self.cfg.optim.step_size_decay, warmup=self.cfg.optim.warmup,
+                                max_iterations=self.cfg.optim.max_iterations)
 
     def _recover_label_information(self, user_data):
         raise NotImplementedError()

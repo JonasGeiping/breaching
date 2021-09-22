@@ -80,9 +80,12 @@ in SBATCH_PROTOTYPE, replacing them with your personal choice of environment.
 - Count total number of submitted jobs for some user:
     sacct -u tomg --start=2019-09-01 --end=now | grep batch > jobcount &&  wc -l jobcount
 - Show quality of service information:
-    sacctmgr show qos format=name,MaxJobsPU,MaxTRES%35
+    sacctmgr show qos format=name,MaxJobsPU,MaxTRES%35,MaxWallDurationPerJob
 - Show node information (setup, CPUs, GPUs, OS):
     scontrol show node
+-Print detailed information about (everyone's) recent jobs:
+    sacct --allusers --format=User,JobID,QOS,start,end,time,ReqMem,ncpus,nodelist,AllocTRES%35
+
 -----------------------------------------------------------------------------------------------------------------------
 
 """

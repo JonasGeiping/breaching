@@ -5,7 +5,7 @@ attack_type: optimization   # analytic, equation solver
 
 objective:
   type: euclidean
-  scale: 2555.7032  # This is 0.0001 from the original paper times the number of parameters to recover the correct scaling
+  scale: 0.0001
 
 restarts:
   num_trials: 1

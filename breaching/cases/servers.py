@@ -47,7 +47,8 @@ class HonestServer():
                     if isinstance(module, torch.nn.BatchNorm2d):
                         module.weight.data = module.running_var.data.clone()
                         module.bias.data = module.running_mean.data.clone() + 10
-                    
+                    if isinstance(module, torch.nn.Conv2d) and hasattr(module, 'bias'):
+                        module.bias.data += 10
             elif model_state == 'orthogonal':
                 # reinit model with orthogonal parameters:
                 if hasattr(module, 'reset_parameters'):

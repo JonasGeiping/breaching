@@ -5,7 +5,7 @@ attack_type: optimization   # analytic, equation solver
 
 objective:
   type: cosine-similarity
-  scale: 1.0
+  scale: 1.0  # need to have a much smaller scale like 0.0001 for euclidean objectives
 
 restarts:
   num_trials: 1

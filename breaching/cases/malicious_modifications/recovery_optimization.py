@@ -7,6 +7,7 @@ import time
 from ...common import optimizer_lookup
 
 from .objectives import DeepLayerRatioMatching, PixelMatching
+from .decoders import AmygdalaDecoder
 from ...analysis.metrics import psnr_compute
 
 class RecoveryOptimizer():
@@ -47,6 +48,8 @@ class RecoveryOptimizer():
             self.objective = DeepLayerRatioMatching(model, loss, cfg_optim.target_shape, cfg_optim.layers)
         elif self.cfg_optim.objective == 'pixel-matching':
             self.objective = PixelMatching(model, loss, cfg_optim.target_shape)
+        elif self.cfg_optim.objective == 'amygdala':
+            self.objective = AmygdalaDecoder(model, loss, cfg_optim.target_shape)
         else:
             raise ValueError(f'Invalid objective {self.cfg_optim.objective} given.')
         self.objective.to(**setup)

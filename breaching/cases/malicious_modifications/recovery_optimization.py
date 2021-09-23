@@ -92,12 +92,13 @@ class RecoveryOptimizer():
                 input_chunks = torch.split(inputs, self.effective_batch_size, dim=0)[:chunks_in_block]
                 label_chunks = torch.split(labels, self.effective_batch_size, dim=0)[:chunks_in_block]
 
+                # Average loss over effective batch size:
                 for sub_idx, (input_chunk, label_chunk) in enumerate(zip(input_chunks, label_chunks)):
 
                     outputs, final_loss, default_loss = self.objective(self.model, input_chunk, label_chunk)
                     final_loss.backward()
                     # [p.grad.sign() for p in self.model.parameters()]
-                    optimizer.step()
+
                     with torch.no_grad():
                         inputs_candidate = outputs.detach().mul(self.ds).add(self.dm).clamp_(0, 1)
                         reference_candidate = input_chunk.detach().mul(self.ds).add(self.dm).clamp_(0, 1)
@@ -108,6 +109,8 @@ class RecoveryOptimizer():
 
                         if not final_loss.isfinite():
                             raise ValueError('Nonfinite values introduced in param optimization!')
+                [p.grad.div_(chunks_in_block) for p in self.model.parameters()]
+                optimizer.step()
                 print(f'Block: {block} | Time: {time.time() - time_stamp:4.2f}|Obj:{final_loss.item():7.4f}|PSNR:{psnr:4.2f}')
             print(f'|Iteration {iteration:<4} | Time: {time.time() - time_stamp:4.2f}s | '
                   f'Objective: {step_final_loss / num_blocks / chunks_in_block:7.4f} | '

@@ -66,27 +66,22 @@ class PixelMatching(torch.nn.Module):
         super().__init__()
         self.loss = loss
 
-        model_parameter_vector = torch.stack([p.view(-1) for p in model.parameters()])
+        model_parameter_vector = torch.cat([p.view(-1) for p in model.parameters()])
         self.target_block_size = torch.prod(torch.as_tensor(target_shape))
         self.target_shape = list(target_shape)
 
-        self.locations = torch.multinomial(torch.ones_like(model_parameter_vector),   # could put more weight on later layers?
-                                           self.target_block_size, replacement=False)
+        self.locations = torch.argsort(torch.rand_like(model_parameter_vector))[:self.target_block_size]  # fast than multinomial
         self.scale = torch.nn.Parameter(model_parameter_vector.new_ones(self.target_block_size))
+        self.bias = torch.nn.Parameter(model_parameter_vector.new_zeros(self.target_block_size))
 
     def forward(self, model, inputs, labels):
         default_loss = self.loss(model(inputs), labels)
         grads = torch.autograd.grad(default_loss, model.parameters(), create_graph=True)
 
-        grad_vec_subset = torch.stack([g.view(-1) for g in grads])[self.locations]
-        inputs_prototype = self.scale(grad_vec_subset).reshape(self.target_shape)
+        grad_vec_subset = torch.cat([g.view(-1) for g in grads])[self.locations]
+        inputs_prototype = (self.scale * grad_vec_subset + self.bias).reshape(self.target_shape)
 
-        # inputs = torch.as_tensor(scipy.fft.dctn(inputs.cpu().numpy(), axes=[2, 3], norm='ortho'),
-        #                         device=inputs.device, dtype=inputs.dtype)
         final_loss = (inputs[:self.target_shape[0]] - inputs_prototype).pow(2).mean()
-
-        # outputs = torch.as_tensor(scipy.fft.idctn(inputs_prototype.detach().cpu().numpy(), axes=[2, 3], norm='ortho'),
-        #                           device=inputs.device, dtype=inputs.dtype)
         outputs = inputs_prototype
 
         return outputs, final_loss, default_loss

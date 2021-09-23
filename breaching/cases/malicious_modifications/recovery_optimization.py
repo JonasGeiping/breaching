@@ -6,7 +6,7 @@ import time
 
 from ...common import optimizer_lookup
 
-from .objectives import DeepLayerRatioMatching
+from .objectives import DeepLayerRatioMatching, PixelMatching
 from ...analysis.metrics import psnr_compute
 
 class RecoveryOptimizer():
@@ -94,7 +94,7 @@ class RecoveryOptimizer():
 
                 for sub_idx, (input_chunk, label_chunk) in enumerate(zip(input_chunks, label_chunks)):
 
-                    outputs, final_loss, default_loss = self.objective(model, input_chunk, label_chunk)
+                    outputs, final_loss, default_loss = self.objective(self.model, input_chunk, label_chunk)
                     final_loss.backward()
                     # [p.grad.sign() for p in self.model.parameters()]
                     optimizer.step()

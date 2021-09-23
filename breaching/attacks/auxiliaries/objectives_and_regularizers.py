@@ -154,7 +154,7 @@ class TotalVariation(torch.nn.Module):
                                            padding=1, dilation=1, groups=self.groups)
         squares = diffs.abs().pow(self.inner_exp)
         squared_sums = (squares[:, 0::2] + squares[:, 1::2] + self.eps).pow(self.outer_exp)
-        return squared_sums.mean()
+        return squared_sums.mean() * self.scale
 
 
 class OrthogonalityRegularization(torch.nn.Module):

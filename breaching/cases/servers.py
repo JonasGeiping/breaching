@@ -42,6 +42,13 @@ class HonestServer():
                 pass  # model was already loaded as pretrained model
             elif model_state == 'moco':
                 pass  # will be loaded below
+            elif model_state == 'linearized':
+                with torch.no_grad():
+                    if isinstance(module, torch.nn.BatchNorm2d):
+                        module.weight.data = module.running_var.data.clone()
+                        module.bias.data = module.running_mean.data.clone() + 10
+                    if isinstance(module, torch.nn.Conv2d) and hasattr(module, 'bias'):
+                        module.bias.data += 10
             elif model_state == 'orthogonal':
                 # reinit model with orthogonal parameters:
                 if hasattr(module, 'reset_parameters'):

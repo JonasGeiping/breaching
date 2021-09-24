@@ -2,9 +2,12 @@
 
 import torch
 import time
+
+
 from ...common import optimizer_lookup
 
-from .objectives import DeepLayerRatioMatching
+from .objectives import DeepLayerRatioMatching, PixelMatching
+from .decoders import AmygdalaDecoder
 from ...analysis.metrics import psnr_compute
 
 class RecoveryOptimizer():
@@ -25,7 +28,9 @@ class RecoveryOptimizer():
     def __init__(self, model, loss, cfg_data, cfg_impl, cfg_optim,
                  setup=dict(dtype=torch.float, device=torch.device('cpu')), external_data=None):
         """Initialize with info from the server. Data could be optional in the future."""
-        self.model = model
+        self.model = model.to(**setup)
+
+        # self.model.train()
         self.loss = loss
         self.setup = setup
 
@@ -41,8 +46,13 @@ class RecoveryOptimizer():
 
         if self.cfg_optim.objective == 'deep-layer-ratio-matching':
             self.objective = DeepLayerRatioMatching(model, loss, cfg_optim.target_shape, cfg_optim.layers)
+        elif self.cfg_optim.objective == 'pixel-matching':
+            self.objective = PixelMatching(model, loss, cfg_optim.target_shape)
+        elif self.cfg_optim.objective == 'amygdala':
+            self.objective = AmygdalaDecoder(model, loss, cfg_optim.target_shape)
         else:
             raise ValueError(f'Invalid objective {self.cfg_optim.objective} given.')
+        self.objective.to(**setup)
         self.effective_batch_size = self.objective.target_shape[0]
 
     def _introspect_model(self):
@@ -70,9 +80,8 @@ class RecoveryOptimizer():
     def optimize_recovery(self):
         """Run an optimization-based algorithm to minimize the target objective over the given real or synth. data."""
 
-        optimizer, scheduler = optimizer_lookup(self.model.parameters(), **self.cfg_optim.optim)
+        optimizer, scheduler = optimizer_lookup([*self.model.parameters(), *self.objective.parameters()], **self.cfg_optim.optim)
         num_blocks = len(self.dataloader)
-
         for iteration in range(self.cfg_optim.optim.max_iterations):
             step_final_loss, step_default_loss, step_psnr = 0, 0, 0
             time_stamp = time.time()
@@ -86,22 +95,27 @@ class RecoveryOptimizer():
                 input_chunks = torch.split(inputs, self.effective_batch_size, dim=0)[:chunks_in_block]
                 label_chunks = torch.split(labels, self.effective_batch_size, dim=0)[:chunks_in_block]
 
+                # Average loss over effective batch size:
                 for sub_idx, (input_chunk, label_chunk) in enumerate(zip(input_chunks, label_chunks)):
 
-                    outputs, final_loss, default_loss = self.objective(input_chunk, label_chunk)
+                    outputs, final_loss, default_loss = self.objective(self.model, input_chunk, label_chunk)
                     final_loss.backward()
-                    optimizer.step()
+                    # [p.grad.sign() for p in self.model.parameters()]
+
                     with torch.no_grad():
                         inputs_candidate = outputs.detach().mul(self.ds).add(self.dm).clamp_(0, 1)
                         reference_candidate = input_chunk.detach().mul(self.ds).add(self.dm).clamp_(0, 1)
-                        step_psnr += psnr_compute(inputs_candidate, reference_candidate, batched=False, factor=1.0)
+                        psnr = psnr_compute(inputs_candidate, reference_candidate, batched=False, factor=1.0)
+                        step_psnr += psnr
                         step_final_loss += final_loss.detach()
                         step_default_loss += default_loss.detach()
 
                         if not final_loss.isfinite():
                             raise ValueError('Nonfinite values introduced in param optimization!')
-
-            print(f'|Iteration {iteration} | Time: {time.time() - time_stamp:4.2f}s | '
+                [p.grad.div_(chunks_in_block) for p in self.model.parameters()]
+                optimizer.step()
+                print(f'Block: {block} | Time: {time.time() - time_stamp:4.2f}|Obj:{final_loss.item():7.4f}|PSNR:{psnr:4.2f}')
+            print(f'|Iteration {iteration:<4} | Time: {time.time() - time_stamp:4.2f}s | '
                   f'Objective: {step_final_loss / num_blocks / chunks_in_block:7.4f} | '
                   f'Data Loss: {step_default_loss / num_blocks / chunks_in_block:7.4f} | '
                   f'PSNR: {step_psnr / num_blocks / chunks_in_block:4.2f} |')

@@ -4,6 +4,7 @@
 defaults:
   - case: 2_single_imagenet
   - attack: invertinggradients
+  - _self_
 
 
   - analysis: none

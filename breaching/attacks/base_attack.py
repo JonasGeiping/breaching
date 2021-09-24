@@ -8,6 +8,7 @@ import copy
 
 from ..common import optimizer_lookup
 
+
 class _BaseAttacker():
     """This is a template class for an attack."""
 

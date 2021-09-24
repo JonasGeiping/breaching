@@ -4,8 +4,13 @@ type: invertinggradients
 attack_type: optimization   # analytic, equation solver
 
 objective:
+<<<<<<< HEAD
   type: 'cosine-similarity'
   scale: 1.0
+=======
+  type: cosine-similarity
+  scale: 1.0  # need to have a much smaller scale like 0.0001 for euclidean objectives
+>>>>>>> 267bbb568ea676b24d7c8a22139124619c61a1b4
 
 restarts:
   num_trials: 1

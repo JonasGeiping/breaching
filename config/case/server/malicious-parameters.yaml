@@ -3,12 +3,12 @@ name: malicious_parameters
 model_state: trained  # This is used as initial state, but can be changed by the server
 param_modification:
   optimization:
-    objective: deep-layer-ratio-matching
+    objective: pixel-matching
     optim:
       optim_name: adam
       step_size: 0.1
       scheduler: cosine-decay
-      warmup: 5
+      warmup: 0
       max_iterations: 300
     layers:  # Only used as target for ratio matching
       - layers.1.0.conv1  #ImageNet, ResNet50: Try layer2.0.conv2

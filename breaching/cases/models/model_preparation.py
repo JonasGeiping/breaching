@@ -66,6 +66,8 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
         elif 'nfnet' in cfg_model:
             model = NFNet(channels, classes, variant='F0', stochdepth_rate=0.25, alpha=0.2, se_ratio=0.5,
                           activation='ReLU', stem='CIFAR', use_dropout=True)
+        elif 'convnetsmall' == cfg_model.lower():
+            model = ConvNetSmall(width=64, num_channels=channels, num_classes=classes)
         elif 'convnet' == cfg_model.lower():
             model = ConvNet(width=64, num_channels=channels, num_classes=classes)
         elif 'convnet_beyond' == cfg_model.lower():
@@ -119,6 +121,36 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
             raise ValueError('Model could not be found.')
 
     return model
+
+
+class ConvNetSmall(torch.nn.Module):
+    """ConvNet without BN."""
+
+    def __init__(self, width=32, num_classes=10, num_channels=3):
+        """Init with width and num classes."""
+        super().__init__()
+        self.model = torch.nn.Sequential(OrderedDict([
+            ('conv0', torch.nn.Conv2d(num_channels, 1 * width, kernel_size=3, padding=1)),
+            ('relu0', torch.nn.ReLU()),
+
+            ('conv1', torch.nn.Conv2d(1 * width, 2 * width, kernel_size=3, padding=1)),
+            ('relu1', torch.nn.ReLU()),
+
+            ('conv2', torch.nn.Conv2d(2 * width, 4 * width, kernel_size=3, padding=1)),
+            ('relu2', torch.nn.ReLU()),
+
+            ('pool0', torch.nn.MaxPool2d(3)),
+
+            ('conv3', torch.nn.Conv2d(4 * width, 4 * width, kernel_size=3, padding=1)),
+            ('relu3', torch.nn.ReLU()),
+
+            ('pool1', torch.nn.MaxPool2d(3)),
+            ('flatten', torch.nn.Flatten()),
+            ('linear', torch.nn.Linear(36 * width, num_classes))
+        ]))
+
+    def forward(self, input):
+        return self.model(input)
 
 class ConvNet(torch.nn.Module):
     """ConvNetBN."""

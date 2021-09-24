@@ -140,3 +140,18 @@ class MaliciousParameterServer(HonestServer):
 
         # Then do fun things:
         self.parameter_algorithm.optimize_recovery()
+
+class PathParameterServer(MaliciousParameterServer):
+    
+    def prepare_model(self, num_paths=8):
+        path_parameters(self.model, num_paths=num_paths)
+        feats = []
+        self.model.train
+        for i, (inputs, target) in enumerate(self.external_dataloader):
+            inputs = inputs.cuda()
+            outs, feat = model(inputs)
+            feats.append(feat.detach().mean(dim=-1).cpu())
+
+        mu, sigma = torch.std_mean(torch.cat(feats))
+        set_linear_layer(model, mu.item(), sigma.item(), num_paths=num_paths, num_bins=num_paths)
+        

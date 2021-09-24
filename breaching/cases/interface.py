@@ -21,13 +21,17 @@ def construct_case(cfg_case, setup, dryrun=False):
     model = construct_model(cfg_case.model, cfg_case.data, pretrained='trained' in cfg_case.server.model_state)
     loss = torch.nn.CrossEntropyLoss()
 
-    if cfg_case.server.name == 'honest_but_curious':
-        server = HonestServer(model, loss, cfg_case, setup)
-    elif cfg_case.server.name == 'malicious_model':
-        server = MaliciousModelServer(model, loss, cfg_case, setup)
-    elif cfg_case.server.name == 'malicious_parameters':
+    if cfg_case.server.has_external_data:
         external_dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, 'training', dryrun=dryrun)
-        server = MaliciousParameterServer(model, loss, cfg_case, setup, external_data=external_dataloader)
+    else:
+        external_dataloader = None
+
+    if cfg_case.server.name == 'honest_but_curious':
+        server = HonestServer(model, loss, cfg_case, setup, external_dataloader=external_dataloader)
+    elif cfg_case.server.name == 'malicious_model':
+        server = MaliciousModelServer(model, loss, cfg_case, setup, external_dataloader=external_dataloader)
+    elif cfg_case.server.name == 'malicious_parameters':
+        server = MaliciousParameterServer(model, loss, cfg_case, setup, external_dataloader=external_dataloader)
     else:
         raise ValueError(f'Invalid server settings {cfg_case.server} given.')
 

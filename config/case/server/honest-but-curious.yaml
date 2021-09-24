@@ -1,3 +1,4 @@
 
 name: honest_but_curious
 model_state: trained
+has_external_data: False

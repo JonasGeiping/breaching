@@ -4,7 +4,7 @@ type: invertinggradients
 attack_type: optimization   # analytic, equation solver
 
 objective:
-  type: cosine-similarity
+  type: 'cosine-similarity'
   scale: 1.0
 
 restarts:

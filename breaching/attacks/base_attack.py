@@ -84,6 +84,8 @@ class _BaseAttacker():
         optimizer, scheduler = optimizer_lookup([candidate], self.cfg.optim.optimizer, self.cfg.optim.step_size,
                                                 scheduler=self.cfg.optim.step_size_decay, warmup=self.cfg.optim.warmup,
                                                 max_iterations=self.cfg.optim.max_iterations)
+        
+        return optimizer, scheduler
 
     def _recover_label_information(self, user_data):
         raise NotImplementedError()

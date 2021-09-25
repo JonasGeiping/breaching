@@ -9,6 +9,7 @@ from .resnets import ResNet, resnet_depths_to_config
 from .densenets import DenseNet, densenet_depths_to_config
 from .nfnets import NFNet
 from .vgg import VGG
+from .pathnets import * # Will clean up later
 
 def construct_model(cfg_model, cfg_data, pretrained=False):
     """Construct the neural net that is used."""
@@ -117,6 +118,15 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
                 ('linear2', torch.nn.Linear(width, width)),
                 ('relu2', torch.nn.ReLU()),
                 ('linear3', torch.nn.Linear(width, classes))]))
+        elif 'pathnet' in cfg_model.lower():
+            if cfg_model.lower() == 'pathnet18':
+                model = PathNet18()
+            elif cfg_model.lower() == 'pathnet34':
+                model = PathNet34()
+            elif cfg_model.lower() == 'pathnet50':
+                model = PathNet50()
+            else:
+                raise NotImplementedError("Haven't implemented more pathnets.")
         else:
             raise ValueError('Model could not be found.')
 

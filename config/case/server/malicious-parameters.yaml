@@ -18,3 +18,4 @@ param_modification:
       - 3
       - 32
       - 32
+has_external_data: True

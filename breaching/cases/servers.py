@@ -15,7 +15,7 @@ from .malicious_modifications import ImprintBlock, RecoveryOptimizer
 class HonestServer():
     """Implement an honest server protocol."""
 
-    def __init__(self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
+    def __init__(self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device('cpu')), external_dataloader=None):
         """Inialize the server settings."""
         self.model = model
         if cfg_case.user.batch_norm_training:
@@ -29,6 +29,8 @@ class HonestServer():
 
         self.cfg_data = cfg_case.data  # Data configuration has to be shared across all parties to keep preprocessing consistent
         self.cfg_server = cfg_case.server
+
+        self.external_dataloader = external_dataloader
 
         self.secrets = dict()  # Should be nothing in here
 
@@ -92,9 +94,9 @@ class HonestServer():
 class MaliciousModelServer(HonestServer):
     """Implement a malicious server protocol."""
 
-    def __init__(self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
+    def __init__(self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device('cpu')), external_dataloader=None):
         """Inialize the server settings."""
-        super().__init__(model, loss, cfg_case, setup)
+        super().__init__(model, loss, cfg_case, setup, external_dataloader)
         self.model_state = 'custom'  # Do not mess with model parameters no matter what init is agreed upon
         self.secrets = dict()
 
@@ -118,16 +120,16 @@ class MaliciousModelServer(HonestServer):
 class MaliciousParameterServer(HonestServer):
     """Implement a malicious server protocol."""
 
-    def __init__(self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device('cpu')), external_data=None):
+    def __init__(self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device('cpu')), external_dataloader=None):
         """Inialize the server settings."""
-        super().__init__(model, loss, cfg_case, setup)
+        super().__init__(model, loss, cfg_case, setup, external_dataloader)
         self.model_state = 'custom'  # Do not mess with model parameters no matter what init is agreed upon
         self.secrets = dict()
 
         if 'optimization' in cfg_case.server.param_modification.keys():
             self.parameter_algorithm = RecoveryOptimizer(self.model, self.loss, self.cfg_data, cfg_case.impl,
                                                          cfg_optim=cfg_case.server.param_modification['optimization'],
-                                                         setup=setup, external_data=external_data)
+                                                         setup=setup, external_data=external_dataloader)
             self.secrets['layers'] = cfg_case.server.param_modification.optimization.layers
 
     def prepare_model(self):
@@ -140,3 +142,18 @@ class MaliciousParameterServer(HonestServer):
 
         # Then do fun things:
         self.parameter_algorithm.optimize_recovery()
+
+class PathParameterServer(MaliciousParameterServer):
+    
+    def prepare_model(self, num_paths=8):
+        path_parameters(self.model, num_paths=num_paths)
+        feats = []
+        self.model.train
+        for i, (inputs, target) in enumerate(self.external_dataloader):
+            inputs = inputs.cuda()
+            outs, feat = model(inputs)
+            feats.append(feat.detach().mean(dim=-1).cpu())
+
+        mu, sigma = torch.std_mean(torch.cat(feats))
+        set_linear_layer(model, mu.item(), sigma.item(), num_paths=num_paths, num_bins=num_paths)
+        

@@ -143,8 +143,9 @@ class MaliciousParameterServer(HonestServer):
         # Then do fun things:
         self.parameter_algorithm.optimize_recovery()
 
+
 class PathParameterServer(MaliciousParameterServer):
-    
+
     def prepare_model(self, num_paths=8):
         path_parameters(self.model, num_paths=num_paths)
         feats = []
@@ -156,4 +157,3 @@ class PathParameterServer(MaliciousParameterServer):
 
         mu, sigma = torch.std_mean(torch.cat(feats))
         set_linear_layer(model, mu.item(), sigma.item(), num_paths=num_paths, num_bins=num_paths)
-        

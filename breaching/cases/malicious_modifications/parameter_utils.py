@@ -59,9 +59,5 @@ def _make_average_layer(weight, num_paths):
 
 
 def _make_linear_biases(bias, bins):
-    bins = bins[0]
-    new_biases = torch.zeros_like(bias.data)
-    for i in range(min(len(bins), len(new_biases))):
-        new_biases[i] = bins[i]
     with torch.no_grad():
-        bias.data = new_biases
+        bias.data = torch.as_tensor(bins, device=bias.device, dtype=bias.dtype)

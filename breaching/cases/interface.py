@@ -9,7 +9,7 @@ from .data import construct_dataloader
 from .models import construct_model
 
 from .users import UserSingleStep
-from .servers import HonestServer, MaliciousModelServer, MaliciousParameterServer
+from .servers import HonestServer, MaliciousModelServer, MaliciousParameterServer, PathParameterServer
 
 
 def construct_case(cfg_case, setup, dryrun=False):
@@ -20,7 +20,6 @@ def construct_case(cfg_case, setup, dryrun=False):
     dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, cfg_case.examples_from_split, dryrun=dryrun)
     model = construct_model(cfg_case.model, cfg_case.data, pretrained='trained' in cfg_case.server.model_state)
     loss = torch.nn.CrossEntropyLoss()
-
     if cfg_case.server.has_external_data:
         external_dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, 'training', dryrun=dryrun)
     else:
@@ -32,6 +31,8 @@ def construct_case(cfg_case, setup, dryrun=False):
         server = MaliciousModelServer(model, loss, cfg_case, setup, external_dataloader=external_dataloader)
     elif cfg_case.server.name == 'malicious_parameters':
         server = MaliciousParameterServer(model, loss, cfg_case, setup, external_dataloader=external_dataloader)
+    elif cfg_case.server.name == 'path_parameters':
+        server = PathParameterServer(model, loss, cfg_case, setup, external_dataloader=external_dataloader)
     else:
         raise ValueError(f'Invalid server settings {cfg_case.server} given.')
 

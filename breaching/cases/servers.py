@@ -12,6 +12,8 @@ Each entry in the list of payloads contains at least the keys "parameters" and "
 import torch
 from torch.hub import load_state_dict_from_url
 from .malicious_modifications import ImprintBlock, RecoveryOptimizer
+from .parameter_utils import path_parameters, set_linear_layer 
+
 class HonestServer():
     """Implement an honest server protocol."""
 
@@ -19,7 +21,7 @@ class HonestServer():
         """Inialize the server settings."""
         self.model = model
         if cfg_case.user.batch_norm_training:
-            self.model.training()
+            self.model.train()
         else:
             self.model.eval()
         self.loss = loss
@@ -143,8 +145,15 @@ class MaliciousParameterServer(HonestServer):
         # Then do fun things:
         self.parameter_algorithm.optimize_recovery()
 
-class PathParameterServer(MaliciousParameterServer):
+class PathParameterServer(HonestServer):
     
+    def __init__(self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device('cpu')), external_dataloader=None):
+        """Inialize the server settings."""
+        super().__init__(model, loss, cfg_case, setup, external_dataloader)
+        self.model_state = 'custom'  # Do not mess with model parameters no matter what init is agreed upon
+        self.secrets = dict()
+
+    '''
     def prepare_model(self, num_paths=8):
         path_parameters(self.model, num_paths=num_paths)
         feats = []
@@ -153,7 +162,31 @@ class PathParameterServer(MaliciousParameterServer):
             inputs = inputs.cuda()
             outs, feat = model(inputs)
             feats.append(feat.detach().mean(dim=-1).cpu())
-
+        
         mu, sigma = torch.std_mean(torch.cat(feats))
+        self.model.eval()
         set_linear_layer(model, mu.item(), sigma.item(), num_paths=num_paths, num_bins=num_paths)
+    '''
+        
+        
+    def reconfigure_model(self, model_state, num_paths=2):
+        """Reinitialize, continue training or otherwise modify model parameters in a benign way."""
+        
+        path_parameters(self.model, num_paths=num_paths)
+        feats = []
+        self.model.train()
+        self.model.cuda()
+        for i, (inputs, target) in enumerate(self.external_dataloader):
+            inputs = inputs.cuda()
+            outs, feat = self.model.features(inputs)
+            feats.append(feat.detach().mean(dim=-1).cpu())
+        
+        mu, sigma = torch.std_mean(torch.cat(feats))
+        self.model.eval()
+        self.model.cpu()
+        set_linear_layer(self.model, mu.item(), sigma.item(), num_paths=num_paths, num_bins=num_paths)
+        
+        
+
+        
         

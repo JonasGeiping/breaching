@@ -64,3 +64,31 @@ def registered_psnr_compute(img_batch, ref_batch, factor=1.0):
             # This matching implementation fills me with joy
             psnr_vals[idx] = default_psnr
     return psnr_vals.mean()
+
+
+
+def image_identifiability_precision(reconstructed_user_data, true_user_data, dataloader):
+    """Nearest-neighbor metric as described in Yin et al., "See through Gradients: Image Batch Recovery via GradInversion"
+    """
+    # Compare the reconstructed images to each image in the dataloader with the appropriate label
+    # An actual lookup-table of labels-> images could speed this up furthers
+
+    identified_images = 0
+
+    for batch_idx, reconstruction in enumerate(reconstructed_user_data['data']):
+        batch_label = reconstructed_user_data['labels'][batch_idx]
+        label_subset = [idx for (idx, label) in dataloader.dataset.lookup.items() if label == batch_label]
+
+        distances = []
+        for idx in label_subset:
+            comparable_data = dataloader.dataset[idx][0].to(device=reconstruction.device)
+            distances += [torch.norm(comparable_data.view(-1) - reconstruction.view(-1))]
+
+        minimal_distance_data_idx = label_subset[torch.stack(distances).argmin()]
+
+        distance_to_true = torch.norm(true_user_data['data'][batch_idx] - 
+                                      dataloader.dataset[minimal_distance_data_idx][0].to(device=reconstruction.device))
+        if distance_to_true < 1e-3:  # This should be tiny by all accounts
+            identified_images += 1
+
+    return identified_images / len(reconstructed_user_data['data'])

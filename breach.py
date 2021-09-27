@@ -54,7 +54,8 @@ def main_process(process_idx, local_group_size, cfg):
     reconstructed_user_data, stats = attacker.reconstruct(server_payload, shared_data, server.secrets, dryrun=cfg.dryrun)
 
     # How good is the reconstruction?
-    metrics = breaching.analysis.report(reconstructed_user_data, true_user_data, server_payload, server.model, setup)
+    metrics = breaching.analysis.report(reconstructed_user_data, true_user_data,
+                                        server_payload, server.model, user.dataloader, setup)
     breaching.utils.save_summary(cfg, metrics, stats, time.time() - local_time)
 
     # breach.utils.save_image()

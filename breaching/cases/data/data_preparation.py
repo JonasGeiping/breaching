@@ -46,15 +46,19 @@ def _build_dataset(cfg_data, split, can_download=True):
     if cfg_data.name == 'CIFAR10':
         dataset = torchvision.datasets.CIFAR10(root=cfg_data.path, train=split == 'training',
                                                download=can_download, transform=torchvision.transforms.ToTensor())
+        dataset.lookup = dict(zip(list(range(len(dataset))), dataset.targets))
     elif cfg_data.name == 'CIFAR100':
         dataset = torchvision.datasets.CIFAR100(root=cfg_data.path, train=split == 'training',
                                                 download=can_download, transform=torchvision.transforms.ToTensor())
+        dataset.lookup = dict(zip(list(range(len(dataset))), dataset.targets))
     elif cfg_data.name == 'ImageNet':
         dataset = torchvision.datasets.ImageNet(root=cfg_data.path, split='train' if 'train' in split else 'val',
                                                 transform=torchvision.transforms.ToTensor())
+        dataset.lookup = dict(zip(list(range(len(dataset))), [label for (_, label) in dataset.samples]))
     elif cfg_data.name == 'TinyImageNet':
         dataset = TinyImageNet(root=cfg_data.path, split=split, download=can_download,
                                transform=torchvision.torchvision.transforms.ToTensor(), cached=True)
+        dataset.lookup = dict(zip(list(range(len(dataset))), [label for (_, label) in dataset.samples]))
     else:
         raise ValueError(f'Invalid dataset {cfg_data.name} provided.')
 

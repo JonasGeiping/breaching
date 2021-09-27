@@ -2,10 +2,11 @@
 import torch
 
 
-from .metrics import psnr_compute, registered_psnr_compute
+from .metrics import psnr_compute, registered_psnr_compute, image_identifiability_precision
 
 
-def report(reconstructed_user_data, true_user_data, server_payload, model, setup, order_batch=False):
+def report(reconstructed_user_data, true_user_data, server_payload, model, dataloader=None,
+           setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=False):
     import lpips   # lazily import this only if report is used.
     lpips_scorer = lpips.LPIPS(net='alex').to(**setup)
 
@@ -18,6 +19,8 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, setup
 
     if order_batch:
         order = compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalized, setup)
+        reconstructed_user_data['data'] = reconstructed_user_data['data'][order]
+        reconstructed_user_data['labels'] = reconstructed_user_data['labels'][order]
         rec_denormalized = rec_denormalized[order]
     else:
         order = None
@@ -31,6 +34,12 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, setup
 
     # Compute registered psnr. This is a bit computationally intensive:
     test_rpsnr = registered_psnr_compute(rec_denormalized.cpu(), ground_truth_denormalized.cpu(), factor=1).item()
+
+    # Compute IIP score if a dataloader is passed:
+    if dataloader is not None:
+        iip_score = image_identifiability_precision(reconstructed_user_data, true_user_data, dataloader)
+    else:
+        iip_score = float('NaN')
 
     feat_mse = 0.0
     for payload in server_payload['queries']:
@@ -48,9 +57,10 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, setup
 
     # Print report:
     print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}|"
-          f" R-PSNR: {test_rpsnr:4.2f}")
+          f" R-PSNR: {test_rpsnr:4.2f} | IIP: {iip_score:7.2%}")
 
-    metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse, lpips=test_lpips, rpsnr=test_rpsnr, order=order)
+    metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse, lpips=test_lpips, rpsnr=test_rpsnr,
+                   iip_score=iip_score, order=order)
     return metrics
 
 

@@ -95,7 +95,7 @@ class ResNet(torch.nn.Module):
         self.layers = torch.nn.Sequential(*layer_list)
 
         self.avgpool = torch.nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = torch.nn.Linear(self.inplanes, classes)
+        self.linear = torch.nn.Linear(self.inplanes, classes)
 
         for m in self.modules():
             if isinstance(m, torch.nn.Conv2d):
@@ -175,7 +175,7 @@ class ResNet(torch.nn.Module):
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
-        x = self.fc(x)
+        x = self.linear(x)
 
         return x
 

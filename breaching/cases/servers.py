@@ -174,11 +174,13 @@ class PathParameterServer(HonestServer):
 
 
     def _path_parameters(self):
-        """Setting the paths in the network (feature extractor)"""
+        """Setting the paths in the network (feature extractor)
+        TODO: This shouldn't go just by names in the future
+        """
         ratio = 1
         for (name, _) in self.model.named_parameters():
             # if 'layer' in k or 'linear' in k: # skip the first conv layer?
-            if 'layer' in name or 'linear' in name:
+            if 'layer' in name or 'linear' in name or 'classifier' in name:
                 if 'shortcut' in name:
                     if 'weight' in name:
                         _eliminate_shortcut_weight(rgetattr(self.model, name))
@@ -190,9 +192,11 @@ class PathParameterServer(HonestServer):
 
 
     def _set_linear_layer(self, mu, sigma):
-        """Setting the linear layer of the network appropriately once mean, std of features has been figured out."""
+        """Setting the linear layer of the network appropriately once mean, std of features have been figured out.
+        TODO: This shouldn't go just by names in the future
+        """
         for (name, _) in self.model.named_parameters():
-            if 'linear' in name:
+            if 'linear' in name or 'classifier' in name:
                 if 'weight' in name:
                     _make_average_layer(rgetattr(self.model, name), self.num_paths)
                 elif 'bias' in name:
@@ -215,7 +219,7 @@ class PathParameterServer(HonestServer):
         feats = []
         self.model.train()
         self.model.to(**self.setup)
-        print('Computing feature distribution from external data.')
+        print(f'Computing feature distribution before the {feature_layer_name} layer from external data.')
         for i, (inputs, target) in enumerate(self.external_dataloader):
             inputs = inputs.to(**self.setup)
             self.model(inputs)

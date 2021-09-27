@@ -3,3 +3,6 @@ name: path_parameters
 model_state: untrained  # This is used as initial state, but can be changed by the server
 has_external_data: True
 
+alpha: 0.375
+num_bins: 8
+num_paths: 8

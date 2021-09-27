@@ -1,3 +1,4 @@
+
 name: small_batch_cifar_pathnet
 
 defaults:
@@ -5,7 +6,7 @@ defaults:
   - impl: default
   - server: path-parameters
 loss: CrossEntropy
-model: pathnet18
+model: resnet18
 
 # Server and user:
 num_queries: 1

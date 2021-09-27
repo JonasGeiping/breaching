@@ -9,7 +9,7 @@ from .resnets import ResNet, resnet_depths_to_config
 from .densenets import DenseNet, densenet_depths_to_config
 from .nfnets import NFNet
 from .vgg import VGG
-from .pathnets import * # Will clean up later
+from .pathnets import *  # Will clean up later
 
 def construct_model(cfg_model, cfg_data, pretrained=False):
     """Construct the neural net that is used."""
@@ -67,6 +67,13 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
         elif 'nfnet' in cfg_model:
             model = NFNet(channels, classes, variant='F0', stochdepth_rate=0.25, alpha=0.2, se_ratio=0.5,
                           activation='ReLU', stem='CIFAR', use_dropout=True)
+        elif 'convnet-trivial' == cfg_model.lower():
+            model = torch.nn.Sequential(OrderedDict([
+                ('conv', torch.nn.Conv2d(channels, 3072, 3, stride=1, padding=1)),
+                ('relu', torch.nn.ReLU(inplace=True)),
+                ('pool', torch.nn.AdaptiveAvgPool2d()),
+                ('linear', torch.nn.Linear(3072, classes)),
+            ]))
         elif 'convnetsmall' == cfg_model.lower():
             model = ConvNetSmall(width=64, num_channels=channels, num_classes=classes)
         elif 'convnet' == cfg_model.lower():

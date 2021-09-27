@@ -153,21 +153,6 @@ class PathParameterServer(HonestServer):
         self.model_state = 'custom'  # Do not mess with model parameters no matter what init is agreed upon
         self.secrets = dict()
 
-    '''
-    def prepare_model(self, num_paths=8):
-        path_parameters(self.model, num_paths=num_paths)
-        feats = []
-        self.model.train
-        for i, (inputs, target) in enumerate(self.external_dataloader):
-            inputs = inputs.cuda()
-            outs, feat = model(inputs)
-            feats.append(feat.detach().mean(dim=-1).cpu())
-        
-        mu, sigma = torch.std_mean(torch.cat(feats))
-        self.model.eval()
-        set_linear_layer(model, mu.item(), sigma.item(), num_paths=num_paths, num_bins=num_paths)
-    '''
-        
         
     def reconfigure_model(self, model_state, num_paths=2):
         """Reinitialize, continue training or otherwise modify model parameters in a benign way."""
@@ -188,5 +173,4 @@ class PathParameterServer(HonestServer):
         
         
 
-        
         

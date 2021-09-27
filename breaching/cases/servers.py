@@ -153,7 +153,7 @@ class PathParameterServer(HonestServer):
         super().__init__(model, loss, cfg_case, setup, external_dataloader)
         self.secrets = dict()
 
-        self.num_bins = self.cfg_server.num_bins
+        self.num_bins = self.cfg_data.classes
         self.alpha = self.cfg_server.alpha
         self.num_paths = self.cfg_server.num_paths
 
@@ -224,7 +224,6 @@ class PathParameterServer(HonestServer):
             inputs = inputs.to(**self.setup)
             self.model(inputs)
             feats.append(features[feature_layer_name].detach().view(inputs.shape[0], -1).clone().cpu())
-
         std, mu = torch.std_mean(torch.cat(feats))
         print(f'Feature mean is {mu.item()}, feature std is {std.item()}.')
         self.model.eval()

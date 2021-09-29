@@ -37,9 +37,10 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
 
     # Compute IIP score if a dataloader is passed:
     if dataloader is not None:
-        iip_score = image_identifiability_precision(reconstructed_user_data, true_user_data, dataloader)
+        iip_scores = image_identifiability_precision(reconstructed_user_data, true_user_data, dataloader,
+                                                     lpips_scorer=lpips_scorer, model=model)
     else:
-        iip_score = float('NaN')
+        iip_scores = dict(none=float('NaN'))
 
     feat_mse = 0.0
     for payload in server_payload['queries']:
@@ -56,11 +57,12 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
             feat_mse += (model(reconstructed_user_data['data']) - model(true_user_data['data'])).pow(2).mean().item()
 
     # Print report:
+    iip_scoring = ' | '.join([f'IIP-{k}: {v:5.2%}' for k, v in iip_scores.items()])
     print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}|"
-          f" R-PSNR: {test_rpsnr:4.2f} | IIP: {iip_score:7.2%}")
+          f" R-PSNR: {test_rpsnr:4.2f} | {iip_scoring}")
 
     metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse, lpips=test_lpips, rpsnr=test_rpsnr,
-                   iip_score=iip_score, order=order)
+                   order=order, **{f'IIP-{k}': v for k, v in iip_scores.items()})
     return metrics
 
 

@@ -6,7 +6,7 @@ from .metrics import psnr_compute, registered_psnr_compute, image_identifiabilit
 
 
 def report(reconstructed_user_data, true_user_data, server_payload, model, dataloader=None,
-           setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=False):
+           setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=False, compute_full_iip=False):
     import lpips   # lazily import this only if report is used.
     lpips_scorer = lpips.LPIPS(net='alex').to(**setup)
 
@@ -37,8 +37,12 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
 
     # Compute IIP score if a dataloader is passed:
     if dataloader is not None:
+        if compute_full_iip:
+            scores = ['pixel', 'lpips', 'self']
+        else:
+            scores = ['pixel']
         iip_scores = image_identifiability_precision(reconstructed_user_data, true_user_data, dataloader,
-                                                     lpips_scorer=lpips_scorer, model=model)
+                                                     lpips_scorer=lpips_scorer, model=model, scores=scores)
     else:
         iip_scores = dict(none=float('NaN'))
 

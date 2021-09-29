@@ -76,7 +76,7 @@ def image_identifiability_precision(reconstructed_user_data, true_user_data, dat
     For an LPIPS score, the lpips scorer has to be provided.
     """
     # Compare the reconstructed images to each image in the dataloader with the appropriate label
-
+    # This could be batched and partially cached to make it faster in the future ...
     identified_images = dict(zip(scores, [0 for entry in scores]))
 
     for batch_idx, reconstruction in enumerate(reconstructed_user_data['data']):

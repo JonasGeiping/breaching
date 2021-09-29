@@ -13,7 +13,7 @@ class ImprintBlock(torch.nn.Module):
         """
         super().__init__()
         self.image_size = image_size
-        self.num_bins = 2*(num_bins // 2) # make sure there's even num
+        self.num_bins = 2 * (num_bins // 2)  # make sure there's even num
         self.linear0 = torch.nn.Linear(image_size, num_bins)
         self.linear1 = torch.nn.Linear(num_bins, num_bins)
         self.linear2 = torch.nn.Linear(num_bins, image_size)
@@ -37,21 +37,21 @@ class ImprintBlock(torch.nn.Module):
 
     def _get_bins(self):
         # Here we just build bins of uniform mass
-        
+
         left_bins = []
         mass_per_bin = 1 / self.num_bins
         for i in range(1, self.num_bins // 2 + 1):
-            left_bins.append(norm.ppf(i*mass_per_bin))
+            left_bins.append(norm.ppf(i * mass_per_bin))
         left_bins.append(0)
         right_bins = [-bin_val for bin_val in left_bins[:-1]]
         right_bins.reverse()
         bins = left_bins + right_bins
-        bin_sizes = [bins[i+1] - bins[i] for i in range(len(bins) - 1)]
-        bins = bins[:-1] # here we need to throw away one on the right
+        bin_sizes = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
+        bins = bins[:-1]  # here we need to throw away one on the right
         return bins, bin_sizes
 
     def _make_scaled_identity(self):
-        new_data = torch.diag(1/torch.tensor(self.bin_sizes))
+        new_data = torch.diag(1 / torch.tensor(self.bin_sizes))
         return new_data
 
     def _make_average_layer(self):
@@ -65,9 +65,8 @@ class ImprintBlock(torch.nn.Module):
 
         return new_biases
 
-    
-    ''' Old imprint block. Sleep here for now... we may need you later 
-    
+    r''' Old imprint block. Sleep here for now... we may need you later
+
     def __init__(self, image_size, num_bins, alpha=0.375):
         """
         image_size is the size of the input images
@@ -123,6 +122,5 @@ class ImprintBlock(torch.nn.Module):
             new_biases[i] = self.bins[i]
 
         return new_biases
-        
-    '''
 
+    '''

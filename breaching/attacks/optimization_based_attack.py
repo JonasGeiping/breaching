@@ -25,8 +25,10 @@ class OptimizationBasedAttack(_BaseAttacker):
             self.objective = CosineSimilarity(self.cfg.objective.scale)
         elif self.cfg.objective.type == 'masked-cosine-similarity':
             self.objective = MaskedCosineSimilarity(self.cfg.objective.scale)
-        else:
+        elif self.cfg.objective.type == 'euclidean':
             self.objective = Euclidean(self.cfg.objective.scale)
+        else:
+            raise ValueError(f'Unknown objective type {self.objective.type} given.')
         self.regularizers = []
         for key in self.cfg.regularization.keys():
             if self.cfg.regularization[key].scale > 0:

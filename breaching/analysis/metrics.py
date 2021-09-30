@@ -135,4 +135,5 @@ def _return_model_features(model, inputs):
             feature_layer_name = name
             break
     model(inputs)
+    hook.remove()
     return features[feature_layer_name]

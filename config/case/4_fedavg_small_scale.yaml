@@ -16,6 +16,7 @@ user:
   num_local_updates: 4
   num_data_points: 4
   num_data_per_local_update_step: 1 # Every step is taken on a different sample
+  local_learning_rate: 0.1
 
   batch_norm_training: False
   provide_labels: True

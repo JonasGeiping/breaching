@@ -9,7 +9,7 @@ class UserSingleStep(torch.nn.Module):
 
     def __init__(self, model, loss, dataloader, setup, num_data_points=1, num_user_queries=1, batch_norm_training=False,
                  provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1,
-                 num_data_per_local_update_step=None):
+                 num_data_per_local_update_step=None, local_learning_rate=None):
         """Initialize but do not propagate the cfg_case.user dict further."""
         super().__init__()
 
@@ -57,7 +57,6 @@ class UserSingleStep(torch.nn.Module):
             data_idx: {self.data_idx.item() if isinstance(self.data_idx, torch.Tensor) else self.data_idx}
         """
 
-
     def compute_local_updates(self, server_payload):
         """Compute local updates to the given model based on server payload."""
 
@@ -102,8 +101,7 @@ class UserSingleStep(torch.nn.Module):
 
         return shared_data, true_user_data
 
-
-    def plot(self, user_data, scale=True):
+    def plot(self, user_data, scale=False):
         """Plot user data to output. Probably best called from a jupyter notebook."""
         import matplotlib.pyplot as plt  # lazily import this here
 
@@ -117,8 +115,8 @@ class UserSingleStep(torch.nn.Module):
         data.mul_(ds).add_(dm).clamp_(0, 1)
 
         if scale:
-             min_val, max_val = data.amin(dim=[2,3], keepdim=True), data.amax(dim=[2,3], keepdim=True)
-             data = (data - min_val) / (max_val - min_val)
+            min_val, max_val = data.amin(dim=[2, 3], keepdim=True), data.amax(dim=[2, 3], keepdim=True)
+            data = (data - min_val) / (max_val - min_val)
 
         if data.shape[0] == 1:
             plt.imshow(data[0].permute(1, 2, 0).cpu())
@@ -133,3 +131,59 @@ class UserSingleStep(torch.nn.Module):
                 label_classes.append(classes[labels[i]])
                 axis.axis('off')
             print(label_classes)
+
+
+class UserMultiStep(UserSingleStep):
+    """A user who computes multiple local update steps as in a FedAVG scenario."""
+
+    def __init__(self, model, loss, dataloader, setup, num_data_points=1, num_user_queries=1, batch_norm_training=False,
+                 provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1,
+                 num_data_per_local_update_step=None, local_learning_rate=None):
+        """Initialize but do not propagate the cfg_case.user dict further."""
+        super().__init__(model, loss, dataloader, setup, num_data_points, num_user_queries, batch_norm_training,
+                         provide_labels, provide_num_data_points, data_idx, num_local_updates,
+                         num_data_per_local_update_step, local_learning_rate)
+
+    def compute_local_updates(self, server_payload):
+        """Compute local updates to the given model based on server payload."""
+
+        # Select data
+        data = []
+        labels = []
+        pointer = self.data_idx
+        for data_point in range(self.num_data_points):
+            datum, label = self.dataloader.dataset[pointer]
+            data += [datum]
+            labels += [torch.as_tensor(label)]
+            pointer += server_payload['data'].classes
+            pointer = pointer % len(self.dataloader.dataset)
+        data = torch.stack(data).to(**self.setup)
+        labels = torch.stack(labels).to(device=self.setup['device'])
+
+        # Compute local updates
+        shared_grads = []
+        shared_buffers = []
+        for query in range(self.num_user_queries):
+            payload = server_payload['queries'][query]
+            parameters = payload['parameters']
+            buffers = payload['buffers']
+
+            with torch.no_grad():
+                for param, server_state in zip(self.model.parameters(), parameters):
+                    param.copy_(server_state.to(**self.setup))
+                for buffer, server_state in zip(self.model.buffers(), buffers):
+                    buffer.copy_(server_state.to(**self.setup))
+
+            # Compute the forward pass
+            outputs = self.model(data)
+            loss = self.loss(outputs, labels)
+
+            shared_grads += [torch.autograd.grad(loss, self.model.parameters())]
+            shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
+
+        shared_data = dict(gradients=shared_grads, buffers=shared_buffers,
+                           num_data_points=self.num_data_points if self.provide_num_data_points else None,
+                           labels=labels if self.provide_labels else None)
+        true_user_data = dict(data=data, labels=labels)
+
+        return shared_data, true_user_data

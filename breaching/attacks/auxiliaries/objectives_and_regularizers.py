@@ -4,6 +4,8 @@ import torch
 from .deepinversion import DeepInversionFeatureHook
 
 # @torch.jit.script  # ?
+
+
 class Euclidean(torch.nn.Module):
     """Gradient matching based on the euclidean distance of two gradient vectors."""
 
@@ -62,11 +64,30 @@ class MaskedCosineSimilarity(torch.nn.Module):
         return objective * self.scale
 
 
-class CosineSimilarityFast(torch.nn.Module):
+class ParameterCosineSimilarity(torch.nn.Module):
     """Gradient matching based on cosine similarity of two gradient vectors."""
 
-    def __init__(self):
+    def __init__(self, scale=1.0):
         super().__init__()
+        self.scale = scale
+
+    def forward(self, gradient_rec, gradient_data):
+        similarities, counter = 0, 0
+        for rec, data in zip(gradient_rec, gradient_data):
+            similarities += torch.nn.functional.cosine_similarity(rec.view(-1), data.view(-1), dim=0, eps=1e-8)
+            counter += 1
+        objective = 1 - similarities / counter
+
+        return objective * self.scale
+
+
+class FastCosineSimilarity(torch.nn.Module):
+    """Gradient matching based on cosine similarity of two gradient vectors.
+    No gradient flows through the normalization."""
+
+    def __init__(self, scale=1.0):
+        super().__init__()
+        self.scale = scale
 
     def forward(self, gradient_rec, gradient_data):
         scalar_product, rec_norm, data_norm = 0.0, 0.0, 0.0
@@ -77,7 +98,7 @@ class CosineSimilarityFast(torch.nn.Module):
 
         objective = 1 - scalar_product / rec_norm.sqrt() / data_norm.sqrt()
 
-        return objective
+        return objective * self.scale
 
 
 class TotalVariationOld(torch.nn.Module):
@@ -240,7 +261,6 @@ class DeepInversion(torch.nn.Module):
                 if isinstance(module, torch.nn.BatchNorm2d):
                     self.losses[idx].append(DeepInversionFeatureHook(module))
 
-
     def forward(self, tensor, **kwargs):
         rescale = [self.first_bn_multiplier] + [1. for _ in range(len(self.losses[0]) - 1)]
         feature_reg = 0
@@ -255,3 +275,11 @@ regularizer_lookup = dict(
     norm=NormRegularization,
     deep_inversion=DeepInversion,
 )
+
+
+objective_lookup = {'euclidean': Euclidean,
+                    'cosine-similarity': CosineSimilarity,
+                    'masked-cosine-similarity': MaskedCosineSimilarity,
+                    'paramwise-cosine-similarity': ParameterCosineSimilarity,
+                    'fast-cosine-similarity': FastCosineSimilarity
+                    }

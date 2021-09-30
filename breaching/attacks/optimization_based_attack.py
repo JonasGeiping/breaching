@@ -13,7 +13,7 @@ import time
 
 from .base_attack import _BaseAttacker
 from .auxiliaries.objectives_and_regularizers import regularizer_lookup, TotalVariation
-from .auxiliaries.objectives_and_regularizers import Euclidean, CosineSimilarity, MaskedCosineSimilarity
+from .auxiliaries.objectives_and_regularizers import Euclidean, CosineSimilarity, objective_lookup
 
 
 class OptimizationBasedAttack(_BaseAttacker):
@@ -27,8 +27,12 @@ class OptimizationBasedAttack(_BaseAttacker):
             self.objective = MaskedCosineSimilarity(self.cfg.objective.scale)
         elif self.cfg.objective.type == 'euclidean':
             self.objective = Euclidean(self.cfg.objective.scale)
+
+        objective_fn = objective_lookup.get(self.cfg.objective.type)
+        if objective_fn is None:
+            raise ValueError(f'Unknown objective type {self.cfg.objective.type} given.')
         else:
-            raise ValueError(f'Unknown objective type {self.objective.type} given.')
+            self.objective = objective_fn(self.cfg.objective.scale)
         self.regularizers = []
         for key in self.cfg.regularization.keys():
             if self.cfg.regularization[key].scale > 0:
@@ -107,8 +111,8 @@ class OptimizationBasedAttack(_BaseAttacker):
 
             for regularizer in self.regularizers:
                 total_objective += regularizer(candidate)
-            total_objective.backward()
-
+            # total_objective.backward()
+            candidate.grad = torch.autograd.grad(total_objective, [candidate], create_graph=False)[0]
             if self.cfg.optim.signed:
                 candidate.grad.sign_()
             if self.cfg.optim.langevin_noise > 0:

@@ -54,8 +54,8 @@ class MaskedCosineSimilarity(torch.nn.Module):
         for rec, data in zip(gradient_rec, gradient_data):
             mask = data.abs() > self.mask_value
             scalar_product += (rec * data * mask).sum()
-            rec_norm += (rec * self.mask_value).pow(2).sum()
-            data_norm += (data * self.mask_value).pow(2).sum()
+            rec_norm += (rec * mask).pow(2).sum()
+            data_norm += (data * mask).pow(2).sum()
 
         objective = 1 - scalar_product / rec_norm.sqrt() / data_norm.sqrt()
 

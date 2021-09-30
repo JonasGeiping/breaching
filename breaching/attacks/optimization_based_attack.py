@@ -21,13 +21,6 @@ class OptimizationBasedAttack(_BaseAttacker):
 
     def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
         super().__init__(model, loss_fn, cfg_attack, setup)
-        if self.cfg.objective.type == 'cosine-similarity':
-            self.objective = CosineSimilarity(self.cfg.objective.scale)
-        elif self.cfg.objective.type == 'masked-cosine-similarity':
-            self.objective = MaskedCosineSimilarity(self.cfg.objective.scale)
-        elif self.cfg.objective.type == 'euclidean':
-            self.objective = Euclidean(self.cfg.objective.scale)
-
         objective_fn = objective_lookup.get(self.cfg.objective.type)
         if objective_fn is None:
             raise ValueError(f'Unknown objective type {self.cfg.objective.type} given.')

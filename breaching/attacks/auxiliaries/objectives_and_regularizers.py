@@ -56,7 +56,6 @@ class MaskedCosineSimilarity(torch.nn.Module):
             scalar_product += (rec * data * mask).sum()
             rec_norm += (rec * self.mask_value).pow(2).sum()
             data_norm += (data * self.mask_value).pow(2).sum()
-            breakpoint()
 
         objective = 1 - scalar_product / rec_norm.sqrt() / data_norm.sqrt()
 

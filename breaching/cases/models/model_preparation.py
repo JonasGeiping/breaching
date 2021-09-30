@@ -70,11 +70,12 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
             model = torch.nn.Sequential(OrderedDict([
                 ('conv', torch.nn.Conv2d(channels, 3072, 3, stride=1, padding=1)),
                 ('relu', torch.nn.ReLU(inplace=True)),
-                ('pool', torch.nn.AdaptiveAvgPool2d()),
+                ('pool', torch.nn.AdaptiveAvgPool2d(1)),
+                ('flatten', torch.nn.Flatten()), 
                 ('linear', torch.nn.Linear(3072, classes)),
             ]))
         elif 'convnetsmall' == cfg_model.lower():
-            model = ConvNetSmall(width=64, num_channels=channels, num_classes=classes)
+            model = ConvNetSmall(width=256, num_channels=channels, num_classes=classes)
         elif 'convnet' == cfg_model.lower():
             model = ConvNet(width=64, num_channels=channels, num_classes=classes)
         elif 'convnet_beyond' == cfg_model.lower():
@@ -143,17 +144,17 @@ class ConvNetSmall(torch.nn.Module):
             ('conv1', torch.nn.Conv2d(1 * width, 2 * width, kernel_size=3, padding=1)),
             ('relu1', torch.nn.ReLU()),
 
-            ('conv2', torch.nn.Conv2d(2 * width, 4 * width, kernel_size=3, padding=1)),
+            ('conv2', torch.nn.Conv2d(2 * width, 4 * width, kernel_size=3, stride=2, padding=1)),
             ('relu2', torch.nn.ReLU()),
 
             ('pool0', torch.nn.MaxPool2d(3)),
 
-            ('conv3', torch.nn.Conv2d(4 * width, 4 * width, kernel_size=3, padding=1)),
+            ('conv3', torch.nn.Conv2d(4 * width, 4 * width, kernel_size=3, stride=2, padding=1)),
             ('relu3', torch.nn.ReLU()),
 
-            ('pool1', torch.nn.MaxPool2d(3)),
+            ('pool1', torch.nn.AdaptiveAvgPool2d(1)),
             ('flatten', torch.nn.Flatten()),
-            ('linear', torch.nn.Linear(36 * width, num_classes))
+            ('linear', torch.nn.Linear(4 * width, num_classes))
         ]))
 
     def forward(self, input):

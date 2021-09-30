@@ -103,7 +103,7 @@ class UserSingleStep(torch.nn.Module):
         return shared_data, true_user_data
 
 
-    def plot(self, user_data):
+    def plot(self, user_data, scale=True):
         """Plot user data to output. Probably best called from a jupyter notebook."""
         import matplotlib.pyplot as plt  # lazily import this here
 
@@ -115,6 +115,11 @@ class UserSingleStep(torch.nn.Module):
         labels = user_data['labels'].clone().detach()
 
         data.mul_(ds).add_(dm).clamp_(0, 1)
+
+        if scale:
+             min_val, max_val = data.amin(dim=[2,3], keepdim=True), data.amax(dim=[2,3], keepdim=True)
+             data = (data - min_val) / (max_val - min_val)
+
         if data.shape[0] == 1:
             plt.imshow(data[0].permute(1, 2, 0).cpu())
             plt.title(f'Data with label {classes[labels]}')

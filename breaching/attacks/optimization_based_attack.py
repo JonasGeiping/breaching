@@ -12,7 +12,8 @@ import torch
 import time
 
 from .base_attack import _BaseAttacker
-from .auxiliaries.objectives_and_regularizers import regularizer_lookup, Euclidean, CosineSimilarity, TotalVariation
+from .auxiliaries.objectives_and_regularizers import regularizer_lookup, TotalVariation
+from .auxiliaries.objectives_and_regularizers import Euclidean, CosineSimilarity, MaskedCosineSimilarity
 
 
 class OptimizationBasedAttack(_BaseAttacker):
@@ -22,6 +23,8 @@ class OptimizationBasedAttack(_BaseAttacker):
         super().__init__(model, loss_fn, cfg_attack, setup)
         if self.cfg.objective.type == 'cosine-similarity':
             self.objective = CosineSimilarity(self.cfg.objective.scale)
+        elif self.cfg.objective.type == 'masked-cosine-similarity':
+            self.objective = MaskedCosineSimilarity(self.cfg.objective.scale)
         else:
             self.objective = Euclidean(self.cfg.objective.scale)
         self.regularizers = []

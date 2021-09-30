@@ -39,6 +39,29 @@ class CosineSimilarity(torch.nn.Module):
         return objective * self.scale
 
 
+class MaskedCosineSimilarity(torch.nn.Module):
+    """Gradient matching based on cosine similarity of two gradient vectors.
+    All positions that are zero in the data gradient are masked.
+    """
+
+    def __init__(self, scale=1.0, mask_value=1e-6):
+        super().__init__()
+        self.scale = scale
+        self.mask_value = 1e-6
+
+    def forward(self, gradient_rec, gradient_data):
+        scalar_product, rec_norm, data_norm = 0.0, 0.0, 0.0
+        for rec, data in zip(gradient_rec, gradient_data):
+            mask = data.abs() > self.mask_value
+            scalar_product += (rec * data * self.mask_value).sum()
+            rec_norm += (rec * self.mask_value).pow(2).sum()
+            data_norm += (data * self.mask_value).pow(2).sum()
+
+        objective = 1 - scalar_product / rec_norm.sqrt() / data_norm.sqrt()
+
+        return objective * self.scale
+
+
 class CosineSimilarityFast(torch.nn.Module):
     """Gradient matching based on cosine similarity of two gradient vectors."""
 

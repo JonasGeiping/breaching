@@ -36,7 +36,6 @@ class UserSingleStep(torch.nn.Module):
 
     def __repr__(self):
         return f"""User (of type {self.__class__.__name__} with settings:
-            number of local updates: {self.num_local_updates}
             number of data points: {self.num_data_points}
             number of user queries {self.num_user_queries}
 

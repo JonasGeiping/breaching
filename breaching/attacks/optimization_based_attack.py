@@ -12,8 +12,9 @@ import torch
 import time
 
 from .base_attack import _BaseAttacker
-from .auxiliaries.objectives_and_regularizers import regularizer_lookup, TotalVariation
-from .auxiliaries.objectives_and_regularizers import Euclidean, CosineSimilarity, objective_lookup
+from .auxiliaries.regularizers import regularizer_lookup, TotalVariation
+from .auxiliaries.objectives import Euclidean, CosineSimilarity, objective_lookup
+from .auxiliaries import make_functional_with_buffers
 
 
 class OptimizationBasedAttack(_BaseAttacker):
@@ -54,6 +55,11 @@ class OptimizationBasedAttack(_BaseAttacker):
         """Run a single reconstruction trial."""
         for regularizer in self.regularizers:
             regularizer.initialize(rec_model)
+
+        if shared_data['local_hyperparams'] is not None:
+            self.gradient_fn = self._grad_fn_multi_step
+        else:
+            self.gradient_fn = self._grad_fn_single_step
 
         candidate = self._initialize_data([shared_data['num_data_points'], *self.data_shape])
         optimizer, scheduler = self._init_optimizer(candidate)
@@ -98,7 +104,7 @@ class OptimizationBasedAttack(_BaseAttacker):
             for model, shared_grad in zip(rec_model, shared_data['gradients']):
                 model.zero_grad()
                 spoofed_loss = self.loss_fn(model(candidate), labels)
-                gradient = torch.autograd.grad(spoofed_loss, model.parameters(), create_graph=True)
+                gradient = self.gradient_fn(candidate, labels, model, shared_data['local_hyperparams'])
 
                 total_objective += self.objective(gradient, shared_grad)
 
@@ -112,6 +118,36 @@ class OptimizationBasedAttack(_BaseAttacker):
                 candidate.grad += self.cfg.optim.langevin_noise * torch.randn_like(candidate.grad)
             return total_objective
         return closure
+
+    def _grad_fn_single_step(self, candidate, labels, model, local_hyperparams=None):
+        """Which gradient function is called is assigned in _run_trial."""
+        model.zero_grad()
+        spoofed_loss = self.loss_fn(model(candidate), labels)
+        gradient = torch.autograd.grad(spoofed_loss, model.parameters(), create_graph=True)
+        return gradient
+
+    def _grad_fn_multi_step(self, candidate, labels, model, local_hyperparams):
+        """Which gradient function is called is assigned in _run_trial."""
+        model.zero_grad()
+        func_model, params, buffers = make_functional_with_buffers(model)
+        initial_params = [p.clone() for p in params]
+
+        seen_data_idx = 0
+        for i in range(local_hyperparams['steps']):
+            data = candidate[seen_data_idx: seen_data_idx + local_hyperparams['data_per_step']]
+            seen_data_idx += local_hyperparams['data_per_step']
+            seen_data_idx = seen_data_idx % candidate.shape[0]
+            labels = local_hyperparams['labels'][i]
+            spoofed_loss = self.loss_fn(func_model(params, buffers, data), labels)
+            step_gradient = torch.autograd.grad(spoofed_loss, params, create_graph=True)
+
+            # Update parameters in graph:
+            params = [param.data - local_hyperparams['lr'] * grad for param, grad in zip(params, step_gradient)]
+
+        # Finally return differentiable difference in state:
+        gradient = [p_local - p_server for p_local, p_server in zip(params, initial_params)]
+
+        return gradient
 
     def _score_trial(self, candidate, labels, rec_model, shared_data):
         """Score candidate solutions based on some criterion."""

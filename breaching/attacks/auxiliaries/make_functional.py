@@ -39,7 +39,6 @@ import torch.nn as nn
 from torch import Tensor
 from typing import List, Tuple
 import copy
-import warnings
 
 # Utilities to make nn.Module "functional"
 # In particular the goal is to be able to provide a function that takes as input
@@ -303,11 +302,6 @@ def make_functional(model: nn.Module):
     grad_weights = grad(compute_loss)(params, x, t)
     ```
     """
-    warnings.warn('If this is your first time using make_functional, please '
-                  'ignore this warning. Otherwise, we recently made a '
-                  'backwards incompatible change to make_functional: '
-                  'please try make_functional_deprecated_v1 if you want the '
-                  'previous behavior.', stacklevel=2)
     buffers = list(model.buffers())
     if len(buffers) > 0:
         raise RuntimeError('make_functional(model): `model` has buffers. Please use '
@@ -352,11 +346,6 @@ def make_functional_with_buffers(model: nn.Module):
     grad_weights = grad(compute_loss)(params, buffers, x, t)
     ```
     """
-    warnings.warn('If this is your first time using make_functional_with_buffers, please '
-                  'ignore this warning. Otherwise, we recently made a '
-                  'backwards incompatible change to make_functional_with_buffers: '
-                  'please try make_functional_with_buffers_deprecated_v1 if you want the '
-                  'previous behavior.', stacklevel=2)
     return FunctionalModuleWithBuffers._create_from(model)
 
 

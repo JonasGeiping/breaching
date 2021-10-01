@@ -1,0 +1,4 @@
+num_local_updates: 1
+num_data_points: 1
+
+data_idx:  # Evaluate training data starting from this index. If no index is given, data is chosen at random.

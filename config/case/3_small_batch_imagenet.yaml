@@ -5,6 +5,7 @@ defaults:
   - data: ImageNet
   - impl: default
   - server: honest-but-curious
+  - user: local_gradient
 loss: CrossEntropy
 model: ResNet152
 
@@ -13,14 +14,7 @@ num_queries: 1
 
 # User data:
 user:
-  num_local_updates: 1
   num_data_points: 8
-  num_data_per_local_update_step:
-  local_learning_rate: 
 
-  batch_norm_training: False
-  provide_labels: True
-  provide_num_data_points: True
-  data_idx:  # Evaluate training data starting from this index. If no index is given, data is chosen at random.
 
 examples_from_split: validation

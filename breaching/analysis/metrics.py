@@ -2,6 +2,44 @@
 import torch
 
 
+def gradient_uniqueness(model, loss_fn, user_data, server_payload, setup, query=0):
+    """Count the number of gradient entries that are only affected by a single data point."""
+    payload = server_payload['queries'][query]
+    parameters = payload['parameters']
+    buffers = payload['buffers']
+
+    with torch.no_grad():
+        for param, server_state in zip(model.parameters(), parameters):
+            param.copy_(server_state.to(**setup))
+        for buffer, server_state in zip(model.buffers(), buffers):
+            buffer.copy_(server_state.to(**setup))
+
+    # Compute the forward pass
+    gradients = []
+    for data_point, label in zip(user_data['data'], user_data['labels']):
+        model.zero_grad()
+        loss = loss_fn(model(data_point[None, :]), label[None, :])
+        data_grads = torch.autograd.grad(loss, model.parameters())
+        gradients += [torch.cat([g.reshape(-1) for g in data_grads])]
+
+    average_gradient = torch.stack(gradients, dim=0).mean(dim=0)
+
+    unique_entries = 0
+    for idx, entry in enumerate(average_gradient):
+        hits_per_entry = 0
+        for grad in gradients:
+            val = (entry - grad[idx]).abs()
+            unique_hit = int(val.item() < 1e-5)
+            unique_entries += unique_hit
+            hits_per_entry += unique_hit
+            # this is on overestimate, multiple data points could have the same gradient, but that would be fair
+            # however multiple data points could have different gradients and their average hits another data points' gradient
+        if hits_per_entry > 1:
+            print(f'Idx {idx} was hit {hits_per_entry} times out of {len(gradients)} gradients.')
+
+    return unique_entries / len(average_gradient)
+
+
 def psnr_compute(img_batch, ref_batch, batched=False, factor=1.0, clip=False):
     """Standard PSNR."""
     if clip:

@@ -5,7 +5,7 @@ import torch
 def gradient_uniqueness(model, loss_fn, user_data, server_payload, setup, query=0, fudge=1e-7):
     """Count the number of gradient entries that are only affected by a single data point."""
 
-    r""Formatting suggestion:
+    r"""Formatting suggestion:
       print(f'Unique entries (hitting 1 or all): {unique_entries:.2%}, average hits: {average_hits_per_entry:.2%} \n'
       f'Stats (as N hits:val): {dict(zip(uniques[0].tolist(), uniques[1].tolist()))}\n'
       f'Unique nonzero (hitting 1 or all): {nonzero_uniques:.2%} Average nonzero: {nonzero_hits_per_entry:.2%}. \n'
@@ -35,11 +35,15 @@ def gradient_uniqueness(model, loss_fn, user_data, server_payload, setup, query=
 
     val = (gradient_per_example - average_gradient).abs() < fudge
     nonzero_val = val[:, average_gradient[0].abs() > fudge]
-    unique_entries = (val.sum(dim=0) == 1).float().mean() + (val.sum(dim=0) == len(gradients)).float().mean() # hitting a single entry or all entries is equally good for rec
+    unique_entries = (val.sum(dim=0) == 1).float().mean() + (val.sum(dim=0) == len(gradients)
+                                                             ).float().mean()
+    # hitting a single entry or all entries is equally good for rec
     average_hits_per_entry = val.sum(dim=0).float().mean()
     nonzero_hits_per_entry = (nonzero_val).sum(dim=0).float().mean()
-    unique_nonzero_hits = (nonzero_val.sum(dim=0) == 1).float().mean() +  (nonzero_val.sum(dim=0) == len(gradients)).float().mean()
-    return unique_entries, average_hits_per_entry, unique_nonzero_hits, nonzero_hits_per_entry, val.sum(dim=0).unique(return_counts=True), nonzero_val.sum(dim=0).unique(return_counts=True)
+    unique_nonzero_hits = (nonzero_val.sum(dim=0) == 1).float().mean() + \
+        (nonzero_val.sum(dim=0) == len(gradients)).float().mean()
+    return (unique_entries, average_hits_per_entry, unique_nonzero_hits, nonzero_hits_per_entry,
+            val.sum(dim=0).unique(return_counts=True), nonzero_val.sum(dim=0).unique(return_counts=True))
 
 
 def psnr_compute(img_batch, ref_batch, batched=False, factor=1.0, clip=False):

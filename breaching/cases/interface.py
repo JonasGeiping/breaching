@@ -8,7 +8,7 @@ import torch
 from .data import construct_dataloader
 from .models import construct_model
 
-from .users import UserSingleStep
+from .users import UserSingleStep, UserMultiStep
 from .servers import HonestServer, MaliciousModelServer, MaliciousParameterServer, PathParameterServer
 
 
@@ -47,6 +47,6 @@ def construct_case(cfg_case, setup, dryrun=False):
         # The user will deepcopy this model to have their own
         user = UserSingleStep(model, loss, dataloader, setup, **cfg_case.user)
     else:
-        raise ValueError('User specifications not implemented.')
+        user = UserMultiStep(model, loss, dataloader, setup, **cfg_case.user)
 
     return user, server

@@ -12,11 +12,12 @@ class UserSingleStep(torch.nn.Module):
                  num_data_per_local_update_step=None, local_learning_rate=None):
         """Initialize but do not propagate the cfg_case.user dict further."""
         super().__init__()
-
-        self.num_local_updates = num_local_updates
         self.num_data_points = num_data_points
         self.num_user_queries = num_user_queries
+
+        self.num_local_updates = num_local_updates
         self.num_data_per_local_update_step = num_data_per_local_update_step
+        self.local_learning_rate = local_learning_rate
 
         self.provide_labels = provide_labels
         self.provide_num_data_points = provide_num_data_points
@@ -60,19 +61,7 @@ class UserSingleStep(torch.nn.Module):
     def compute_local_updates(self, server_payload):
         """Compute local updates to the given model based on server payload."""
 
-        # Select data
-        data = []
-        labels = []
-        pointer = self.data_idx
-        for data_point in range(self.num_data_points):
-            datum, label = self.dataloader.dataset[pointer]
-            data += [datum]
-            labels += [torch.as_tensor(label)]
-            pointer += server_payload['data'].classes
-            pointer = pointer % len(self.dataloader.dataset)
-        data = torch.stack(data).to(**self.setup)
-        labels = torch.stack(labels).to(device=self.setup['device'])
-
+        data, labels = self._generate_example_data()
         # Compute local updates
         shared_grads = []
         shared_buffers = []
@@ -100,6 +89,23 @@ class UserSingleStep(torch.nn.Module):
         true_user_data = dict(data=data, labels=labels)
 
         return shared_data, true_user_data
+
+
+    def _generate_example_data(self):
+        # Select data
+        data = []
+        labels = []
+        pointer = self.data_idx
+        for data_point in range(self.num_data_points):
+            datum, label = self.dataloader.dataset[pointer]
+            data += [datum]
+            labels += [torch.as_tensor(label)]
+            pointer += len(self.dataloader.dataset.classes)
+            pointer = pointer % len(self.dataloader.dataset)
+        data = torch.stack(data).to(**self.setup)
+        labels = torch.stack(labels).to(device=self.setup['device'])
+        return data, labels
+
 
     def plot(self, user_data, scale=False):
         """Plot user data to output. Probably best called from a jupyter notebook."""
@@ -144,21 +150,12 @@ class UserMultiStep(UserSingleStep):
                          provide_labels, provide_num_data_points, data_idx, num_local_updates,
                          num_data_per_local_update_step, local_learning_rate)
 
+        # assert self.num_data_per_local_update_step * self.num_local_updates < self.num_data_points # ?
+
     def compute_local_updates(self, server_payload):
         """Compute local updates to the given model based on server payload."""
 
-        # Select data
-        data = []
-        labels = []
-        pointer = self.data_idx
-        for data_point in range(self.num_data_points):
-            datum, label = self.dataloader.dataset[pointer]
-            data += [datum]
-            labels += [torch.as_tensor(label)]
-            pointer += server_payload['data'].classes
-            pointer = pointer % len(self.dataloader.dataset)
-        data = torch.stack(data).to(**self.setup)
-        labels = torch.stack(labels).to(device=self.setup['device'])
+        user_data, user_labels = self._generate_example_data()
 
         # Compute local updates
         shared_grads = []
@@ -174,16 +171,32 @@ class UserMultiStep(UserSingleStep):
                 for buffer, server_state in zip(self.model.buffers(), buffers):
                     buffer.copy_(server_state.to(**self.setup))
 
-            # Compute the forward pass
-            outputs = self.model(data)
-            loss = self.loss(outputs, labels)
+            optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
+            seen_data_idx = 0
 
-            shared_grads += [torch.autograd.grad(loss, self.model.parameters())]
+            for step in range(self.num_local_updates):
+
+                data = user_data[seen_data_idx: seen_data_idx + self.num_data_per_local_update_step]
+                labels = user_labels[seen_data_idx: seen_data_idx + self.num_data_per_local_update_step]
+                seen_data_idx += self.num_data_per_local_update_step
+                seen_data_idx = seen_data_idx % self.num_data_points
+
+                optimizer.zero_grad()
+                # Compute the forward pass
+                outputs = self.model(data)
+                loss = self.loss(outputs, labels)
+                loss.backward()
+                optimizer.step()
+
+            # Share differential to server version:
+            # This is equivalent to sending the new stuff and letting the server do it, but in line
+            # with the gradients sent in UserSingleStep
+            shared_grads += [[p_local - p_server for (p_local, p_server) in zip(self.model.parameters(), parameters)]]
             shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
 
         shared_data = dict(gradients=shared_grads, buffers=shared_buffers,
                            num_data_points=self.num_data_points if self.provide_num_data_points else None,
-                           labels=labels if self.provide_labels else None)
-        true_user_data = dict(data=data, labels=labels)
+                           labels=user_labels if self.provide_labels else None)
+        true_user_data = dict(data=user_data, labels=user_labels)
 
         return shared_data, true_user_data

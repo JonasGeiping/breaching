@@ -77,7 +77,7 @@ class DifferentialBlock(torch.nn.Module):
 
         # the linear_out layer is just to plug-and-play in any location. This is not strictly necessary.
         # You could just as well just connect from num_bins to the next layer
-        self.linear_out = torch.nn.Linear(num_bins, image_size)
+        self.linear_out = torch.nn.Linear(num_bins, input_length)
         self.bins, self.bin_sizes = self.get_bins_by_mass(num_bins)
 
         # Initialize:

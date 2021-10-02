@@ -65,8 +65,46 @@ class ImprintBlock(torch.nn.Module):
 
         return new_biases
 
-    r''' Old imprint block. Sleep here for now... we may need you later
 
+from statistics import NormalDist
+
+class DifferentialBlock(torch.nn.Module):
+    """Recover data in v-notation instead of u, i.e. from differences in gradients instead of 1-hot."""
+    def __init__(self, input_length, num_bins, alpha=None):
+        super().__init__()
+        self.linear = torch.nn.Linear(input_length, num_bins)
+        self.nonlin = torch.nn.ReLU()
+
+        # the linear_out layer is just to plug-and-play in any location. This is not strictly necessary.
+        # You could just as well just connect from num_bins to the next layer
+        self.linear_out = torch.nn.Linear(num_bins, image_size)
+        self.bins, self.bin_sizes = self.get_bins_by_mass(num_bins)
+
+        # Initialize:
+        self.reset_weights()
+
+    def reset_weights(self):
+        with torch.no_grad():
+            setup = dict(device=self.linear.weight.device, dtype=self.linear.weight.dtype)
+            self.linear.weight.data = torch.ones_like(self.linear0.weight.data) / torch.as_tensor(self.bin_sizes, **setup)
+            self.linear.weight.data /= self.linear.weight.in_features
+            self.linear.bias.data = torch.as_tensor(self.bins, **setup)
+
+            torch.nn.init.orthogonal_(self.linear_out.weight.data, gain=self.linear_out.in_features ** 2)
+
+    def get_bins_by_mass(self, num_bins, mu=0, sigma=1):
+        bins = []
+        mass = 0
+        for path in range(num_bins + 1):
+            mass += 1 / (num_bins + 2)
+            bins += [NormalDist(mu=mu, sigma=sigma).inv_cdf(mass)]
+        bin_sizes = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
+        return bins[:-1], bin_sizes
+
+
+
+class EquispacedImprintBlock(torch.nn.Module):
+    """The old implementation."""
     def __init__(self, image_size, num_bins, alpha=0.375):
         """
         image_size is the size of the input images
@@ -105,7 +143,7 @@ class ImprintBlock(torch.nn.Module):
         return bins, bin_val
 
     def _get_order_stats(self, r, n):
-        """
+        r"""
         r Order statistics can be computed as follows:
         E(r:n) = \mu + \Phi^{-1}\left( \frac{r-a}{n-2a+1} \sigma \right)
         where a = 0.375
@@ -122,5 +160,3 @@ class ImprintBlock(torch.nn.Module):
             new_biases[i] = self.bins[i]
 
         return new_biases
-
-    '''

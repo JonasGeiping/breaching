@@ -1,5 +1,5 @@
 
-name: single_image_small
+name: small_batch_cifar
 
 defaults:
   - data: CIFAR10

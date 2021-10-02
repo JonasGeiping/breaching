@@ -111,11 +111,11 @@ class UserSingleStep(torch.nn.Module):
         data = user_data['data'].clone().detach()
         labels = user_data['labels'].clone().detach()
 
-        data.mul_(ds).add_(dm).clamp_(0, 1)
-
         if scale:
             min_val, max_val = data.amin(dim=[2, 3], keepdim=True), data.amax(dim=[2, 3], keepdim=True)
             data = (data - min_val) / (max_val - min_val)
+        else:
+            data.mul_(ds).add_(dm).clamp_(0, 1)
 
         if data.shape[0] == 1:
             plt.imshow(data[0].permute(1, 2, 0).cpu())

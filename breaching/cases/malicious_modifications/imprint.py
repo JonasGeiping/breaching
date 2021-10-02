@@ -75,20 +75,23 @@ class DifferentialBlock(torch.nn.Module):
         self.linear = torch.nn.Linear(input_length, num_bins)
         self.nonlin = torch.nn.ReLU()
 
+        # self.scaler = torch.nn.Linear(num_bins, num_bins, bias=False)  # sanity check
         # the linear_out layer is just to plug-and-play in any location. This is not strictly necessary.
         # You could just as well just connect from num_bins to the next layer
         self.linear_out = torch.nn.Linear(num_bins, input_length)
         self.bins, self.bin_sizes = self.get_bins_by_mass(num_bins)
-
         # Initialize:
         self.reset_weights()
 
     def reset_weights(self):
         with torch.no_grad():
             setup = dict(device=self.linear.weight.device, dtype=self.linear.weight.dtype)
-            self.linear.weight.data = torch.ones_like(self.linear.weight) / torch.as_tensor(self.bin_sizes, **setup)
-            self.linear.weight.data /= self.linear.weight.in_features
-            self.linear.bias.data = torch.as_tensor(self.bins, **setup)
+            
+            self.linear.weight.data = torch.ones_like(self.linear.weight) # / torch.as_tensor(self.bin_sizes, **setup)[:, None]
+            self.linear.weight.data /= self.linear.in_features
+            self.linear.bias.data = -torch.as_tensor(self.bins, **setup)
+
+            # self.scaler.weight.data = torch.eye(self.linear.out_features, **setup) #torch.diag(1 / torch.as_tensor(self.bin_sizes, **setup))
 
             torch.nn.init.orthogonal_(self.linear_out.weight, gain=self.linear_out.in_features ** 2)
 
@@ -99,8 +102,14 @@ class DifferentialBlock(torch.nn.Module):
             mass += 1 / (num_bins + 2)
             bins += [NormalDist(mu=mu, sigma=sigma).inv_cdf(mass)]
         bin_sizes = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
-        return bins[:-1], bin_sizes
+        bins = torch.linspace(-1, 1, num_bins)
+        return bins, bin_sizes
 
+
+    def forward(self, x):
+        x = self.nonlin(self.linear(x))
+        x = self.linear_out(x)
+        return x
 
 
 class EquispacedImprintBlock(torch.nn.Module):

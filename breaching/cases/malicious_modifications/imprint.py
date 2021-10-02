@@ -86,11 +86,11 @@ class DifferentialBlock(torch.nn.Module):
     def reset_weights(self):
         with torch.no_grad():
             setup = dict(device=self.linear.weight.device, dtype=self.linear.weight.dtype)
-            self.linear.weight.data = torch.ones_like(self.linear0.weight.data) / torch.as_tensor(self.bin_sizes, **setup)
+            self.linear.weight.data = torch.ones_like(self.linear.weight) / torch.as_tensor(self.bin_sizes, **setup)
             self.linear.weight.data /= self.linear.weight.in_features
             self.linear.bias.data = torch.as_tensor(self.bins, **setup)
 
-            torch.nn.init.orthogonal_(self.linear_out.weight.data, gain=self.linear_out.in_features ** 2)
+            torch.nn.init.orthogonal_(self.linear_out.weight, gain=self.linear_out.in_features ** 2)
 
     def get_bins_by_mass(self, num_bins, mu=0, sigma=1):
         bins = []

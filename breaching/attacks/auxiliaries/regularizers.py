@@ -3,60 +3,6 @@
 import torch
 from .deepinversion import DeepInversionFeatureHook
 
-# @torch.jit.script  # ?
-class Euclidean(torch.nn.Module):
-    """Gradient matching based on the euclidean distance of two gradient vectors."""
-
-    def __init__(self, scale=1.0):
-        super().__init__()
-        self.scale = scale
-
-    def forward(self, gradient_rec, gradient_data):
-        objective = 0
-        # param_count = 0
-        for rec, data in zip(gradient_rec, gradient_data):
-            objective += (rec - data).pow(2).sum()
-            # param_count += rec.numel()
-        return 0.5 * self.scale * objective  # / param_count
-
-
-class CosineSimilarity(torch.nn.Module):
-    """Gradient matching based on cosine similarity of two gradient vectors."""
-
-    def __init__(self, scale=1.0):
-        super().__init__()
-        self.scale = scale
-
-    def forward(self, gradient_rec, gradient_data):
-        scalar_product, rec_norm, data_norm = 0.0, 0.0, 0.0
-        for rec, data in zip(gradient_rec, gradient_data):
-            scalar_product += (rec * data).sum()
-            rec_norm += rec.pow(2).sum()
-            data_norm += data.pow(2).sum()
-
-        objective = 1 - scalar_product / rec_norm.sqrt() / data_norm.sqrt()
-
-        return objective * self.scale
-
-
-class CosineSimilarityFast(torch.nn.Module):
-    """Gradient matching based on cosine similarity of two gradient vectors."""
-
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, gradient_rec, gradient_data):
-        scalar_product, rec_norm, data_norm = 0.0, 0.0, 0.0
-        for rec, data in zip(gradient_rec, gradient_data):
-            scalar_product += (rec * data).sum()
-            rec_norm += rec.pow(2).sum().detach()
-            data_norm += data.pow(2).sum().detach()
-
-        objective = 1 - scalar_product / rec_norm.sqrt() / data_norm.sqrt()
-
-        return objective
-
-
 class TotalVariationOld(torch.nn.Module):
     """Computes the total variation value of an (image) tensor, based on its last two dimensions.
        Optionally also Color TV based on its last three dimensions."""
@@ -216,7 +162,6 @@ class DeepInversion(torch.nn.Module):
             for module in model.modules():
                 if isinstance(module, torch.nn.BatchNorm2d):
                     self.losses[idx].append(DeepInversionFeatureHook(module))
-
 
     def forward(self, tensor, **kwargs):
         rescale = [self.first_bn_multiplier] + [1. for _ in range(len(self.losses[0]) - 1)]

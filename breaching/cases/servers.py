@@ -11,7 +11,7 @@ Each entry in the list of payloads contains at least the keys "parameters" and "
 
 import torch
 from torch.hub import load_state_dict_from_url
-from .malicious_modifications import ImprintBlock, RecoveryOptimizer
+from .malicious_modifications import ImprintBlock, DifferentialBlock, RecoveryOptimizer
 from .malicious_modifications.parameter_utils import _make_average_layer, _make_linear_biases
 from .malicious_modifications.parameter_utils import _eliminate_shortcut_weight, _set_bias, _set_layer, rgetattr, _set_pathmod_layer
 
@@ -115,6 +115,15 @@ class MaliciousModelServer(HonestServer):
                                                          dim=1, unflattened_size=tuple(self.cfg_data.shape)),
                                                      modified_model)
                 self.secrets['ImprintBlock'] = dict(weight_idx=0, bias_idx=1)  # block position
+            elif key == 'DifferentialBlock':
+                input_dim = self.cfg_data.shape[0] * self.cfg_data.shape[1] * self.cfg_data.shape[2]
+                block = DifferentialBlock(input_dim, num_bins=val['num_bins'], alpha=None)
+                modified_model = torch.nn.Sequential(torch.nn.Flatten(),
+                                                     block,
+                                                     torch.nn.Unflatten(
+                                                         dim=1, unflattened_size=tuple(self.cfg_data.shape)),
+                                                     modified_model)
+                self.secrets['DifferentialBlock'] = dict(weight_idx=0, bias_idx=1)  # block position
         self.model = modified_model
         return self.model
 

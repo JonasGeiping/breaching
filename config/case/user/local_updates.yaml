@@ -1,0 +1,11 @@
+num_local_updates: 4
+num_data_points: 4
+num_data_per_local_update_step: 1 # Every step is taken on a different sample
+local_learning_rate: 0.1
+
+batch_norm_training: False
+provide_labels: True
+provide_num_data_points: True
+
+provide_local_hyperparams: True # Provide local_learning_rate, num_data_per_local_update_step, num_local_updates to server
+data_idx:  # Evaluate training data starting from this index. If no index is given, data is chosen at random.

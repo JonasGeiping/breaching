@@ -113,6 +113,7 @@ class UserSingleStep(torch.nn.Module):
 
         if scale:
             min_val, max_val = data.amin(dim=[2, 3], keepdim=True), data.amax(dim=[2, 3], keepdim=True)
+            # print(f'min_val: {min_val} | max_val: {max_val}')
             data = (data - min_val) / (max_val - min_val)
         else:
             data.mul_(ds).add_(dm).clamp_(0, 1)

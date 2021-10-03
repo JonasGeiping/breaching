@@ -93,7 +93,7 @@ class DifferentialBlock(torch.nn.Module):
 
             # self.scaler.weight.data = torch.eye(self.linear.out_features, **setup) #torch.diag(1 / torch.as_tensor(self.bin_sizes, **setup))
 
-            torch.nn.init.orthogonal_(self.linear_out.weight, gain=self.linear_out.in_features ** 2)
+            torch.nn.init.orthogonal_(self.linear_out.weight, gain=1.0)
 
     def get_bins_by_mass(self, num_bins, mu=0, sigma=1):
         bins = []
@@ -108,6 +108,7 @@ class DifferentialBlock(torch.nn.Module):
 
     def forward(self, x):
         x = self.nonlin(self.linear(x))
+        print(x)
         x = self.linear_out(x)
         return x
 

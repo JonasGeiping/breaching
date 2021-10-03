@@ -91,8 +91,8 @@ class UserSingleStep(torch.nn.Module):
             # Compute the forward pass
             outputs = self.model(data)
             loss = self.loss(outputs, labels)
-
             shared_grads += [torch.autograd.grad(loss, self.model.parameters())]
+            breakpoint()
             shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
 
         shared_data = dict(gradients=shared_grads, buffers=shared_buffers,

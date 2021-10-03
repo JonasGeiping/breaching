@@ -68,6 +68,11 @@ class ImprintAttacker(AnalyticAttacker):
 
         bias_grad = shared_data['gradients'][0][bias_idx]
         weight_grad = shared_data['gradients'][0][weight_idx]
+        
+        for i in reversed(list(range(1, weight_grad.shape[0]))):
+            weight_grad[i] -= weight_grad[i-1]
+            bias_grad[i] -= bias_grad[i-1] 
+        
 
         image_positions = bias_grad.nonzero()
         layer_inputs = self.invert_fc_layer(weight_grad, bias_grad, [])

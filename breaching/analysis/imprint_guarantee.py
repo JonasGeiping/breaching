@@ -15,7 +15,7 @@ def expected_amount(k, n):
         weight += temp * temp2
     adjustment1 = n * nCr(k, n)  # First term in r(n,k)
     weight += adjustment1
-    return weight / total_num - (2 * n / k)  # Second adjustment term in r(n,k)
+    return weight / total_num - n / k  # Second adjustment term in r(n,k)
 
 
-print(expected_amount(3, 6))
+#print(expected_amount(3, 6))

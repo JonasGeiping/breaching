@@ -9,8 +9,9 @@ from .resnets import ResNet, resnet_depths_to_config
 from .densenets import DenseNet, densenet_depths_to_config
 from .nfnets import NFNet
 from .vgg import VGG
+from .pathnets import PathNet18, StackNet18
 
-def construct_model(cfg_model, cfg_data, pretrained=False):
+def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
     """Construct the neural net that is used."""
     channels = cfg_data.shape[0]
     classes = cfg_data.classes
@@ -41,6 +42,17 @@ def construct_model(cfg_model, cfg_data, pretrained=False):
                            nonlin='ReLU', norm='BatchNorm2d',
                            downsample='B', width_per_group=64,
                            zero_init_residual=False)
+            
+        elif 'stacknet' in cfg_model.lower():
+            block, layers = resnet_depths_to_config(int("".join(filter(str.isdigit, cfg_model))))
+            basenet = ResNet(block, layers, channels, classes, stem='CIFAR', convolution_type='Standard',
+               nonlin='ReLU', norm='BatchNorm2d',
+               downsample='B', width_per_group=64,
+               zero_init_residual=False)
+            model = StackNet18(basenet, kwargs['num_paths'])
+            
+        elif 'pathnet' in cfg_model.lower():
+            model = PathNet18(num_paths=kwargs['num_paths']) #Change this...
         elif 'densenet' in cfg_model.lower():
             growth_rate, block_config, num_init_features = densenet_depths_to_config(
                 int("".join(filter(str.isdigit, cfg_model))))

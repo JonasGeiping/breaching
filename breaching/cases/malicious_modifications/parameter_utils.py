@@ -12,7 +12,10 @@ def rgetattr(obj, attr, *args):
 def _set_layer(weight, num_paths):
     out_planes = weight.shape[0]
     in_planes = weight.shape[1]
-    ratio = out_planes / in_planes
+    if in_planes != 3: # hacky way to do this for first conv layer
+        ratio = out_planes / in_planes
+    else:
+        ratio = 1
     per_path = int(out_planes / num_paths / ratio)
     with torch.no_grad():
         for i in range(out_planes):
@@ -21,8 +24,28 @@ def _set_layer(weight, num_paths):
             start = block * per_path
             temp_weight[start:start + per_path] = weight.data[i % per_path][0:per_path]
             weight.data[i] = temp_weight
-        if ratio > 1:
-            weight.data = _zipper(weight.data, ratio)
+    if ratio > 1:
+        weight.data = _zipper(weight.data, ratio)
+    return ratio
+
+
+def _set_pathmod_layer(weight, num_paths):
+    out_planes = weight.shape[0]
+    in_planes = weight.shape[1]
+    if in_planes != 3: # hacky way to do this for first conv layer
+        ratio = out_planes / in_planes
+    else:
+        ratio = 1
+    per_path = int(out_planes / num_paths / ratio)
+    with torch.no_grad():
+        for i in range(out_planes):
+            temp_weight = torch.zeros_like(weight.data[i])
+            block = i 
+            start = block * per_path
+            temp_weight[start:start + per_path] = weight.data[i % per_path][0:per_path]
+            weight.data[i] = temp_weight
+    if ratio > 1:
+        weight.data = _zipper(weight.data, ratio)
     return ratio
 
 

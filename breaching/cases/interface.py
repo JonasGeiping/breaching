@@ -9,7 +9,7 @@ from .data import construct_dataloader
 from .models import construct_model
 
 from .users import UserSingleStep
-from .servers import HonestServer, MaliciousModelServer, MaliciousParameterServer, PathParameterServer
+from .servers import HonestServer, MaliciousModelServer, MaliciousParameterServer, PathParameterServer, StackParameterServer
 
 
 def construct_case(cfg_case, setup, dryrun=False):
@@ -33,6 +33,8 @@ def construct_case(cfg_case, setup, dryrun=False):
         server = MaliciousParameterServer(model, loss, cfg_case, setup, external_dataloader=external_dataloader)
     elif cfg_case.server.name == 'path_parameters':
         server = PathParameterServer(model, loss, cfg_case, setup, external_dataloader=external_dataloader)
+    elif cfg_case.server.name == 'stack_parameters':
+        server = StackParameterServer(model, loss, cfg_case, setup, external_dataloader=external_dataloader)
     else:
         raise ValueError(f'Invalid server settings {cfg_case.server} given.')
 

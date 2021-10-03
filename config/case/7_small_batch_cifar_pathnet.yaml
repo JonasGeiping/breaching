@@ -6,7 +6,8 @@ defaults:
   - impl: default
   - server: path-parameters
 loss: CrossEntropy
-model: resnet18
+model: pathnet18
+num_paths: 2
 
 # Server and user:
 num_queries: 1

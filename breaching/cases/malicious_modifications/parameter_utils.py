@@ -14,8 +14,7 @@ def introspect_model(model, input_data_shape, setup=dict(device=torch.device('cp
 
     hooks_list = []
     for name, module in model.named_modules():
-        if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)):
-            hooks_list.append(module.register_forward_hook(named_hook(name)))
+        hooks_list.append(module.register_forward_hook(named_hook(name)))
 
     throughput = torch.zeros([1, *input_data_shape], **setup)
     model(throughput)

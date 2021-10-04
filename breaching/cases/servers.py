@@ -103,20 +103,6 @@ class MaliciousModelServer(HonestServer):
     def prepare_model(self):
         """This server is not honest :>"""
 
-        first_conv = False  # todo: make this nice
-        bias_counter = 0
-        for name, module in self.model.named_modules():
-            with torch.no_grad():
-                if isinstance(module, torch.nn.BatchNorm2d):
-                    module.weight.data = module.running_var.data.clone()
-                    module.bias.data = module.running_mean.data.clone() + 10
-                    bias_counter += 10
-                if isinstance(module, torch.nn.Conv2d):
-                    if not first_conv:
-                        torch.nn.init.dirac_(module.weight)
-                    else:
-                        torch.nn.init.zeros_(module.weight)  # this is the resnet rule
-
         modified_model = self.model
         for key, val in self.cfg_server.model_modification.items():  # todo make this nice
             if key == 'ImprintBlock':
@@ -132,9 +118,8 @@ class MaliciousModelServer(HonestServer):
                                                                       val['num_bins'], val.get('position'))
                 self.secrets['ImprintBlock'] = secrets
 
-        for module in modified_model.modules():
-            if isinstance(module, ImprintBlock):
-                module.linear0.bias.data += bias_counter
+        if val.get('position') is not None:
+            self._linearize_up_to_imprint(modified_model, ImprintBlock)
         self.model = modified_model
         return self.model
 
@@ -176,6 +161,30 @@ class MaliciousModelServer(HonestServer):
 
         return modified_model, secrets
 
+
+    def _linearize_up_to_imprint(self, model, block_fn):
+        first_conv_set = False  # todo: make this nice
+        for name, module in self.model.named_modules():
+            if isinstance(module, block_fn):
+                break
+            with torch.no_grad():
+                if isinstance(module, torch.nn.BatchNorm2d):
+                    # module.weight.data = (module.running_var.data.clone() + module.eps).sqrt()
+                    # module.bias.data = module.running_mean.data.clone()
+                    torch.nn.init.ones_(module.running_var)
+                    torch.nn.init.ones_(module.weight)
+                    torch.nn.init.zeros_(module.running_mean)
+                    torch.nn.init.zeros_(module.bias)
+                if isinstance(module, torch.nn.Conv2d):
+                    if not first_conv_set:
+                        torch.nn.init.dirac_(module.weight)
+                        num_groups = module.out_channels // 3
+                        module.weight.data[:num_groups * 3] = torch.cat([module.weight.data[:3, :3, :, :]] * num_groups)
+                        first_conv_set = True
+                    else:
+                        torch.nn.init.zeros_(module.weight)  # this is the resnet rule
+                if isinstance(module, torch.nn.ReLU):
+                    replace_module_by_instance(model, module, torch.nn.Identity())
 
 class MaliciousParameterServer(HonestServer):
     """Implement a malicious server protocol."""

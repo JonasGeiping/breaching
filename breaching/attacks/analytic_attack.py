@@ -88,7 +88,7 @@ class ImprintAttacker(AnalyticAttacker):
             print(f'Initially produced {inputs.shape[0]} hits.')
             # Cut additional hits:
             best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len(labels), largest=False)
-            print(f'Initially produced {len(labels)} hits.')
+            print(f'Reduced to {len(labels)} hits.')
             inputs = inputs[best_guesses.indices]
 
 

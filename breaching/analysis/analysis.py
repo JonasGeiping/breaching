@@ -6,7 +6,8 @@ from .metrics import psnr_compute, registered_psnr_compute, image_identifiabilit
 
 
 def report(reconstructed_user_data, true_user_data, server_payload, model, dataloader=None,
-           setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=False, compute_full_iip=False):
+           setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=False, compute_full_iip=False,
+           skip_rpsnr=False):
     import lpips   # lazily import this only if report is used.
     lpips_scorer = lpips.LPIPS(net='alex').to(**setup)
 
@@ -20,7 +21,8 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     if order_batch:
         order = compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalized, setup)
         reconstructed_user_data['data'] = reconstructed_user_data['data'][order]
-        reconstructed_user_data['labels'] = reconstructed_user_data['labels'][order]
+        if reconstructed_user_data['labels'] is not None:
+            reconstructed_user_data['labels'] = reconstructed_user_data['labels'][order]
         rec_denormalized = rec_denormalized[order]
     else:
         order = None
@@ -33,7 +35,10 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     test_lpips = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True).mean().item()
 
     # Compute registered psnr. This is a bit computationally intensive:
-    test_rpsnr = registered_psnr_compute(rec_denormalized.cpu(), ground_truth_denormalized.cpu(), factor=1).item()
+    if not skip_rpsnr:
+        test_rpsnr = registered_psnr_compute(rec_denormalized.cpu(), ground_truth_denormalized.cpu(), factor=1).item()
+    else:
+        test_rpsnr = float('nan')
 
     # Compute IIP score if a dataloader is passed:
     if dataloader is not None:

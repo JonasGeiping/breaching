@@ -14,7 +14,7 @@ class ImprintBlock(torch.nn.Module):
         """
         super().__init__()
         self.image_size = image_size
-        self.num_bins = 2 * (num_bins // 2)  # make sure there's even num
+        self.num_bins = num_bins
         self.linear0 = torch.nn.Linear(image_size, num_bins)
         self.linear2 = torch.nn.Linear(num_bins, image_size)
         self.bins = self._get_bins()
@@ -33,8 +33,8 @@ class ImprintBlock(torch.nn.Module):
     def _get_bins(self):
         left_bins = []
         bins = []
-        mass_per_bin = 1 / (self.num_bins + 1)
-        for i in range(self.num_bins + 1):
+        mass_per_bin = 1 / (self.num_bins)
+        for i in range(self.num_bins):
             bins.append(norm.ppf(i * mass_per_bin))
         bins[0] = -10  # -Inf is not great here, but NormalDist(mu=0, sigma=1).cdf(10) approx 1
         # bins[-1] = 10 # this is a boring bin

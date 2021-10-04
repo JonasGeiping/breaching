@@ -148,7 +148,7 @@ class UserSingleStep(torch.nn.Module):
         classes = self.dataloader.dataset.classes
 
         data = user_data['data'].clone().detach()
-        labels = user_data['labels'].clone().detach()
+        labels = user_data['labels'].clone().detach() if user_data['labels'] is not None else None
 
         if scale:
             min_val, max_val = data.amin(dim=[2, 3], keepdim=True), data.amax(dim=[2, 3], keepdim=True)
@@ -167,9 +167,10 @@ class UserSingleStep(torch.nn.Module):
             label_classes = []
             for i, (im, axis) in enumerate(zip(data, axes.flatten())):
                 axis.imshow(im.permute(1, 2, 0).cpu())
-                label_classes.append(classes[labels[i]])
+                if labels is not None:
+                    label_classes.append(classes[labels[i]])
                 axis.axis('off')
-            print(label_classes)
+            print(label_classes) if labels is not None else None
 
 
 class UserMultiStep(UserSingleStep):

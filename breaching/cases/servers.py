@@ -183,6 +183,11 @@ class MaliciousModelServer(HonestServer):
                         first_conv_set = True
                     else:
                         torch.nn.init.zeros_(module.weight)  # this is the resnet rule
+                if 'downsample.0' in name:
+                    torch.nn.init.dirac_(module.weight)
+                    num_groups = module.out_channels // module.in_channels
+                    concat = torch.cat([module.weight.data[:module.in_channels, :module.in_channels, :, :]] * num_groups)
+                    module.weight.data[:num_groups * module.in_channels] = concat
                 if isinstance(module, torch.nn.ReLU):
                     replace_module_by_instance(model, module, torch.nn.Identity())
 

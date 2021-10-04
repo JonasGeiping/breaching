@@ -3,6 +3,36 @@ import functools
 import torch
 
 
+def introspect_model(model, input_data_shape, setup=dict(device=torch.device('cpu'), dtype=torch.float)):
+    """Compute model feature shapes."""
+    feature_shapes = dict()
+
+    def named_hook(name):
+        def hook_fn(module, input, output):
+            feature_shapes[name] = dict(shape=input[0].shape, info=str(module))
+        return hook_fn
+
+    hooks_list = []
+    for name, module in model.named_modules():
+        if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)):
+            hooks_list.append(module.register_forward_hook(named_hook(name)))
+
+    throughput = torch.zeros([1, *input_data_shape], **setup)
+    model(throughput)
+    [h.remove() for h in hooks_list]
+    return feature_shapes
+
+
+def replace_module_by_instance(model, old_module, replacement):
+    def replace(model):
+        for child_name, child in model.named_children():
+            if child is old_module:
+                setattr(model, child_name, replacement)
+            else:
+                replace(child)
+    replace(model)
+
+
 def rgetattr(obj, attr, *args):
     def _getattr(obj, attr):
         return getattr(obj, attr, *args)
@@ -12,7 +42,7 @@ def rgetattr(obj, attr, *args):
 def _set_layer(weight, num_paths):
     out_planes = weight.shape[0]
     in_planes = weight.shape[1]
-    if in_planes != 3: # hacky way to do this for first conv layer
+    if in_planes != 3:  # hacky way to do this for first conv layer
         ratio = out_planes / in_planes
     else:
         ratio = 1
@@ -32,7 +62,7 @@ def _set_layer(weight, num_paths):
 def _set_pathmod_layer(weight, num_paths):
     out_planes = weight.shape[0]
     in_planes = weight.shape[1]
-    if in_planes != 3: # hacky way to do this for first conv layer
+    if in_planes != 3:  # hacky way to do this for first conv layer
         ratio = out_planes / in_planes
     else:
         ratio = 1
@@ -40,7 +70,7 @@ def _set_pathmod_layer(weight, num_paths):
     with torch.no_grad():
         for i in range(out_planes):
             temp_weight = torch.zeros_like(weight.data[i])
-            block = i 
+            block = i
             start = block * per_path
             temp_weight[start:start + per_path] = weight.data[i % per_path][0:per_path]
             weight.data[i] = temp_weight

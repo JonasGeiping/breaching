@@ -38,7 +38,6 @@ class ImprintBlock(torch.nn.Module):
             bins.append(norm.ppf(i * mass_per_bin))
         bins[0] = -10  # -Inf is not great here, but NormalDist(mu=0, sigma=1).cdf(10) approx 1
         # bins[-1] = 10 # this is a boring bin
-        print(bins)
         return bins
 
     def _make_average_layer(self):

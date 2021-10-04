@@ -87,8 +87,12 @@ class ImprintAttacker(AnalyticAttacker):
         else:
             print(f'Initially produced {inputs.shape[0]} hits.')
             # Cut additional hits:
-            best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len(labels), largest=False)
+            # this rule is optimal for clean data with few bins:
+            # best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len(labels), largest=False)
+            # this rule is best when faced with differential privacy:
+            best_guesses = torch.topk(weight_grad.mean(dim=1)[bias_grad != 0].abs(), len(labels), largest=True)
             print(f'Reduced to {len(labels)} hits.')
+            # print(best_guesses.indices.sort().values)
             inputs = inputs[best_guesses.indices]
 
 

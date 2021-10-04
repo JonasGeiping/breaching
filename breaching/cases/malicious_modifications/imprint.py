@@ -17,9 +17,9 @@ class ImprintBlock(torch.nn.Module):
         self.num_bins = 2 * (num_bins // 2)  # make sure there's even num
         self.linear0 = torch.nn.Linear(image_size, num_bins)
         self.linear2 = torch.nn.Linear(num_bins, image_size)
-        self.bins, self.bin_sizes = self._get_bins()
+        self.bins = self._get_bins()
         with torch.no_grad():
-            self.linear0.weight.data[:, :] = self._make_scaled_average_layer()
+            self.linear0.weight.data[:, :] = self._make_average_layer()
             self.linear0.bias.data[:] = self._make_biases()
             self.linear2.weight.data = torch.ones_like(self.linear2.weight.data)
         self.relu = torch.nn.ReLU()
@@ -33,21 +33,16 @@ class ImprintBlock(torch.nn.Module):
     def _get_bins(self):
         left_bins = []
         bins = []
-        mass_per_bin = 1 / self.num_bins
+        mass_per_bin = 1 / (self.num_bins + 1)
         for i in range(self.num_bins + 1):
             bins.append(norm.ppf(i * mass_per_bin))
-        bin_sizes = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
-        bins = bins[1:]  # here we need to throw away one on the right
-        return bins, bin_sizes
+        bins[0] = -10  # -Inf is not great here, but NormalDist(mu=0, sigma=1).cdf(10) approx 1
+        # bins[-1] = 10 # this is a boring bin
+        print(bins)
+        return bins
 
-    def _make_scaled_identity(self):
-        new_data = torch.diag(1 / torch.tensor(self.bin_sizes))
-        return new_data
-
-    def _make_scaled_average_layer(self):
+    def _make_average_layer(self):
         new_data = 1 / self.linear0.weight.data.shape[-1] * torch.ones_like(self.linear0.weight.data)
-        for i, row in enumerate(new_data):
-            row /= torch.tensor(self.bin_sizes[i], device=new_data.device)
         return new_data
 
     def _make_biases(self):

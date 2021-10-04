@@ -8,7 +8,7 @@ class UserSingleStep(torch.nn.Module):
     """A user who computes a single local update step."""
 
     def __init__(self, model, loss, dataloader, setup, num_data_points=1, num_user_queries=1, batch_norm_training=False,
-                 provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1):
+                 provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1, local_diff_privacy=None):
         """Initialize but do not propagate the cfg_case.user dict further."""
         super().__init__()
         self.num_data_points = num_data_points
@@ -30,6 +30,19 @@ class UserSingleStep(torch.nn.Module):
             self.model.training()
         else:
             self.model.eval()
+
+        if local_diff_privacy['gradient_noise'] > 0.0:
+            loc = torch.as_tensor(0.0, **setup)
+            scale = torch.as_tensor(local_diff_privacy['gradient_noise'], **setup)
+            if local_diff_privacy['distribution'] == 'gaussian':
+                self.generator = torch.distributions.normal.Normal(loc=loc, scale=scale)
+            elif local_diff_privacy['distribution'] == 'laplacian':
+                self.generator = torch.distributions.laplace.Laplace(loc=loc, scale=scale)
+            else:
+                raise ValueError(f'Invalid distribution {local_diff_privacy["distribution"]} given.')
+        else:
+            self.generator = None
+        self.clip_value = local_diff_privacy.get('per_example_clipping', 0.0)
 
         self.dataloader = dataloader
         self.loss = copy.deepcopy(loss)  # Just in case the loss contains state
@@ -70,11 +83,23 @@ class UserSingleStep(torch.nn.Module):
                 for buffer, server_state in zip(self.model.buffers(), buffers):
                     buffer.copy_(server_state.to(**self.setup))
 
-            # Compute the forward pass
-            outputs = self.model(data)
-            loss = self.loss(outputs, labels)
-            shared_grads += [torch.autograd.grad(loss, self.model.parameters())]
-            breakpoint()
+            def _compute_batch_gradient(data, labels):
+                outputs = self.model(data)
+                loss = self.loss(outputs, labels)
+                return torch.autograd.grad(loss, self.model.parameters())
+
+            if self.clip_value > 0:  # Compute per-example gradients and clip them in this case
+                grads = [torch.zeros_like(p) for p in self.model.parameters()]
+                for data_point, data_label in zip(data, labels):
+                    per_example_grads = _compute_batch_gradient(data_point[None, ...], data_label[None, ...])
+                    self._clip_list_of_grad_(per_example_grads)
+                    torch._foreach_add_(grads, per_example_grads)
+                torch._foreach_div(grads, len(data))
+            else:
+                # Compute the forward pass
+                grads = _compute_batch_gradient(data, labels)
+            self._apply_differential_noise(grads)
+            shared_grads += [grads]
             shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
 
         shared_data = dict(gradients=shared_grads, buffers=shared_buffers,
@@ -85,6 +110,18 @@ class UserSingleStep(torch.nn.Module):
 
         return shared_data, true_user_data
 
+    def _clip_list_of_grad_(self, grads):
+        """Apply differential privacy component per-example clipping."""
+        grad_norm = torch.norm(torch.stack([torch.norm(g, 2) for g in grads]), 2)
+        if grad_norm > self.clip_value:
+            [g.mul_(self.clip_value / (grad_norm + 1e-6)) for g in grads]
+
+    def _apply_differential_noise(self, grads):
+        """Apply differential privacy component gradient noise."""
+        if self.generator is not None:
+            for grad in grads:
+                grad += self.generator.sample(grad.shape)
+
     def _generate_example_data(self):
         # Select data
         data = []
@@ -94,7 +131,9 @@ class UserSingleStep(torch.nn.Module):
             datum, label = self.dataloader.dataset[pointer]
             data += [datum]
             labels += [torch.as_tensor(label)]
-            pointer += len(self.dataloader.dataset.classes)
+            # pointer += len(self.dataloader.dataset.classes) // 7   # something not very dividable ...
+            pointer += 1
+            # pointer += 50  # these are unique labels
             pointer = pointer % len(self.dataloader.dataset)
         data = torch.stack(data).to(**self.setup)
         labels = torch.stack(labels).to(device=self.setup['device'])
@@ -138,10 +177,11 @@ class UserMultiStep(UserSingleStep):
 
     def __init__(self, model, loss, dataloader, setup, num_data_points=1, num_user_queries=1, batch_norm_training=False,
                  provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1,
-                 num_data_per_local_update_step=None, local_learning_rate=None, provide_local_hyperparams=True):
+                 num_data_per_local_update_step=None, local_learning_rate=None, provide_local_hyperparams=True,
+                 local_diff_privacy=None):
         """Initialize but do not propagate the cfg_case.user dict further."""
         super().__init__(model, loss, dataloader, setup, num_data_points, num_user_queries, batch_norm_training,
-                         provide_labels, provide_num_data_points, data_idx)
+                         provide_labels, provide_num_data_points, data_idx, num_local_updates, local_diff_privacy)
 
         self.num_local_updates = num_local_updates
         self.num_data_per_local_update_step = num_data_per_local_update_step
@@ -182,6 +222,10 @@ class UserMultiStep(UserSingleStep):
                 outputs = self.model(data)
                 loss = self.loss(outputs, labels)
                 loss.backward()
+                if self.clip_value > 0:
+                    grad_ref = [p.grad for p in self.model.parameters()]
+                    self._clip_list_of_grad_(grads_ref)
+                    self._apply_differential_noise(grads_ref)
                 optimizer.step()
 
             # Share differential to server version:

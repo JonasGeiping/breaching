@@ -38,7 +38,6 @@ class AnalyticAttacker(_BaseAttacker):
 
         return reconstructed_data, stats
 
-
     def invert_fc_layer(self, weight_grad, bias_grad, image_positions):
         """The basic trick to invert a FC layer."""
         # By the way the labels are exactly at (bias_grad < 0).nonzero() if they are unique
@@ -83,4 +82,3 @@ class ImprintAttacker(AnalyticAttacker):
 
         reconstructed_data = dict(data=inputs, labels=labels)
         return reconstructed_data, stats
-    

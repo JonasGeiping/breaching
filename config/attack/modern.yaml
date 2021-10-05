@@ -37,6 +37,6 @@ regularization:
     scale: 1e-6
     pnorm: 2
   deep_inversion:  # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
-    scale: 0.01
+    scale: 0.001
   # group_regularization: # Not implemented. Unclear how this was done without accesss to the source code
   #  scale: 0.01

@@ -112,7 +112,7 @@ def save_summary(cfg, metrics, stats, local_time):
                    **cfg.attack,
                    **{k: v for k, v in cfg.case.items() if k not in ['name', 'model']},
                    folder=local_folder)
-    save_to_table(os.path.join('tables'),
+    save_to_table(os.path.join(cfg.original_cwd, 'tables'),
                   f'breach_{cfg.case.name}_{cfg.case.data.name}_reports', dryrun=cfg.dryrun, **summary)
 
 

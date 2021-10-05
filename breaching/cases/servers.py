@@ -104,19 +104,21 @@ class MaliciousModelServer(HonestServer):
         """This server is not honest :>"""
 
         modified_model = self.model
-        for key, val in self.cfg_server.model_modification.items():  # todo make this nice
-            if key == 'ImprintBlock':
-                block_fn = ImprintBlock
-            elif key == 'SparseImprintBlock':
-                block_fn = SparseImprintBlock
-            elif key == 'DifferentialBlock':
-                block_fn = DifferentialBlock
+        if self.cfg_server.model_modification.type == 'ImprintBlock':
+            block_fn = ImprintBlock
+        elif self.cfg_server.model_modification.type == 'SparseImprintBlock':
+            block_fn = SparseImprintBlock
+        elif self.cfg_server.model_modification.type == 'DifferentialBlock':
+            block_fn = DifferentialBlock
+        else:
+            raise ValueError('Unknown modification')
 
         modified_model, secrets = self._place_malicious_block(modified_model, block_fn,
-                                                              val['num_bins'], val.get('position'))
+                                                              self.cfg_server.model_modification.num_bins,
+                                                              self.cfg_server.model_modification.position)
         self.secrets['ImprintBlock'] = secrets
 
-        if val.get('position') is not None:
+        if self.cfg_server.model_modification.position is not None:
             self._linearize_up_to_imprint(modified_model, ImprintBlock)  # Linearize full model for SparseImprint
         self.model = modified_model
         return self.model

@@ -6,8 +6,8 @@ from .metrics import psnr_compute, registered_psnr_compute, image_identifiabilit
 
 
 def report(reconstructed_user_data, true_user_data, server_payload, model, dataloader=None,
-           setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=False, compute_full_iip=False,
-           skip_rpsnr=False):
+           setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=True, compute_full_iip=False,
+           skip_rpsnr=True):
     import lpips   # lazily import this only if report is used.
     lpips_scorer = lpips.LPIPS(net='alex').to(**setup)
 
@@ -65,13 +65,16 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
             # Compute the forward passes
             feat_mse += (model(reconstructed_user_data['data']) - model(true_user_data['data'])).pow(2).mean().item()
 
+    # Record model parameters:
+    parameters = sum([p.numel() for p in model.parameters()])
+
     # Print report:
     iip_scoring = ' | '.join([f'IIP-{k}: {v:5.2%}' for k, v in iip_scores.items()])
     print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}|"
           f" R-PSNR: {test_rpsnr:4.2f} | {iip_scoring}")
 
     metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse, lpips=test_lpips, rpsnr=test_rpsnr,
-                   order=order, **{f'IIP-{k}': v for k, v in iip_scores.items()})
+                   order=order, **{f'IIP-{k}': v for k, v in iip_scores.items()}, parameters=parameters)
     return metrics
 
 

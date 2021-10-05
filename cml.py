@@ -193,6 +193,7 @@ else:
     cml_account = 'cml'
 
 if args.qos == 'cpu':
+    args.gpus = 0
     partition = 'cpu'
     cpus = 22
 elif args.qos == 'scav':

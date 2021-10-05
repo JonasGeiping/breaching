@@ -41,8 +41,8 @@ def system_startup(process_idx, local_group_size, cfg):
         torch.cuda.set_device(process_idx)
         log.info(f'GPU : {torch.cuda.get_device_name(device=device)}')
 
-    if not torch.cuda.is_available() and not cfg.dryrun:
-        raise ValueError('No GPU allocated to this process. Running in CPU-mode is likely a bad idea. Complain to your admin.')
+    # if not torch.cuda.is_available() and not cfg.dryrun:
+    #     raise ValueError('No GPU allocated to this process. Running in CPU-mode is likely a bad idea. Complain to your admin.')
 
     return setup
 

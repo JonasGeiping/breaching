@@ -233,7 +233,7 @@ class UserMultiStep(UserSingleStep):
             # Share differential to server version:
             # This is equivalent to sending the new stuff and letting the server do it, but in line
             # with the gradients sent in UserSingleStep
-            shared_grads += [[p_local - p_server.to(**self.setup)
+            shared_grads += [[(p_local - p_server.to(**self.setup)).clone().detach()
                               for (p_local, p_server) in zip(self.model.parameters(), parameters)]]
             shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
 

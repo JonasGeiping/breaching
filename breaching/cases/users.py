@@ -223,10 +223,11 @@ class UserMultiStep(UserSingleStep):
                 outputs = self.model(data)
                 loss = self.loss(outputs, labels)
                 loss.backward()
+
+                grads_ref = [p.grad for p in self.model.parameters()]
                 if self.clip_value > 0:
-                    grad_ref = [p.grad for p in self.model.parameters()]
                     self._clip_list_of_grad_(grads_ref)
-                    self._apply_differential_noise(grads_ref)
+                self._apply_differential_noise(grads_ref)
                 optimizer.step()
 
             # Share differential to server version:

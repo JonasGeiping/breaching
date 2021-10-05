@@ -116,8 +116,12 @@ def compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalize
                 for kk in range(L):
                     diff = (x[kk] - y[kk])**2
                     similarity_matrix[idx, idy] += spatial_average(lpips_scorer.lins[kk](diff)).squeeze()
-
-    _, rec_assignment = linear_sum_assignment(similarity_matrix.cpu().numpy(), maximize=False)
+    try:
+        _, rec_assignment = linear_sum_assignment(similarity_matrix.cpu().numpy(), maximize=False)
+    except ValueError:
+        print(f'ValueError from similarity matrix {similarity_matrix.cpu().numpy()}')
+        print('Returning trivial order...')
+        rec_assignment = list(range(B))
     return torch.as_tensor(rec_assignment, device=setup['device'], dtype=torch.long)
 
 

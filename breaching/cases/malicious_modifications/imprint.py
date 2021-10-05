@@ -27,7 +27,6 @@ class ImprintBlock(torch.nn.Module):
         self.relu = torch.nn.ReLU()
 
     def forward(self, x):
-        x_in = x.clone()
         x = self.linear0(x)
         x = self.relu(x)
         # output = x_in + x.mean(dim=1, keepdim=True)

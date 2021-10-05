@@ -18,4 +18,6 @@ def expected_amount(k, n):
     return weight / total_num - n / k  # Second adjustment term in r(n,k)
 
 
-#print(expected_amount(3, 6))
+
+if __name__ == "__main__":
+    print(expected_amount(3, 6))

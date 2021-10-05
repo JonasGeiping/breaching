@@ -106,20 +106,18 @@ class MaliciousModelServer(HonestServer):
         modified_model = self.model
         for key, val in self.cfg_server.model_modification.items():  # todo make this nice
             if key == 'ImprintBlock':
-                modified_model, secrets = self._place_malicious_block(modified_model, ImprintBlock,
-                                                                      val['num_bins'], val.get('position'))
-                self.secrets['ImprintBlock'] = secrets
+                block_fn = ImprintBlock
             elif key == 'SparseImprintBlock':
-                modified_model, secrets = self._place_malicious_block(modified_model, SparseImprintBlock,
-                                                                      val['num_bins'], val.get('position'))
-                self.secrets['ImprintBlock'] = secrets
+                block_fn = SparseImprintBlock
             elif key == 'DifferentialBlock':
-                modified_model, secrets = self._place_malicious_block(modified_model, DifferentialBlock,
-                                                                      val['num_bins'], val.get('position'))
-                self.secrets['ImprintBlock'] = secrets
+                block_fn = DifferentialBlock
+
+        modified_model, secrets = self._place_malicious_block(modified_model, block_fn,
+                                                              val['num_bins'], val.get('position'))
+        self.secrets['ImprintBlock'] = secrets
 
         if val.get('position') is not None:
-            self._linearize_up_to_imprint(modified_model, ImprintBlock)
+            self._linearize_up_to_imprint(modified_model, ImprintBlock)  # Linearize full model for SparseImprint
         self.model = modified_model
         return self.model
 
@@ -136,7 +134,7 @@ class MaliciousModelServer(HonestServer):
             block_found = False
             for name, module in modified_model.named_modules():
                 if position in name:  # give some leeway for additional containers.
-                    feature_shapes = introspect_model(modified_model, tuple(self.cfg_data.shape), self.setup)
+                    feature_shapes = introspect_model(modified_model, tuple(self.cfg_data.shape))
                     data_shape = feature_shapes[name]['shape'][1:]
                     print(f'Block inserted at feature shape {data_shape}.')
                     module_to_be_modified = module

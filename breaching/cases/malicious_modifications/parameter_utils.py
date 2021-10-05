@@ -3,9 +3,10 @@ import functools
 import torch
 
 
-def introspect_model(model, input_data_shape, setup=dict(device=torch.device('cpu'), dtype=torch.float)):
+def introspect_model(model, input_data_shape):
     """Compute model feature shapes."""
     feature_shapes = dict()
+    setup = dict(device=next(iter(model.parameters())).device, dtype=next(iter(model.parameters())).dtype)
 
     def named_hook(name):
         def hook_fn(module, input, output):

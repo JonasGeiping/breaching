@@ -8,7 +8,7 @@ import torch
 from .data import construct_dataloader
 from .models import construct_model
 
-from .users import UserSingleStep
+from .users import UserSingleStep, UserMultiStep
 from .servers import HonestServer, MaliciousModelServer, MaliciousParameterServer, PathParameterServer, StackParameterServer
 
 

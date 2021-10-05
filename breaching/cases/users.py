@@ -132,8 +132,8 @@ class UserSingleStep(torch.nn.Module):
             data += [datum]
             labels += [torch.as_tensor(label)]
             # pointer += len(self.dataloader.dataset.classes) // 7   # something not very dividable ...
-            pointer += 1
-            # pointer += 50  # these are unique labels
+            # pointer += 1
+            pointer += 50  # these are unique labels
             pointer = pointer % len(self.dataloader.dataset)
         data = torch.stack(data).to(**self.setup)
         labels = torch.stack(labels).to(device=self.setup['device'])

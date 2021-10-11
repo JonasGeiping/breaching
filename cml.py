@@ -192,6 +192,17 @@ elif args.qos in ['high', 'very_high']:
 else:
     cml_account = 'cml'
 
+if args.qos == 'cpu':
+    args.gpus = 0
+    partition = 'cpu'
+    cpus = 22
+elif args.qos == 'scav':
+    partition = 'scavenger'
+    cpus = min(args.gpus * 4, 32)
+else:
+    partition = 'dpart'
+    cpus = min(args.gpus * 4, 32)
+
 SBATCH_PROTOTYPE = \
     f"""#!/bin/bash
 
@@ -204,8 +215,8 @@ SBATCH_PROTOTYPE = \
 #SBATCH --account={cml_account}
 #SBATCH --qos={args.qos if args.qos != "scav" else "scavenger"}
 #SBATCH --gres=gpu:{args.gpus}
-#SBATCH --cpus-per-task={min(args.gpus * 4, 32)}
-#SBATCH --partition={"dpart" if args.qos != "scav" else "scavenger"}
+#SBATCH --cpus-per-task={cpus}
+#SBATCH --partition={partition}
 {f"#SBATCH --exclude={','.join(str(node) for node in banned_nodes)}" if banned_nodes else ''}
 #SBATCH --mem={args.mem}gb
 #SBATCH --mail-user={args.email if args.email is not None else username + "@umiacs.umd.edu"}

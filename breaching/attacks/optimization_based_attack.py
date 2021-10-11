@@ -102,14 +102,11 @@ class OptimizationBasedAttack(_BaseAttacker):
 
             total_objective = 0
             for model, shared_grad in list(zip(rec_model, shared_data['gradients'])):
-                model.hardtan = torch.nn.Hardtanh(min_val=-1e20, max_val=1e20)
                 model.zero_grad()
                 spoofed_loss = self.loss_fn(model(candidate), labels)
                 gradient = self.gradient_fn(candidate, labels, model, shared_data['local_hyperparams'])
 
-                #total_objective += self.objective(gradient[:60] + (gradient[-4], gradient[-3]), shared_grad[:60] + (shared_grad[-4], shared_grad[-3])) # Hacky... Change back
-                #total_objective += self.objective(gradient[:60], shared_grad[:60]) # Hacky... Change back
-                total_objective += self.objective(gradient[:-2], shared_grad[:-2]) # Hacky... Change back
+                total_objective += self.objective(gradient, shared_grad)
 
             for regularizer in self.regularizers:
                 total_objective += regularizer(candidate)

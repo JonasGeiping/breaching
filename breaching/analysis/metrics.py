@@ -124,7 +124,7 @@ def image_identifiability_precision(reconstructed_user_data, true_user_data, dat
     identified_images = dict(zip(scores, [0 for entry in scores]))
 
     for batch_idx, reconstruction in enumerate(reconstructed_user_data['data']):
-        batch_label = reconstructed_user_data['labels'][batch_idx]
+        batch_label = true_user_data['labels'][batch_idx]
         label_subset = [idx for (idx, label) in dataloader.dataset.lookup.items() if label == batch_label]
 
         distances = dict(zip(scores, [[] for entry in scores]))

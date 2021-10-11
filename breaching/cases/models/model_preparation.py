@@ -9,7 +9,8 @@ from .resnets import ResNet, resnet_depths_to_config
 from .densenets import DenseNet, densenet_depths_to_config
 from .nfnets import NFNet
 from .vgg import VGG
-from .pathnets import PathNet18, StackNet18
+# from .pathnets import PathNet18, StackNet18
+
 
 def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
     """Construct the neural net that is used."""
@@ -42,17 +43,17 @@ def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
                            nonlin='ReLU', norm='BatchNorm2d',
                            downsample='B', width_per_group=64,
                            zero_init_residual=False)
-            
+
         elif 'stacknet' in cfg_model.lower():
             block, layers = resnet_depths_to_config(int("".join(filter(str.isdigit, cfg_model))))
             basenet = ResNet(block, layers, channels, classes, stem='CIFAR', convolution_type='Standard',
-               nonlin='ReLU', norm='BatchNorm2d',
-               downsample='B', width_per_group=64,
-               zero_init_residual=False)
+                             nonlin='ReLU', norm='BatchNorm2d',
+                             downsample='B', width_per_group=64,
+                             zero_init_residual=False)
             model = StackNet18(basenet, kwargs['num_paths'])
-            
-        elif 'pathnet' in cfg_model.lower():
-            model = PathNet18(num_paths=kwargs['num_paths']) #Change this...
+
+        # elif 'pathnet' in cfg_model.lower():
+        #     model = PathNet18(num_paths=kwargs['num_paths']) #Change this...
         elif 'densenet' in cfg_model.lower():
             growth_rate, block_config, num_init_features = densenet_depths_to_config(
                 int("".join(filter(str.isdigit, cfg_model))))
@@ -83,7 +84,7 @@ def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
                 ('conv', torch.nn.Conv2d(channels, 3072, 3, stride=1, padding=1)),
                 ('relu', torch.nn.ReLU(inplace=True)),
                 ('pool', torch.nn.AdaptiveAvgPool2d(1)),
-                ('flatten', torch.nn.Flatten()), 
+                ('flatten', torch.nn.Flatten()),
                 ('linear', torch.nn.Linear(3072, classes)),
             ]))
         elif 'convnetsmall' == cfg_model.lower():
@@ -172,6 +173,7 @@ class ConvNetSmall(torch.nn.Module):
     def forward(self, input):
         return self.model(input)
 
+
 class ConvNet(torch.nn.Module):
     """ConvNetBN."""
 
@@ -220,6 +222,7 @@ class ConvNet(torch.nn.Module):
 
     def forward(self, input):
         return self.model(input)
+
 
 class LeNetZhu(torch.nn.Module):
     """LeNet variant from https://github.com/mit-han-lab/dlg/blob/master/models/vision.py."""

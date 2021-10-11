@@ -5,6 +5,7 @@ tables/*.csv
 tables/*.csv#
 tables/*.ods
 
+*.pdf
 images
 
 *.temp.sh

@@ -7,14 +7,14 @@ defaults:
   - server: honest-but-curious
   - user: local_gradient
 loss: CrossEntropy
-model: ResNet152
+model: ResNet18
 
 # Server and user:
 num_queries: 1
 
 # User data:
 user:
-  num_data_points: 8
+  num_data_points: 64
 
 
 examples_from_split: validation

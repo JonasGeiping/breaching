@@ -6,7 +6,8 @@ from .metrics import psnr_compute, registered_psnr_compute, image_identifiabilit
 
 
 def report(reconstructed_user_data, true_user_data, server_payload, model, dataloader=None,
-           setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=False, compute_full_iip=False):
+           setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=True, compute_full_iip=False,
+           skip_rpsnr=True):
     import lpips   # lazily import this only if report is used.
     lpips_scorer = lpips.LPIPS(net='alex').to(**setup)
 
@@ -20,7 +21,8 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     if order_batch:
         order = compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalized, setup)
         reconstructed_user_data['data'] = reconstructed_user_data['data'][order]
-        reconstructed_user_data['labels'] = reconstructed_user_data['labels'][order]
+        if reconstructed_user_data['labels'] is not None:
+            reconstructed_user_data['labels'] = reconstructed_user_data['labels'][order]
         rec_denormalized = rec_denormalized[order]
     else:
         order = None
@@ -35,7 +37,10 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     test_lpips = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True).mean().item()
 
     # Compute registered psnr. This is a bit computationally intensive:
-    test_rpsnr = registered_psnr_compute(rec_denormalized.cpu(), ground_truth_denormalized.cpu(), factor=1).item()
+    if not skip_rpsnr:
+        test_rpsnr = registered_psnr_compute(rec_denormalized.cpu(), ground_truth_denormalized.cpu(), factor=1).item()
+    else:
+        test_rpsnr = float('nan')
 
     # Compute IIP score if a dataloader is passed:
     if dataloader is not None:
@@ -62,6 +67,9 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
             # Compute the forward passes
             feat_mse += (model(reconstructed_user_data['data']) - model(true_user_data['data'])).pow(2).mean().item()
 
+    # Record model parameters:
+    parameters = sum([p.numel() for p in model.parameters()])
+
     # Print report:
     iip_scoring = ' | '.join([f'IIP-{k}: {v:5.2%}' for k, v in iip_scores.items()])
     print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}|"
@@ -69,7 +77,7 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     
 
     metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse, lpips=test_lpips, rpsnr=test_rpsnr,
-                   order=order, one_shot_idx=one_shot_idx, **{f'IIP-{k}': v for k, v in iip_scores.items()})
+                   order=order, **{f'IIP-{k}': v for k, v in iip_scores.items()}, parameters=parameters)
     return metrics
 
 
@@ -111,8 +119,12 @@ def compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalize
                 for kk in range(L):
                     diff = (x[kk] - y[kk])**2
                     similarity_matrix[idx, idy] += spatial_average(lpips_scorer.lins[kk](diff)).squeeze()
-
-    _, rec_assignment = linear_sum_assignment(similarity_matrix.cpu().numpy(), maximize=False)
+    try:
+        _, rec_assignment = linear_sum_assignment(similarity_matrix.cpu().numpy(), maximize=False)
+    except ValueError:
+        print(f'ValueError from similarity matrix {similarity_matrix.cpu().numpy()}')
+        print('Returning trivial order...')
+        rec_assignment = list(range(B))
     return torch.as_tensor(rec_assignment, device=setup['device'], dtype=torch.long)
 
 

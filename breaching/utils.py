@@ -41,8 +41,8 @@ def system_startup(process_idx, local_group_size, cfg):
         torch.cuda.set_device(process_idx)
         log.info(f'GPU : {torch.cuda.get_device_name(device=device)}')
 
-    if not torch.cuda.is_available() and not cfg.dryrun:
-        raise ValueError('No GPU allocated to this process. Running in CPU-mode is likely a bad idea. Complain to your admin.')
+    # if not torch.cuda.is_available() and not cfg.dryrun:
+    #     raise ValueError('No GPU allocated to this process. Running in CPU-mode is likely a bad idea. Complain to your admin.')
 
     return setup
 
@@ -76,7 +76,6 @@ def initialize_multiprocess_log(cfg):
 
 def save_summary(cfg, metrics, stats, local_time):
     """Save two summary tables. A detailed table of iterations/loss+acc and a summary of the end results."""
-    log = get_log(cfg)
     # 1) detailed table:
     for step in range(len(stats['train_loss'])):
         iteration = dict()
@@ -90,19 +89,29 @@ def save_summary(cfg, metrics, stats, local_time):
         else:
             return ''
 
+    try:
+        local_folder = os.getcwd().split('outputs/')[1]
+    except IndexError:
+        local_folder = ''
+
     # 2) save a reduced summary
     summary = dict(name=cfg.name,
                    usecase=cfg.case.name,
                    model=cfg.case.model,
+                   datapoints=cfg.case.user.num_data_points,
                    model_state=cfg.case.server.model_state,
                    attack=cfg.attack.type,
-                   **metrics,
+                   attacktype=cfg.attack.attack_type,
+                   **{k: v for k, v in metrics.items() if k != 'order'},
                    score=stats['opt_value'],
                    total_time=str(datetime.timedelta(seconds=local_time)).replace(',', ''),
+                   local_updates=cfg.case.user.num_local_updates,
+                   gradient_noise=cfg.case.user.local_diff_privacy.gradient_noise,
                    seed=cfg.seed,
+                   # dump extra values from here:
                    **cfg.attack,
                    **{k: v for k, v in cfg.case.items() if k not in ['name', 'model']},
-                   folder=os.getcwd().split('outputs/')[1])
+                   folder=local_folder)
     save_to_table(os.path.join(cfg.original_cwd, 'tables'),
                   f'breach_{cfg.case.name}_{cfg.case.data.name}_reports', dryrun=cfg.dryrun, **summary)
 

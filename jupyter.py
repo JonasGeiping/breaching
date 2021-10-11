@@ -54,8 +54,20 @@ authkey = secrets.token_urlsafe(5)
 # 4) Construct the sbatch launch file
 if args.qos == 'scav':
     cml_account = 'scavenger'
-else:
+elif args.qos in ['high', 'very_high']:
     cml_account = 'tomg'
+else:
+    cml_account = 'cml'
+
+if args.qos == 'cpu':
+    partition = 'cpu'
+    cpus = 22
+elif args.qos == 'scav':
+    partition = 'scavenger'
+    cpus = min(args.gpus * 4, 32)
+else:
+    partition = 'dpart'
+    cpus = min(args.gpus * 4, 32)
 
 SBATCH_PROTOTYPE = \
     f"""#!/bin/bash
@@ -66,8 +78,8 @@ SBATCH_PROTOTYPE = \
 #SBATCH --account={cml_account}
 #SBATCH --qos={args.qos if args.qos != "scav" else "scavenger"}
 #SBATCH --gres=gpu:{args.gpus}
-#SBATCH --cpus-per-task={min(args.gpus * 4, 32)}
-#SBATCH --partition={"dpart" if args.qos != "scav" else "scavenger"}
+#SBATCH --cpus-per-task={cpus}
+#SBATCH --partition={partition}
 #SBATCH --mem={args.mem}gb
 
 #SBATCH --output .notebook_{authkey}.log

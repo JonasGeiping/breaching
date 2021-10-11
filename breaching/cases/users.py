@@ -74,7 +74,6 @@ class UserSingleStep(torch.nn.Module):
             outputs = self.model(data)
             loss = self.loss(outputs, labels)
             shared_grads += [torch.autograd.grad(loss, self.model.parameters())]
-            breakpoint()
             shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
 
         shared_data = dict(gradients=shared_grads, buffers=shared_buffers,
@@ -94,7 +93,7 @@ class UserSingleStep(torch.nn.Module):
             datum, label = self.dataloader.dataset[pointer]
             data += [datum]
             labels += [torch.as_tensor(label)]
-            pointer += len(self.dataloader.dataset.classes)
+            pointer += 51 #len(self.dataloader.dataset.classes)
             pointer = pointer % len(self.dataloader.dataset)
         data = torch.stack(data).to(**self.setup)
         labels = torch.stack(labels).to(device=self.setup['device'])
@@ -119,8 +118,9 @@ class UserSingleStep(torch.nn.Module):
             data.mul_(ds).add_(dm).clamp_(0, 1)
 
         if data.shape[0] == 1:
+            plt.axis('off')
             plt.imshow(data[0].permute(1, 2, 0).cpu())
-            plt.title(f'Data with label {classes[labels]}')
+            #plt.title(f'Data with label {classes[labels]}')
         else:
             grid_shape = int(torch.as_tensor(data.shape[0]).sqrt().ceil())
             s = 24 if data.shape[3] > 150 else 6

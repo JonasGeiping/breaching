@@ -110,6 +110,8 @@ class MaliciousModelServer(HonestServer):
             block_fn = SparseImprintBlock
         elif self.cfg_server.model_modification.type == 'DifferentialBlock':
             block_fn = DifferentialBlock
+        elif self.cfg_server.model_modification.type == 'OneShotBlock':
+            block_fn = OneShotBlock
         else:
             raise ValueError('Unknown modification')
 

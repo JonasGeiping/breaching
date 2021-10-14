@@ -180,8 +180,9 @@ class UserSingleStep(torch.nn.Module):
             data.mul_(ds).add_(dm).clamp_(0, 1)
 
         if data.shape[0] == 1:
+            plt.axis('off')
             plt.imshow(data[0].permute(1, 2, 0).cpu())
-            plt.title(f'Data with label {classes[labels]}')
+            #plt.title(f'Data with label {classes[labels]}')
         else:
             grid_shape = int(torch.as_tensor(data.shape[0]).sqrt().ceil())
             s = 24 if data.shape[3] > 150 else 6

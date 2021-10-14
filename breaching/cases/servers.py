@@ -11,7 +11,7 @@ Each entry in the list of payloads contains at least the keys "parameters" and "
 
 import torch
 from torch.hub import load_state_dict_from_url
-from .malicious_modifications import ImprintBlock, DifferentialBlock, RecoveryOptimizer, SparseImprintBlock
+from .malicious_modifications import ImprintBlock, DifferentialBlock, RecoveryOptimizer, SparseImprintBlock, OneShotBlock
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
 class HonestServer():
     """Implement an honest server protocol."""
@@ -110,6 +110,8 @@ class MaliciousModelServer(HonestServer):
             block_fn = SparseImprintBlock
         elif self.cfg_server.model_modification.type == 'DifferentialBlock':
             block_fn = DifferentialBlock
+        elif self.cfg_server.model_modification.type == 'OneShotBlock':
+            block_fn = OneShotBlock
         else:
             raise ValueError('Unknown modification')
 

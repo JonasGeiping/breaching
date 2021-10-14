@@ -121,7 +121,9 @@ class MaliciousModelServer(HonestServer):
         self.secrets['ImprintBlock'] = secrets
 
         if self.cfg_server.model_modification.position is not None:
-            self._linearize_up_to_imprint(modified_model, ImprintBlock)  # Linearize full model for SparseImprint
+            if self.cfg_server.model_modification.type == 'SparseImprintBlock':
+                block_fn = type(None)  # Linearize the full model for SparseImprint
+            self._linearize_up_to_imprint(modified_model, block_fn)
         self.model = modified_model
         return self.model
 
@@ -165,6 +167,7 @@ class MaliciousModelServer(HonestServer):
 
 
     def _linearize_up_to_imprint(self, model, block_fn):
+        """This linearization option only works for a ResNet architecture."""
         first_conv_set = False  # todo: make this nice
         for name, module in self.model.named_modules():
             if isinstance(module, block_fn):

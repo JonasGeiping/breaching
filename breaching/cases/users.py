@@ -8,7 +8,8 @@ class UserSingleStep(torch.nn.Module):
     """A user who computes a single local update step."""
 
     def __init__(self, model, loss, dataloader, setup, num_data_points=1, num_user_queries=1, batch_norm_training=False,
-                 provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1, local_diff_privacy=None):
+                 provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1, local_diff_privacy=None,
+                 data_with_labels='unique'):
         """Initialize but do not propagate the cfg_case.user dict further."""
         super().__init__()
         self.num_data_points = num_data_points
@@ -21,6 +22,7 @@ class UserSingleStep(torch.nn.Module):
             self.data_idx = torch.randint(0, len(dataloader.dataset), (1,))
         else:
             self.data_idx = data_idx
+        self.data_with_labels = data_with_labels
 
         self.setup = setup
 
@@ -31,18 +33,7 @@ class UserSingleStep(torch.nn.Module):
         else:
             self.model.eval()
 
-        if local_diff_privacy['gradient_noise'] > 0.0:
-            loc = torch.as_tensor(0.0, **setup)
-            scale = torch.as_tensor(local_diff_privacy['gradient_noise'], **setup)
-            if local_diff_privacy['distribution'] == 'gaussian':
-                self.generator = torch.distributions.normal.Normal(loc=loc, scale=scale)
-            elif local_diff_privacy['distribution'] == 'laplacian':
-                self.generator = torch.distributions.laplace.Laplace(loc=loc, scale=scale)
-            else:
-                raise ValueError(f'Invalid distribution {local_diff_privacy["distribution"]} given.')
-        else:
-            self.generator = None
-        self.clip_value = local_diff_privacy.get('per_example_clipping', 0.0)
+        self._initialize_local_privacy_measures(self, local_diff_privacy)
 
         self.dataloader = dataloader
         self.loss = copy.deepcopy(loss)  # Just in case the loss contains state
@@ -65,6 +56,32 @@ class UserSingleStep(torch.nn.Module):
             data_idx: {self.data_idx.item() if isinstance(self.data_idx, torch.Tensor) else self.data_idx}
         """
 
+    def _initialize_local_privacy_measures(self, local_diff_privacy):
+        """Initialize generators for noise in either gradient or input."""
+        if local_diff_privacy['gradient_noise'] > 0.0:
+            loc = torch.as_tensor(0.0, **setup)
+            scale = torch.as_tensor(local_diff_privacy['gradient_noise'], **setup)
+            if local_diff_privacy['distribution'] == 'gaussian':
+                self.generator = torch.distributions.normal.Normal(loc=loc, scale=scale)
+            elif local_diff_privacy['distribution'] == 'laplacian':
+                self.generator = torch.distributions.laplace.Laplace(loc=loc, scale=scale)
+            else:
+                raise ValueError(f'Invalid distribution {local_diff_privacy["distribution"]} given.')
+        else:
+            self.generator = None
+        if local_diff_privacy['input_noise'] > 0.0:
+            loc = torch.as_tensor(0.0, **setup)
+            scale = torch.as_tensor(local_diff_privacy['input_noise'], **setup)
+            if local_diff_privacy['distribution'] == 'gaussian':
+                self.generator_input = torch.distributions.normal.Normal(loc=loc, scale=scale)
+            elif local_diff_privacy['distribution'] == 'laplacian':
+                self.generator_input = torch.distributions.laplace.Laplace(loc=loc, scale=scale)
+            else:
+                raise ValueError(f'Invalid distribution {local_diff_privacy["distribution"]} given.')
+        else:
+            self.generator_input = None
+        self.clip_value = local_diff_privacy.get('per_example_clipping', 0.0)
+
     def compute_local_updates(self, server_payload):
         """Compute local updates to the given model based on server payload."""
 
@@ -84,7 +101,9 @@ class UserSingleStep(torch.nn.Module):
                     buffer.copy_(server_state.to(**self.setup))
 
             def _compute_batch_gradient(data, labels):
-                outputs = self.model(data)
+                if self.generator_input is not None:
+                    data_input = data + self.generator_input(data.shape)
+                outputs = self.model(data_input)
                 loss = self.loss(outputs, labels)
                 return torch.autograd.grad(loss, self.model.parameters())
 
@@ -131,10 +150,13 @@ class UserSingleStep(torch.nn.Module):
             datum, label = self.dataloader.dataset[pointer]
             data += [datum]
             labels += [torch.as_tensor(label)]
-            # pointer += len(self.dataloader.dataset.classes) // 7   # something not very dividable ...
-            # pointer += 1
-            pointer += 50  # these are unique labels
-            pointer = pointer % len(self.dataloader.dataset)
+            if self.data_with_labels == 'unique':
+                pointer += len(self.dataloader.dataset) / len(self.dataloaderl.dataset.classes)
+            elif self.data_with_labels == 'same':
+                pointer += 1
+            else:
+                pointer = torch.randint(0, len(self.dataloader.dataset), (1,))
+            pointer = pointer % len(self.dataloader.dataset)  # Make sure not to leave the dataset range
         data = torch.stack(data).to(**self.setup)
         labels = torch.stack(labels).to(device=self.setup['device'])
         return data, labels
@@ -179,10 +201,11 @@ class UserMultiStep(UserSingleStep):
     def __init__(self, model, loss, dataloader, setup, num_data_points=1, num_user_queries=1, batch_norm_training=False,
                  provide_labels=True, provide_num_data_points=True, data_idx=None, num_local_updates=1,
                  num_data_per_local_update_step=None, local_learning_rate=None, provide_local_hyperparams=True,
-                 local_diff_privacy=None):
+                 local_diff_privacy=None, data_with_labels='unique'):
         """Initialize but do not propagate the cfg_case.user dict further."""
         super().__init__(model, loss, dataloader, setup, num_data_points, num_user_queries, batch_norm_training,
-                         provide_labels, provide_num_data_points, data_idx, num_local_updates, local_diff_privacy)
+                         provide_labels, provide_num_data_points, data_idx, num_local_updates, local_diff_privacy,
+                         data_with_labels)
 
         self.num_local_updates = num_local_updates
         self.num_data_per_local_update_step = num_data_per_local_update_step
@@ -220,7 +243,9 @@ class UserMultiStep(UserSingleStep):
 
                 optimizer.zero_grad()
                 # Compute the forward pass
-                outputs = self.model(data)
+                if self.generator_input is not None:
+                    data_input = data + self.generator_input(data.shape)
+                outputs = self.model(data_input)
                 loss = self.loss(outputs, labels)
                 loss.backward()
 

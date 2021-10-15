@@ -33,7 +33,7 @@ class UserSingleStep(torch.nn.Module):
         else:
             self.model.eval()
 
-        self._initialize_local_privacy_measures(self, local_diff_privacy)
+        self._initialize_local_privacy_measures(local_diff_privacy)
 
         self.dataloader = dataloader
         self.loss = copy.deepcopy(loss)  # Just in case the loss contains state
@@ -101,8 +101,7 @@ class UserSingleStep(torch.nn.Module):
                     buffer.copy_(server_state.to(**self.setup))
 
             def _compute_batch_gradient(data, labels):
-                if self.generator_input is not None:
-                    data_input = data + self.generator_input(data.shape)
+                data_input = data + self.generator_input(data.shape) if self.generator_input is not None else data
                 outputs = self.model(data_input)
                 loss = self.loss(outputs, labels)
                 return torch.autograd.grad(loss, self.model.parameters())
@@ -151,7 +150,7 @@ class UserSingleStep(torch.nn.Module):
             data += [datum]
             labels += [torch.as_tensor(label)]
             if self.data_with_labels == 'unique':
-                pointer += len(self.dataloader.dataset) / len(self.dataloaderl.dataset.classes)
+                pointer += len(self.dataloader.dataset) // len(self.dataloader.dataset.classes)
             elif self.data_with_labels == 'same':
                 pointer += 1
             else:
@@ -244,8 +243,7 @@ class UserMultiStep(UserSingleStep):
 
                 optimizer.zero_grad()
                 # Compute the forward pass
-                if self.generator_input is not None:
-                    data_input = data + self.generator_input(data.shape)
+                data_input = data + self.generator_input(data.shape) if self.generator_input is not None else data
                 outputs = self.model(data_input)
                 loss = self.loss(outputs, labels)
                 loss.backward()

@@ -6,13 +6,12 @@ payload should be a dict containing the key data and a list of payloads. The len
 Each entry in the list of payloads contains at least the keys "parameters" and "buffers".
 """
 
-
-
-
 import torch
 from torch.hub import load_state_dict_from_url
-from .malicious_modifications import ImprintBlock, DifferentialBlock, RecoveryOptimizer, SparseImprintBlock, OneShotBlock
+from .malicious_modifications import ImprintBlock, RecoveryOptimizer, SparseImprintBlock, OneShotBlock
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
+
+
 class HonestServer():
     """Implement an honest server protocol."""
 
@@ -108,30 +107,29 @@ class MaliciousModelServer(HonestServer):
             block_fn = ImprintBlock
         elif self.cfg_server.model_modification.type == 'SparseImprintBlock':
             block_fn = SparseImprintBlock
-        elif self.cfg_server.model_modification.type == 'DifferentialBlock':
-            block_fn = DifferentialBlock
         elif self.cfg_server.model_modification.type == 'OneShotBlock':
             block_fn = OneShotBlock
         else:
             raise ValueError('Unknown modification')
 
-        modified_model, secrets = self._place_malicious_block(modified_model, block_fn,
-                                                              self.cfg_server.model_modification.num_bins,
-                                                              self.cfg_server.model_modification.position)
+        modified_model, secrets = self._place_malicious_block(modified_model, block_fn, **self.cfg_server.model_modification)
         self.secrets['ImprintBlock'] = secrets
 
         if self.cfg_server.model_modification.position is not None:
             if self.cfg_server.model_modification.type == 'SparseImprintBlock':
                 block_fn = type(None)  # Linearize the full model for SparseImprint
             self._linearize_up_to_imprint(modified_model, block_fn)
+        else:
+            # Reduce failures in later layers:
+            self._normalize_throughput(modified_model, gain=self.cfg_server.model_gain)
         self.model = modified_model
         return self.model
 
-    def _place_malicious_block(self, modified_model, block_fn, num_bins, position=None):
+    def _place_malicious_block(self, modified_model, block_fn, type, num_bins, position=None, connection='linear', gain=1.0):
         """The block is placed directly before the named module. If none is given, the block is placed at the start."""
         if position is None:
             input_dim = self.cfg_data.shape[0] * self.cfg_data.shape[1] * self.cfg_data.shape[2]
-            block = block_fn(input_dim, num_bins=num_bins)
+            block = block_fn(input_dim, num_bins=num_bins, connection=connection, gain=gain)
             modified_model = torch.nn.Sequential(torch.nn.Flatten(), block,
                                                  torch.nn.Unflatten(dim=1, unflattened_size=tuple(self.cfg_data.shape)),
                                                  modified_model)
@@ -150,7 +148,7 @@ class MaliciousModelServer(HonestServer):
             if not block_found:
                 raise ValueError(f'Could not find module {position} in model to insert layer.')
             input_dim = data_shape[0] * data_shape[1] * data_shape[2]
-            block = block_fn(input_dim, num_bins=num_bins)
+            block = block_fn(input_dim, num_bins=num_bins, connection=connection, gain=gain)
 
             replacement = torch.nn.Sequential(torch.nn.Flatten(), block,
                                               torch.nn.Unflatten(dim=1, unflattened_size=data_shape),
@@ -195,6 +193,38 @@ class MaliciousModelServer(HonestServer):
                     module.weight.data[:num_groups * module.in_channels] = concat
                 if isinstance(module, torch.nn.ReLU):
                     replace_module_by_instance(model, module, torch.nn.Identity())
+
+    @torch.inference_mode()
+    def _normalize_throughput(self, model, gain=1, trials=1):
+        """Reset throughput to be within standard mean and gain-times standard deviation."""
+        features = dict()
+
+        def named_hook(name):
+            def hook_fn(module, input, output):
+                features[name] = output
+            return hook_fn
+
+        print('Normalizing model throughput...')
+        for round in range(trials):
+            for name, module in model.named_modules():
+                if isinstance(module, (torch.nn.Conv2d, torch.nn.BatchNorm2d)):
+                    if isinstance(module, torch.nn.Conv2d) and module.bias is None:
+                        continue
+                    hook = module.register_forward_hook(named_hook(name))
+
+                    if self.external_dataloader is not None:
+                        random_data_sample = next(iter(self.external_dataloader))[0].to(**self.setup)
+                    else:
+                        random_data_sample = torch.randn(self.cfg_data.batch_size, *self.cfg_data.shape, **self.setup)
+
+                    model(random_data_sample)
+                    std, mu = torch.std_mean(features[name])
+                    print(f'Current mean of layer {name} is {mu.item()}, std is {std.item()} in round {round}.')
+
+                    with torch.no_grad():
+                        module.weight.data /= std / gain + 1e-8
+                        module.bias.data -= mu / (std / gain + 1e-8)
+                    hook.remove()
 
 class MaliciousParameterServer(HonestServer):
     """Implement a malicious server protocol."""

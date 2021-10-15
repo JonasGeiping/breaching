@@ -153,6 +153,10 @@ class UserSingleStep(torch.nn.Module):
                 pointer += len(self.dataloader.dataset) // len(self.dataloader.dataset.classes)
             elif self.data_with_labels == 'same':
                 pointer += 1
+            elif self.data_with_labels == 'random-animals':  # only makes sense on ImageNet, disregard otherwise
+                last_animal_class_idx = 397
+                per_class = len(self.dataloader.dataset) // len(self.dataloader.dataset.classes)
+                pointer = torch.randint(0, per_class * last_animal_class_idx, (1,))
             else:
                 pointer = torch.randint(0, len(self.dataloader.dataset), (1,))
             pointer = pointer % len(self.dataloader.dataset)  # Make sure not to leave the dataset range

@@ -17,17 +17,15 @@ def expected_amount(k, n):
     weight += adjustment1
     return weight / total_num - n / k  # Second adjustment term in r(n,k)
 
+
 def one_shot_guarantee(k, n):
     """
     k number of bins, n batch size
     """
     total_num = nCr(k + n - 1, k - 1)  # Total number of configs
     weight = 0
-    weight += nCr(n+k-3, k-2)
-    return weight / total_num  
-
-
-
+    weight += nCr(n + k - 3, k - 2)
+    return weight / total_num
 
 
 if __name__ == "__main__":

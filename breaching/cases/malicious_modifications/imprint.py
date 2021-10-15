@@ -25,7 +25,7 @@ class ImprintBlock(torch.nn.Module):
         if connection == 'linear':
             self.linear2 = torch.nn.Linear(num_bins, data_size)
             with torch.no_grad():
-                self.linear2.weight.data = torch.ones_like(self.linear2.weight.data)
+                self.linear2.weight.data = torch.ones_like(self.linear2.weight.data) / gain
                 self.linear2.bias.data -= torch.as_tensor(self.bins).mean()
 
         self.relu = torch.nn.ReLU()

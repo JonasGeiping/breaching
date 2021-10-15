@@ -121,7 +121,7 @@ class MaliciousModelServer(HonestServer):
             self._linearize_up_to_imprint(modified_model, block_fn)
         else:
             # Reduce failures in later layers:
-            self._normalize_throughput(modified_model, gain=self.cfg_server.model_gain)
+            self._normalize_throughput(modified_model, gain=self.cfg_server.model_gain, trials=self.cfg_server.normalize_rounds)
         self.model = modified_model
         return self.model
 
@@ -203,12 +203,15 @@ class MaliciousModelServer(HonestServer):
             def hook_fn(module, input, output):
                 features[name] = output
             return hook_fn
-
-        print('Normalizing model throughput...')
+        if trials > 0:
+            print(f'Normalizing model throughput with gain {gain}...')
+            model.to(**self.setup)
         for round in range(trials):
             for name, module in model.named_modules():
                 if isinstance(module, (torch.nn.Conv2d, torch.nn.BatchNorm2d)):
                     if isinstance(module, torch.nn.Conv2d) and module.bias is None:
+                        # if 'downsample' in name:
+                        #    module.weight.data.zero_()
                         continue
                     hook = module.register_forward_hook(named_hook(name))
 
@@ -225,6 +228,8 @@ class MaliciousModelServer(HonestServer):
                         module.weight.data /= std / gain + 1e-8
                         module.bias.data -= mu / (std / gain + 1e-8)
                     hook.remove()
+        # Free up GPU:
+        model.to(device=torch.device('cpu'))
 
 class MaliciousParameterServer(HonestServer):
     """Implement a malicious server protocol."""

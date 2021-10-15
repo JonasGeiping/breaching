@@ -8,4 +8,5 @@ model_modification:
   connection: linear # can be 'linear' connection back to input size or 'addition'
   gain: 1.0 # dampen layer to reduce gradient magnitude
 model_gain: 1.0  # multiply all non-malicious layers with this value to mess with parameter magnitudes
+normalize_rounds: 5
 has_external_data: False

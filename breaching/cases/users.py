@@ -59,8 +59,8 @@ class UserSingleStep(torch.nn.Module):
     def _initialize_local_privacy_measures(self, local_diff_privacy):
         """Initialize generators for noise in either gradient or input."""
         if local_diff_privacy['gradient_noise'] > 0.0:
-            loc = torch.as_tensor(0.0, **setup)
-            scale = torch.as_tensor(local_diff_privacy['gradient_noise'], **setup)
+            loc = torch.as_tensor(0.0, **self.setup)
+            scale = torch.as_tensor(local_diff_privacy['gradient_noise'], **self.setup)
             if local_diff_privacy['distribution'] == 'gaussian':
                 self.generator = torch.distributions.normal.Normal(loc=loc, scale=scale)
             elif local_diff_privacy['distribution'] == 'laplacian':
@@ -70,8 +70,8 @@ class UserSingleStep(torch.nn.Module):
         else:
             self.generator = None
         if local_diff_privacy['input_noise'] > 0.0:
-            loc = torch.as_tensor(0.0, **setup)
-            scale = torch.as_tensor(local_diff_privacy['input_noise'], **setup)
+            loc = torch.as_tensor(0.0, **self.setup)
+            scale = torch.as_tensor(local_diff_privacy['input_noise'], **self.setup)
             if local_diff_privacy['distribution'] == 'gaussian':
                 self.generator_input = torch.distributions.normal.Normal(loc=loc, scale=scale)
             elif local_diff_privacy['distribution'] == 'laplacian':
@@ -101,7 +101,7 @@ class UserSingleStep(torch.nn.Module):
                     buffer.copy_(server_state.to(**self.setup))
 
             def _compute_batch_gradient(data, labels):
-                data_input = data + self.generator_input(data.shape) if self.generator_input is not None else data
+                data_input = data + self.generator_input.sample(data.shape) if self.generator_input is not None else data
                 outputs = self.model(data_input)
                 loss = self.loss(outputs, labels)
                 return torch.autograd.grad(loss, self.model.parameters())
@@ -112,7 +112,7 @@ class UserSingleStep(torch.nn.Module):
                     per_example_grads = _compute_batch_gradient(data_point[None, ...], data_label[None, ...])
                     self._clip_list_of_grad_(per_example_grads)
                     torch._foreach_add_(grads, per_example_grads)
-                torch._foreach_div(grads, len(data))
+                torch._foreach_div_(grads, len(data))
             else:
                 # Compute the forward pass
                 grads = _compute_batch_gradient(data, labels)
@@ -243,7 +243,7 @@ class UserMultiStep(UserSingleStep):
 
                 optimizer.zero_grad()
                 # Compute the forward pass
-                data_input = data + self.generator_input(data.shape) if self.generator_input is not None else data
+                data_input = data + self.generator_inputi.sample(data.shape) if self.generator_input is not None else data
                 outputs = self.model(data_input)
                 loss = self.loss(outputs, labels)
                 loss.backward()

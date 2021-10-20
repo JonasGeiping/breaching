@@ -164,7 +164,7 @@ class UserSingleStep(torch.nn.Module):
         labels = torch.stack(labels).to(device=self.setup['device'])
         return data, labels
 
-    def plot(self, user_data, scale=False):
+    def plot(self, user_data, scale=False, print_labels=False):
         """Plot user data to output. Probably best called from a jupyter notebook."""
         import matplotlib.pyplot as plt  # lazily import this here
 
@@ -174,6 +174,8 @@ class UserSingleStep(torch.nn.Module):
 
         data = user_data['data'].clone().detach()
         labels = user_data['labels'].clone().detach() if user_data['labels'] is not None else None
+        if labels is None:
+            print_labels = False
 
         if scale:
             min_val, max_val = data.amin(dim=[2, 3], keepdim=True), data.amax(dim=[2, 3], keepdim=True)
@@ -185,7 +187,8 @@ class UserSingleStep(torch.nn.Module):
         if data.shape[0] == 1:
             plt.axis('off')
             plt.imshow(data[0].permute(1, 2, 0).cpu())
-            plt.title(f'Data with label {classes[labels]}')
+            if print_labels:
+                plt.title(f'Data with label {classes[labels]}')
         else:
             grid_shape = int(torch.as_tensor(data.shape[0]).sqrt().ceil())
             s = 24 if data.shape[3] > 150 else 6
@@ -196,7 +199,8 @@ class UserSingleStep(torch.nn.Module):
                 if labels is not None:
                     label_classes.append(classes[labels[i]])
                 axis.axis('off')
-            print(label_classes) if labels is not None else None
+            if print_labels:
+                print(label_classes)
 
 
 class UserMultiStep(UserSingleStep):

@@ -195,7 +195,7 @@ class MaliciousModelServer(HonestServer):
                     replace_module_by_instance(model, module, torch.nn.Identity())
 
     @torch.inference_mode()
-    def _normalize_throughput(self, model, gain=1, trials=1):
+    def _normalize_throughput(self, model, gain=1, trials=1, bn_modeset=False):
         """Reset throughput to be within standard mean and gain-times standard deviation."""
         features = dict()
 
@@ -207,31 +207,40 @@ class MaliciousModelServer(HonestServer):
             print(f'Normalizing model throughput with gain {gain}...')
             model.to(**self.setup)
         for round in range(trials):
-            for name, module in model.named_modules():
-                if isinstance(module, (torch.nn.Conv2d, torch.nn.BatchNorm2d)):
-                    if isinstance(module, torch.nn.Conv2d) and module.bias is None:
-                        if 'downsample.0' in name:
-                            module.weight.data.zero_()
-                            print(f'Reset weight in downsample {name} to zero.')
-                        continue
+            if not bn_modeset:
+                for name, module in model.named_modules():
+                    if isinstance(module, (torch.nn.Conv2d, torch.nn.BatchNorm2d)):
+                        if isinstance(module, torch.nn.Conv2d) and module.bias is None:
+                            if 'downsample.0' in name:
+                                module.weight.data.zero_()
+                                print(f'Reset weight in downsample {name} to zero.')
+                            continue
 
-                    if 'downsample.1' in name:
-                        continue
-                    hook = module.register_forward_hook(named_hook(name))
+                        if 'downsample.1' in name:
+                            continue
+                        hook = module.register_forward_hook(named_hook(name))
+                        if self.external_dataloader is not None:
+                            random_data_sample = next(iter(self.external_dataloader))[0].to(**self.setup)
+                        else:
+                            random_data_sample = torch.randn(self.cfg_data.batch_size, *self.cfg_data.shape, **self.setup)
 
-                    if self.external_dataloader is not None:
-                        random_data_sample = next(iter(self.external_dataloader))[0].to(**self.setup)
-                    else:
-                        random_data_sample = torch.randn(self.cfg_data.batch_size, *self.cfg_data.shape, **self.setup)
 
-                    model(random_data_sample)
-                    std, mu = torch.std_mean(features[name])
-                    print(f'Current mean of layer {name} is {mu.item()}, std is {std.item()} in round {round}.')
+                        model(random_data_sample)
+                        std, mu = torch.std_mean(features[name])
+                        print(f'Current mean of layer {name} is {mu.item()}, std is {std.item()} in round {round}.')
 
-                    with torch.no_grad():
-                        module.weight.data /= std / gain + 1e-8
-                        module.bias.data -= mu / (std / gain + 1e-8)
-                    hook.remove()
+                        with torch.no_grad():
+                            module.weight.data /= std / gain + 1e-8
+                            module.bias.data -= mu / (std / gain + 1e-8)
+                        hook.remove()
+            else:
+                model.train()
+                if self.external_dataloader is not None:
+                    random_data_sample = next(iter(self.external_dataloader))[0].to(**self.setup)
+                else:
+                    random_data_sample = torch.randn(self.cfg_data.batch_size, *self.cfg_data.shape, **self.setup)
+                model(random_data_sample)
+                model.eval()
         # Free up GPU:
         model.to(device=torch.device('cpu'))
 

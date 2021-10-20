@@ -196,7 +196,7 @@ class UserSingleStep(torch.nn.Module):
             label_classes = []
             for i, (im, axis) in enumerate(zip(data, axes.flatten())):
                 axis.imshow(im.permute(1, 2, 0).cpu())
-                if labels is not None:
+                if labels is not None and print_labels:
                     label_classes.append(classes[labels[i]])
                 axis.axis('off')
             if print_labels:

@@ -210,8 +210,12 @@ class MaliciousModelServer(HonestServer):
             for name, module in model.named_modules():
                 if isinstance(module, (torch.nn.Conv2d, torch.nn.BatchNorm2d)):
                     if isinstance(module, torch.nn.Conv2d) and module.bias is None:
-                        # if 'downsample' in name:
-                        #    module.weight.data.zero_()
+                        if 'downsample.0' in name:
+                            module.weight.data.zero_()
+                            print(f'Reset weight in downsample {name} to zero.')
+                        continue
+
+                    if 'downsample.1' in name:
                         continue
                     hook = module.register_forward_hook(named_hook(name))
 

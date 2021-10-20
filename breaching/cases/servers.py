@@ -119,9 +119,9 @@ class MaliciousModelServer(HonestServer):
             if self.cfg_server.model_modification.type == 'SparseImprintBlock':
                 block_fn = type(None)  # Linearize the full model for SparseImprint
             self._linearize_up_to_imprint(modified_model, block_fn)
-        else:
-            # Reduce failures in later layers:
-            self._normalize_throughput(modified_model, gain=self.cfg_server.model_gain, trials=self.cfg_server.normalize_rounds)
+        
+        # Reduce failures in later layers:
+        self._normalize_throughput(modified_model, gain=self.cfg_server.model_gain, trials=self.cfg_server.normalize_rounds)
         self.model = modified_model
         return self.model
 

@@ -5,6 +5,8 @@ import torch
 
 
 class ImprintBlock(torch.nn.Module):
+    structure = 'cumulative'
+
     def __init__(self, data_size, num_bins, connection='linear', gain=1e-3):
         """
         data_size is the length of the input data
@@ -66,7 +68,9 @@ class ImprintBlock(torch.nn.Module):
 
 
 class SparseImprintBlock(torch.nn.Module):
-    def __init__(self, data_size, num_bins, connection='linear'):
+    structure = 'sparse'
+
+    def __init__(self, data_size, num_bins, connection='linear', gain=1.0):
         """
         data_size is the size of the input images
         num_bins is how many "paths" to include in the model
@@ -78,18 +82,19 @@ class SparseImprintBlock(torch.nn.Module):
         super().__init__()
         self.data_size = data_size
         self.num_bins = num_bins
+        self.connection = connection
         self.linear0 = torch.nn.Linear(data_size, num_bins)
 
         self.bins, self.bin_sizes = self._get_bins(num_bins)
         with torch.no_grad():
-            self.linear0.weight.data[:, :] = self._make_scaled_average_layer()
-            self.linear0.bias.data[:] = self._make_biases()
-        self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=1)
+            self.linear0.weight.data[:, :] = self._make_scaled_average_layer() * gain
+            self.linear0.bias.data[:] = self._make_biases() * gain
+        self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=gain)
 
         if connection == 'linear':
             self.linear2 = torch.nn.Linear(num_bins, data_size)
             with torch.no_grad():
-                self.linear2.weight.data = torch.ones_like(self.linear2.weight.data)  # / data_size / num_bins
+                self.linear2.weight.data = torch.ones_like(self.linear2.weight.data) / gain # / data_size / num_bins
 
     def forward(self, x):
         x_in = x
@@ -113,7 +118,7 @@ class SparseImprintBlock(torch.nn.Module):
             mass += 1 / (num_bins + 2)
             bins += [NormalDist(mu=mu, sigma=sigma).inv_cdf(mass)]
         bin_sizes = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
-        return bins, bin_sizes
+        return bins[1:], bin_sizes
 
     def _make_scaled_average_layer(self):
         new_data = 1 / self.linear0.weight.data.shape[-1] * torch.ones_like(self.linear0.weight.data)
@@ -123,13 +128,14 @@ class SparseImprintBlock(torch.nn.Module):
 
     def _make_biases(self):
         new_biases = torch.zeros_like(self.linear0.bias.data)
-        for i, (bin_val, bin_width) in enumerate(zip(self.bins[1:-1], self.bin_sizes[1:-1])):
-            new_biases[i + 1] = -bin_val / bin_width
+        for i, (bin_val, bin_width) in enumerate(zip(self.bins, self.bin_sizes)):
+            new_biases[i] = -bin_val / bin_width
         return new_biases
 
 
 class EquispacedImprintBlock(torch.nn.Module):
     """The old implementation."""
+    structure = 'sparse'
 
     def __init__(self, data_size, num_bins, connection='linear', alpha=0.375):
         """

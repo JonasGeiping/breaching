@@ -33,6 +33,8 @@ def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
             elif 'linear' == cfg_model:
                 input_dim = cfg_data.shape[0] * cfg_data.shape[1] * cfg_data.shape[2]
                 model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(input_dim, classes))
+            elif 'none' == cfg_model:
+                model = torch.nn.Sequential(torch.nn.Flatten(), _Select(classes))
             else:
                 raise ValueError(f'Could not find ImageNet model {cfg_model} in torchvision.models or custom models.')
     else:
@@ -258,3 +260,12 @@ class LeNetZhu(torch.nn.Module):
         # print(out.size())
         out = self.fc(out)
         return out
+
+
+class _Select(torch.nn.Module):
+    def __init__(self, n):
+        super().__init__()
+        self.n = n
+
+    def forward(self, x):
+        return x[:, :self.n]

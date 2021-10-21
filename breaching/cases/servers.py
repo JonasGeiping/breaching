@@ -133,7 +133,7 @@ class MaliciousModelServer(HonestServer):
             modified_model = torch.nn.Sequential(torch.nn.Flatten(), block,
                                                  torch.nn.Unflatten(dim=1, unflattened_size=tuple(self.cfg_data.shape)),
                                                  modified_model)
-            secrets = dict(weight_idx=0, bias_idx=1, shape=tuple(self.cfg_data.shape))
+            secrets = dict(weight_idx=0, bias_idx=1, shape=tuple(self.cfg_data.shape), structure=block.structure)
         else:
             block_found = False
             for name, module in modified_model.named_modules():
@@ -159,7 +159,7 @@ class MaliciousModelServer(HonestServer):
                     weight_idx = idx
                 if param is block.linear0.bias:
                     bias_idx = idx
-            secrets = dict(weight_idx=weight_idx, bias_idx=bias_idx, shape=data_shape)
+            secrets = dict(weight_idx=weight_idx, bias_idx=bias_idx, shape=data_shape, structure=block.structure)
 
         return modified_model, secrets
 
@@ -230,9 +230,10 @@ class MaliciousModelServer(HonestServer):
                         print(f'Current mean of layer {name} is {mu.item()}, std is {std.item()} in round {round}.')
 
                         with torch.no_grad():
-                            module.weight.data /= std / gain + 1e-8
+                            module.weight.data /= (std / gain + 1e-8)
                             module.bias.data -= mu / (std / gain + 1e-8)
                         hook.remove()
+                        del features[name]
             else:
                 model.train()
                 if self.external_dataloader is not None:

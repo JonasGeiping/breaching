@@ -125,11 +125,11 @@ class MaliciousModelServer(HonestServer):
         self.model = modified_model
         return self.model
 
-    def _place_malicious_block(self, modified_model, block_fn, type, num_bins, position=None, connection='linear', gain=1.0):
+    def _place_malicious_block(self, modified_model, block_fn, type, position=None, **kwargs):
         """The block is placed directly before the named module. If none is given, the block is placed at the start."""
         if position is None:
             input_dim = self.cfg_data.shape[0] * self.cfg_data.shape[1] * self.cfg_data.shape[2]
-            block = block_fn(input_dim, num_bins=num_bins, connection=connection, gain=gain)
+            block = block_fn(input_dim, **kwargs)
             modified_model = torch.nn.Sequential(torch.nn.Flatten(), block,
                                                  torch.nn.Unflatten(dim=1, unflattened_size=tuple(self.cfg_data.shape)),
                                                  modified_model)
@@ -148,7 +148,7 @@ class MaliciousModelServer(HonestServer):
             if not block_found:
                 raise ValueError(f'Could not find module {position} in model to insert layer.')
             input_dim = data_shape[0] * data_shape[1] * data_shape[2]
-            block = block_fn(input_dim, num_bins=num_bins, connection=connection, gain=gain)
+            block = block_fn(input_dim, **kwargs)
 
             replacement = torch.nn.Sequential(torch.nn.Flatten(), block,
                                               torch.nn.Unflatten(dim=1, unflattened_size=data_shape),

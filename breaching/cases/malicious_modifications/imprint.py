@@ -1,13 +1,13 @@
 """Implements a malicious block that can be inserted at the front on normal models to break them."""
 from statistics import NormalDist
 import torch
-
-
+import math
+from scipy.stats import laplace
 
 class ImprintBlock(torch.nn.Module):
     structure = 'cumulative'
 
-    def __init__(self, data_size, num_bins, connection='linear', gain=1e-3):
+    def __init__(self, data_size, num_bins, connection='linear', gain=1e-3, linfunc='fourier', mode=0):
         """
         data_size is the length of the input data
         num_bins is how many "paths" to include in the model
@@ -18,10 +18,10 @@ class ImprintBlock(torch.nn.Module):
         self.num_bins = num_bins
         self.linear0 = torch.nn.Linear(data_size, num_bins)
 
-        self.bins = self._get_bins()
+        self.bins = self._get_bins(linfunc)
         with torch.no_grad():
-            self.linear0.weight.data[:, :] = self._make_average_layer() * gain
-            self.linear0.bias.data[:] = self._make_biases() * gain
+            self.linear0.weight.data = self._init_linear_function(linfunc, mode) * gain
+            self.linear0.bias.data = self._make_biases() * gain
 
         self.connection = connection
         if connection == 'linear':
@@ -31,6 +31,26 @@ class ImprintBlock(torch.nn.Module):
                 self.linear2.bias.data -= torch.as_tensor(self.bins).mean()
 
         self.relu = torch.nn.ReLU()
+
+    @torch.no_grad()
+    def _init_linear_function(self, linfunc='fourier', mode=0):
+        K, N = self.num_bins, self.data_size
+        if linfunc == 'avg':
+            weights = torch.ones_like(self.linear0.weight.data) / N
+        elif linfunc == 'fourier':
+            weights = torch.cos(math.pi / N * (torch.arange(0, N) + 0.5) * mode).repeat(K, 1) / N * max(mode, 0.5) * 4
+            # dont ask about the 4, this is WIP
+            # nonstandard normalization
+        elif linfunc == 'randn':
+            weights = torch.randn(N).repeat(K, 1)
+            std, mu = torch.std_mean(weights[0]) # Enforce mean=0, std=1 with higher precision
+            weights = (weights - mu) / std / math.sqrt(N) # Move to std=1 in output dist
+        elif linfunc == 'rand':
+            weights = torch.rand(N).repeat(K, 1)  # This might be a terrible idea haven't done the math
+            std, mu = torch.std_mean(weights[0]) # Enforce mean=0, std=1 with higher precision
+            weights = (weights - mu) / std / math.sqrt(N) # Move to std=1 in output dist
+
+        return weights
 
     def forward(self, x):
         x_in = x
@@ -47,18 +67,17 @@ class ImprintBlock(torch.nn.Module):
             output = x_in + x.mean(dim=1, keepdim=True)
         return output
 
-    def _get_bins(self):
+    def _get_bins(self, linfunc='avg'):
         left_bins = []
         bins = []
         mass_per_bin = 1 / (self.num_bins)
         bins.append(-10)  # -Inf is not great here, but NormalDist(mu=0, sigma=1).cdf(10) approx 1
         for i in range(1, self.num_bins):
-            bins.append(NormalDist().inv_cdf(i * mass_per_bin))
+            if 'fourier' in linfunc:
+                bins.append(laplace(loc=0.0, scale=1/math.sqrt(2)).ppf(i * mass_per_bin))
+            else:
+                bins.append(NormalDist().inv_cdf(i * mass_per_bin))
         return bins
-
-    def _make_average_layer(self):
-        new_data = 1 / self.linear0.weight.data.shape[-1] * torch.ones_like(self.linear0.weight.data)
-        return new_data
 
     def _make_biases(self):
         new_biases = torch.zeros_like(self.linear0.bias.data)

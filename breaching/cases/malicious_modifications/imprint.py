@@ -38,7 +38,7 @@ class ImprintBlock(torch.nn.Module):
         if linfunc == 'avg':
             weights = torch.ones_like(self.linear0.weight.data) / N
         elif linfunc == 'fourier':
-            weights = torch.cos(math.pi / N * (torch.arange(0, N) + 0.5) * mode).repeat(K, 1) / N * max(mode, 0.5) * 4
+            weights = torch.cos(math.pi / N * (torch.arange(0, N) + 0.5) * mode).repeat(K, 1) / N * max(mode, 0.33) * 4
             # dont ask about the 4, this is WIP
             # nonstandard normalization
         elif linfunc == 'randn':

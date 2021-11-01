@@ -5,6 +5,25 @@ import torch.nn.functional as F
 
 from .nearest_embed import NearestEmbed
 
+class AE(torch.nn.Module):
+    """Basic deterministic auto-encoder."""
+
+    def __init__(self, feature_model, decoder):
+        super().__init__()
+
+        self.encoder = feature_model
+        self.decoder = decoder
+
+    def forward(self, x):
+        code = self.encoder(x)
+        return self.decoder(code)
+
+    def loss(self, x, recon_x, mu, logvar, data_mean=0.0, data_std=1.0):
+        """Based on https://github.com/nadavbh12/VQ-VAE/blob/master/vq_vae/auto_encoder.py#L93.
+        Compare BCE on unnormalized images."""
+        mse = F.mse_loss(recon_x + data_std, x * data_std)
+        return mse
+
 
 class VAE(torch.nn.Module):
     """Closely following https://github.com/pytorch/examples/blob/master/vae/main.py."""
@@ -111,7 +130,9 @@ def train_encoder_decoder(encoder, decoder, dataloader, setup, arch='VAE'):
     data_mean = torch.as_tensor(dataloader.dataset.mean, **setup)[None, :, None, None]
     data_std = torch.as_tensor(dataloader.dataset.std, **setup)[None, :, None, None]
 
-    if arch == 'VAE':
+    if arch == 'AE':
+        model = AE(encoder, decoder)
+    elif arch == 'VAE':
         model = VAE(encoder, decoder, kl_coef=1.0)
     elif arch == 'VQ_VAE':
         model = VQ_VAE(encoder, decoder)

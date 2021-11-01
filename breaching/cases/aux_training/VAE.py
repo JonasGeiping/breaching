@@ -36,7 +36,7 @@ class VAE(torch.nn.Module):
         # https://arxiv.org/abs/1312.6114
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-
+        # print(bce, kl)
         return bce + self.kl_coef * kl
 
 def train_encoder_decoder(encoder, decoder, dataloader, setup, arch='VAE'):
@@ -52,8 +52,8 @@ def train_encoder_decoder(encoder, decoder, dataloader, setup, arch='VAE'):
     else:
         raise ValueError('Invalid model.')
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.0)
+    model.train()
     for epoch in range(epochs):
         epoch_loss, epoch_mse = 0, 0
         for idx, (data, label) in enumerate(dataloader):
@@ -66,7 +66,8 @@ def train_encoder_decoder(encoder, decoder, dataloader, setup, arch='VAE'):
             with torch.no_grad():
                 epoch_loss += loss.detach()
                 epoch_mse += F.mse_loss(data, reconstructed_data)
-        print(f'Epoch {epoch}: Avg. Loss: {epoch_loss / (idx + 1)}. Avg. MSE: {epoch_mse / (idx + 1)}')
+                optimizer.step()
+            print(f'Epoch {epoch}_{idx}: Avg. Loss: {epoch_loss / (idx + 1)}. Avg. MSE: {epoch_mse / (idx + 1)}')
 
 
 def status_message(optimizer, stats, step):

@@ -4,6 +4,7 @@ import torch
 import math
 from scipy.stats import laplace
 
+
 class ImprintBlock(torch.nn.Module):
     structure = 'cumulative'
 
@@ -43,12 +44,12 @@ class ImprintBlock(torch.nn.Module):
             # nonstandard normalization
         elif linfunc == 'randn':
             weights = torch.randn(N).repeat(K, 1)
-            std, mu = torch.std_mean(weights[0]) # Enforce mean=0, std=1 with higher precision
-            weights = (weights - mu) / std / math.sqrt(N) # Move to std=1 in output dist
+            std, mu = torch.std_mean(weights[0])  # Enforce mean=0, std=1 with higher precision
+            weights = (weights - mu) / std / math.sqrt(N)  # Move to std=1 in output dist
         elif linfunc == 'rand':
             weights = torch.rand(N).repeat(K, 1)  # This might be a terrible idea haven't done the math
-            std, mu = torch.std_mean(weights[0]) # Enforce mean=0, std=1 with higher precision
-            weights = (weights - mu) / std / math.sqrt(N) # Move to std=1 in output dist
+            std, mu = torch.std_mean(weights[0])  # Enforce mean=0, std=1 with higher precision
+            weights = (weights - mu) / std / math.sqrt(N)  # Move to std=1 in output dist
 
         return weights
 
@@ -74,7 +75,7 @@ class ImprintBlock(torch.nn.Module):
         bins.append(-10)  # -Inf is not great here, but NormalDist(mu=0, sigma=1).cdf(10) approx 1
         for i in range(1, self.num_bins):
             if 'fourier' in linfunc:
-                bins.append(laplace(loc=0.0, scale=1/math.sqrt(2)).ppf(i * mass_per_bin))
+                bins.append(laplace(loc=0.0, scale=1 / math.sqrt(2)).ppf(i * mass_per_bin))
             else:
                 bins.append(NormalDist().inv_cdf(i * mass_per_bin))
         return bins
@@ -113,7 +114,7 @@ class SparseImprintBlock(torch.nn.Module):
         if connection == 'linear':
             self.linear2 = torch.nn.Linear(num_bins, data_size)
             with torch.no_grad():
-                self.linear2.weight.data = torch.ones_like(self.linear2.weight.data) / gain # / data_size / num_bins
+                self.linear2.weight.data = torch.ones_like(self.linear2.weight.data) / gain  # / data_size / num_bins
 
     def forward(self, x):
         x_in = x

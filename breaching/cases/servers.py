@@ -11,6 +11,8 @@ from torch.hub import load_state_dict_from_url
 from .malicious_modifications import ImprintBlock, RecoveryOptimizer, SparseImprintBlock, OneShotBlock
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
 
+from .aux_training import train_encoder_decoder
+from .malicious_modifications.feat_decoders import generate_decoder
 
 class HonestServer():
     """Implement an honest server protocol."""
@@ -118,14 +120,23 @@ class MaliciousModelServer(HonestServer):
         if self.cfg_server.model_modification.position is not None:
             if self.cfg_server.model_modification.type == 'SparseImprintBlock':
                 block_fn = type(None)  # Linearize the full model for SparseImprint
-            self._linearize_up_to_imprint(modified_model, block_fn)
-        
+            if self.cfg_server.model_modification.handle_preceding_layers == 'identity':
+                self._linearize_up_to_imprint(modified_model, block_fn)
+            elif self.cfg_server.model_modification.handle_preceding_layers == 'VAE':
+                # Train preceding layers to be a VAE up to the target dimension
+                modified_model, decoder = self.train_encoder_decoder(modified_model, block_fn)
+                self.secrets['ImprintBlock']['decoder'] = decoder
+            else:
+                # Otherwise do not modify the preceding layers. The attack then returns the layer input at this position directly
+                pass
+
         # Reduce failures in later layers:
+        # Note that this clashes with the VAE option!
         self._normalize_throughput(modified_model, gain=self.cfg_server.model_gain, trials=self.cfg_server.normalize_rounds)
         self.model = modified_model
         return self.model
 
-    def _place_malicious_block(self, modified_model, block_fn, type, position=None, **kwargs):
+    def _place_malicious_block(self, modified_model, block_fn, type, position=None, handle_preceding_layers=None, **kwargs):
         """The block is placed directly before the named module. If none is given, the block is placed at the start."""
         if position is None:
             input_dim = self.cfg_data.shape[0] * self.cfg_data.shape[1] * self.cfg_data.shape[2]
@@ -147,7 +158,7 @@ class MaliciousModelServer(HonestServer):
 
             if not block_found:
                 raise ValueError(f'Could not find module {position} in model to insert layer.')
-            input_dim = data_shape[0] * data_shape[1] * data_shape[2]
+            input_dim = torch.prod(torch.as_tensor(data_shape))
             block = block_fn(input_dim, **kwargs)
 
             replacement = torch.nn.Sequential(torch.nn.Flatten(), block,
@@ -244,6 +255,22 @@ class MaliciousModelServer(HonestServer):
                 model.eval()
         # Free up GPU:
         model.to(device=torch.device('cpu'))
+
+
+    def train_encoder_decoder(self, modified_model, block_fn):
+        """Train a compressed code (with VAE) that will then be found by the attacker."""
+        if self.external_dataloader is None:
+            raise ValueError('External data is necessary to train an optimal encoder/decoder structure.')
+
+        # Unroll model up to imprint block
+        # For now only the last position is allowed:
+        layer_cake = list(modified_model.children())
+        encoder = torch.nn.Sequential(*(layer_cake[:-1]), torch.nn.Flatten())
+        decoder = generate_decoder(modified_model)
+        print(encoder)
+        print(decoder)
+        stats = train_encoder_decoder(encoder, decoder, self.external_dataloader, self.setup)
+        return modified_model, decoder
 
 class MaliciousParameterServer(HonestServer):
     """Implement a malicious server protocol."""

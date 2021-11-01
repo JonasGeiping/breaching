@@ -7,7 +7,7 @@ import time
 from ...common import optimizer_lookup
 
 from .objectives import DeepLayerRatioMatching, PixelMatching
-from .decoders import AmygdalaDecoder
+from .gradient_decoders import AmygdalaDecoder
 from ...analysis.metrics import psnr_compute
 
 class RecoveryOptimizer():

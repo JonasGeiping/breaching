@@ -16,7 +16,7 @@ def construct_case(cfg_case, setup, dryrun=False):
     """Construct training splits (from which to draw examples) and model states and place into user and server objects."""
 
     # Load multiple splits only if necessary
-    # So that I don't need to have the ImageNet training set on my laptop:
+    # so that I don't need to have the ImageNet training set on my laptop:
     dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, cfg_case.examples_from_split, dryrun=dryrun)
     model = construct_model(cfg_case.model, cfg_case.data, pretrained='trained' in cfg_case.server.model_state)
     loss = torch.nn.CrossEntropyLoss()

@@ -3,10 +3,14 @@
 import torch
 import torch.nn.functional as F
 
+from .nearest_embed import NearestEmbed
+
+
 class VAE(torch.nn.Module):
     """Closely following https://github.com/pytorch/examples/blob/master/vae/main.py."""
+
     def __init__(self, feature_model, decoder, kl_coef=1.0):
-        super(VAE, self).__init__()
+        super().__init__()
 
         self.encoder = feature_model
         self.decoder = decoder
@@ -36,8 +40,69 @@ class VAE(torch.nn.Module):
         # https://arxiv.org/abs/1312.6114
         # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
         kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-        # print(bce, kl)
         return bce + self.kl_coef * kl
+
+
+class VQ_VAE(torch.nn.Module):
+    """Vector Quantized AutoEncoder from https://github.com/nadavbh12/VQ-VAE/blob/master/vq_vae/auto_encoder.py#L110"""
+
+    def __init__(self, feature_model, decoder, vq_coef=0.2, mse_coef=0.4, **kwargs):
+        super().__init__()
+
+        self.emb_size = k
+        self.encoder = feature_model
+        self.decoder = decoder
+
+        self.embedding = NearestEmbed(k, k)
+
+        self.vq_coef = vq_coef
+        self.mse_coef = mse_coef
+
+    def forward(self, x):
+        code = self.encoder(x)
+        z_e = code.view(code.shape[0], self.emb_size, -1)
+        z_q, _ = self.embedding(z_e, weight_sg=True).view_as(code)
+        emb, _ = self.embedding(z_e.detach()).view_as(code)
+        return self.decoder(z_q), z_e, emb
+
+    def loss(self, x, recon_x, z_e, emb, data_mean=0.0, data_std=1.0):
+        B = x.shape[0]
+        bce_loss = F.binary_cross_entropy(recon_x * data_std + data_mean, x * data_std + data_mean, reduction='sum')
+        vq_loss = F.mse_loss(emb, z_e.detach())
+        mse_loss = F.mse_loss(z_e, emb.detach())
+
+        return bce_loss + self.vq_coef * vq_loss + self.mse_coef * mse_loss
+
+
+class VQ_CVAE(torch.nn.Module):
+    def __init__(self, feature_model, decoder, d=512, k=10, vq_coef=1, commit_coef=0.5, **kwargs):
+        super().__init__()
+
+        self.encoder = feature_model
+        self.decoder = decoder
+
+        self.d = d
+        self.embedding = NearestEmbed(k, d)
+        self.vq_coef = vq_coef
+        self.commit_coef = commit_coef
+
+        with torch.no_grad():
+            self.embedding.weight.normal_(0, 0.02)
+            torch.fmod(self.embedding.weight, 0.04)
+
+    def forward(self, x):
+        z_e = self.encoder(x)
+        z_q, argmin = self.embedding(z_e, weight_sg=True)
+        emb, _ = self.embedding(z_e.detach())
+        return self.decoder(z_q), z_e, emb, argmin
+
+    def loss(self, x, recon_x, z_e, emb, argmin, data_mean=0.0, data_std=1.0):
+        mse = F.mse_loss(recon_x + data_std, x * data_std)
+
+        vq_loss = torch.mean(torch.norm((emb - z_e.detach())**2, 2, 1))
+        commit_loss = torch.mean(torch.norm((emb.detach() - z_e)**2, 2, 1))
+        return mse + self.vq_coef * vq_loss + self.commit_coef * commit_loss
+
 
 def train_encoder_decoder(encoder, decoder, dataloader, setup, arch='VAE'):
     """Train a VAE."""
@@ -48,26 +113,34 @@ def train_encoder_decoder(encoder, decoder, dataloader, setup, arch='VAE'):
 
     if arch == 'VAE':
         model = VAE(encoder, decoder, kl_coef=1.0)
-        model.to(**setup)
+    elif arch == 'VQ_VAE':
+        model = VQ_VAE(encoder, decoder)
+    elif arch == 'VQ_CVAE':
+        model = VQ_CVAE(encoder, decoder)
     else:
         raise ValueError('Invalid model.')
+    model.to(**setup)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.0)
     model.train()
     for epoch in range(epochs):
-        epoch_loss, epoch_mse = 0, 0
+        epoch_loss, epoch_mse, epoch_test = 0, 0, 0
         for idx, (data, label) in enumerate(dataloader):
+            # model.train()
             optimizer.zero_grad(set_to_none=True)
             data = data.to(**setup)
 
-            reconstructed_data, mu, logvar = model(data, noise_level=1.0)
-            loss = model.loss(data, reconstructed_data, mu, logvar, data_mean=data_mean, data_std=data_std)
+            reconstructed_data, *internal_vars = model(data)
+            loss = model.loss(data, reconstructed_data, *internal_vars, data_mean=data_mean, data_std=data_std)
             loss.backward()
-            with torch.no_grad():
+            with torch.inference_mode():
+                # model.eval()
+                # epoch_test += F.mse_loss(data, model(data, noise_level=0.0)[0])
                 epoch_loss += loss.detach()
                 epoch_mse += F.mse_loss(data, reconstructed_data)
                 optimizer.step()
-            print(f'Epoch {epoch}_{idx}: Avg. Loss: {epoch_loss / (idx + 1)}. Avg. MSE: {epoch_mse / (idx + 1)}')
+        print(f'Epoch {epoch}_{idx}: Avg. Loss: {epoch_loss / (idx + 1)}. Avg. MSE: {epoch_mse / (idx + 1)}')
+        # print(f'Epoch {epoch}: Avg. Loss: {epoch_loss / (idx + 1)}. Avg. MSE: {epoch_mse / (idx + 1)}. Avg. Test: {epoch_test / (idx + 1)}')
 
 
 def status_message(optimizer, stats, step):

@@ -112,7 +112,7 @@ class ResNetDecoder(torch.nn.Module):
 
         if stem == 'CIFAR':
             conv1 = self._conv_layer(self.inplanes, channels, kernel_size=3, stride=1,
-                                     padding=1, groups=1, bias=self.use_bias, dilation=1)
+                                     padding=1, groups=1, bias=False, dilation=1)
             bn1 = self._norm_layer(channels)
             nonlin = torch.nn.Tanh()
             self.stem = torch.nn.Sequential(conv1, bn1, nonlin)

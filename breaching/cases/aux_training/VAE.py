@@ -106,7 +106,7 @@ class VQ_CVAE(torch.nn.Module):
 
 def train_encoder_decoder(encoder, decoder, dataloader, setup, arch='VAE'):
     """Train a VAE."""
-    epochs = 50
+    epochs = 5
     lr = 1e-3
     data_mean = torch.as_tensor(dataloader.dataset.mean, **setup)[None, :, None, None]
     data_std = torch.as_tensor(dataloader.dataset.std, **setup)[None, :, None, None]

@@ -76,7 +76,11 @@ class ImprintAttacker(AnalyticAttacker):
 
         image_positions = bias_grad.nonzero()
         layer_inputs = self.invert_fc_layer(weight_grad, bias_grad, [])
-        inputs = layer_inputs.reshape(layer_inputs.shape[0], *data_shape)[:, :3, :, :]
+
+        if 'decoder' in server_secrets['ImprintBlock'].keys():
+            inputs = server_secrets['ImprintBlock']['decoder'](layer_inputs, noise_level=0.0)
+        else:
+            inputs = layer_inputs.reshape(layer_inputs.shape[0], *data_shape)[:, :3, :, :]
         if weight_idx > 0:  # An imprint block later in the network:
             inputs = torch.nn.functional.interpolate(inputs, size=self.data_shape[1:], mode='bicubic', align_corners=False)
         inputs = torch.max(torch.min(inputs, (1 - self.dm) / self.ds), -self.dm / self.ds)

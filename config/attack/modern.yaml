@@ -20,14 +20,14 @@ optim:
   boxed: True
   max_iterations: 24_000
   step_size_decay: cosine-decay
-  langevin_noise: 0.1
+  langevin_noise: 1e-3
   warmup: 50
 
   callback: 1000  # Print objective value every callback many iterations
 
 regularization:
   total_variation:
-    scale: 0.00089
+    scale: 0.2
     inner_exp: 2
     outer_exp: 0.5
     double_opponents: True

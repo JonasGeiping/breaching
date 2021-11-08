@@ -1,7 +1,6 @@
 """Various utility functions that can be re-used for multiple attacks."""
 
 import torch
-import math
 
 from .deepinversion import DeepInversionFeatureHook
 
@@ -95,7 +94,6 @@ class TotalVariation(torch.nn.Module):
 
     def forward(self, tensor, **kwargs):
         """Use a convolution-based approach."""
-        N = math.sqrt(tensor.shape[2] * tensor.shape[3])
         if self.double_opponents:
             tensor = torch.cat([tensor,
                                 tensor[:, 0:1, :, :] - tensor[:, 1:2, :, :],
@@ -105,7 +103,7 @@ class TotalVariation(torch.nn.Module):
                                            padding=1, dilation=1, groups=self.groups)
         squares = diffs.abs().pow(self.inner_exp)
         squared_sums = (squares[:, 0::2] + squares[:, 1::2] + self.eps).pow(self.outer_exp)
-        return squared_sums.sum() / N * self.scale
+        return squared_sums.mean() * self.scale
 
 
 class OrthogonalityRegularization(torch.nn.Module):

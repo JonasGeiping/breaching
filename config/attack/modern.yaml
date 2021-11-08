@@ -27,7 +27,7 @@ optim:
 
 regularization:
   total_variation:
-    scale: 0.2
+    scale: 0.00089
     inner_exp: 2
     outer_exp: 0.5
     double_opponents: True

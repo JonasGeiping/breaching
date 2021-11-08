@@ -27,7 +27,9 @@ optim:
 
 regularization:
   total_variation:
-    scale: 0.2 # The old version did not take the mean dx + dy as the new version, so this corresponds to 0.1 in the old repo
+    scale: 0.00089  #
+    # 0.2 # The old version did not take the mean dx + dy as the new version, so this corresponds to 0.1 in the old repo
+    # This value is then rescaled by 1/224 because the new TV intrinsic scale is sqrt(MN)
     inner_exp: 1
     outer_exp: 1
   orthogonality:

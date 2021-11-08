@@ -78,7 +78,7 @@ class ImprintAttacker(AnalyticAttacker):
         layer_inputs = self.invert_fc_layer(weight_grad, bias_grad, [])
 
         if 'decoder' in server_secrets['ImprintBlock'].keys():
-            inputs = server_secrets['ImprintBlock']['decoder'](layer_inputs, noise_level=0.0)
+            inputs = server_secrets['ImprintBlock']['decoder'](layer_inputs)
         else:
             inputs = layer_inputs.reshape(layer_inputs.shape[0], *data_shape)[:, :3, :, :]
         if weight_idx > 0:  # An imprint block later in the network:

@@ -45,16 +45,15 @@ class ResNet(torch.nn.Module):
                  groups=1, width_per_group=64, replace_stride_with_dilation=[False, False, False, False],
                  norm='BatchNorm2d', nonlin='ReLU', stem='CIFAR', downsample='B', convolution_type='Standard'):
         super(ResNet, self).__init__()
-
         self._conv_layer, self._norm_layer, self._nonlin_layer = get_layer_functions(convolution_type, norm, nonlin)
         self.use_bias = False
-        self.inplanes = width_per_group if isinstance(block, BasicBlock) else 64
+        self.inplanes = width_per_group if block is BasicBlock else 64
         self.dilation = 1
         if len(replace_stride_with_dilation) != 4:
             raise ValueError("replace_stride_with_dilation should be None "
                              "or a 4-element tuple, got {}".format(replace_stride_with_dilation))
         self.groups = groups
-        self.base_width = width_per_group if isinstance(block, Bottleneck) else 64
+        self.base_width = width_per_group if block is Bottleneck else 64
 
         if stem == 'CIFAR':
             conv1 = self._conv_layer(channels, self.inplanes, kernel_size=3, stride=1,

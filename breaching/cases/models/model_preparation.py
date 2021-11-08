@@ -43,7 +43,7 @@ def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
             block, layers = resnet_depths_to_config(int("".join(filter(str.isdigit, cfg_model))))
             model = ResNet(block, layers, channels, classes, stem='CIFAR', convolution_type='Standard',
                            nonlin='ReLU', norm='BatchNorm2d',
-                           downsample='B', width_per_group=16 if len(layer) < 4 else 64,
+                           downsample='B', width_per_group=16 if len(layers) < 4 else 64,
                            zero_init_residual=False)
 
         elif 'stacknet' in cfg_model.lower():

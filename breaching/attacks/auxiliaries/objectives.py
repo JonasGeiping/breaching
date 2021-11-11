@@ -78,6 +78,13 @@ class ParameterCosineSimilarity(torch.nn.Module):
         return objective * self.scale
 
 
+
+class PearlmutterLoss(torch.nn.Module):
+    """Use a first-order approximation of \nabla_x \nabla_g instead of the correct autograd value."""
+    pass
+
+
+
 class FastCosineSimilarity(torch.nn.Module):
     """Gradient matching based on cosine similarity of two gradient vectors.
     No gradient flows through the normalization."""

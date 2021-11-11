@@ -62,6 +62,10 @@ class OptimizationBasedAttack(_BaseAttacker):
             self.gradient_fn = self._grad_fn_single_step
 
         candidate = self._initialize_data([shared_data['num_data_points'], *self.data_shape])
+
+        best_candidate = candidate.detach().clone()
+        minimal_value_so_far = torch.as_tensor(float('inf'), **self.setup)
+
         optimizer, scheduler = self._init_optimizer(candidate)
         current_wallclock = time.time()
         try:
@@ -76,6 +80,9 @@ class OptimizationBasedAttack(_BaseAttacker):
                     # Project into image space
                     if self.cfg.optim.boxed:
                         candidate.data = torch.max(torch.min(candidate, (1 - self.dm) / self.ds), -self.dm / self.ds)
+                    if objective_value < minimal_value_so_far:
+                        minimal_value_so_far = objective_value.detach()
+                        best_candidate = candidate.detach().clone()
 
                 if iteration + 1 == self.cfg.optim.max_iterations or iteration % self.cfg.optim.callback == 0:
                     timestamp = time.time()
@@ -94,7 +101,7 @@ class OptimizationBasedAttack(_BaseAttacker):
             print(f'Recovery interrupted manually in iteration {iteration}!')
             pass
 
-        return candidate.detach()
+        return best_candidate.detach()
 
     def _objective_function(self, candidate, labels, rec_model, optimizer, shared_data):
         def closure():

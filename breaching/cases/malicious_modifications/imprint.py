@@ -12,7 +12,10 @@ class ImprintBlock(torch.nn.Module):
         """
         data_size is the length of the input data
         num_bins is how many "paths" to include in the model
-        connection is how this block should return back to the input shape (optional)
+        connection is how this block should coonect back to the input shape (optional)
+
+        linfunc is the choice of linear query function ('avg', 'fourier', 'randn', 'rand').
+        If linfunc is fourier, then the mode parameter determines the mode of the DCT-2 that is used as linear query.
         """
         super().__init__()
         self.data_size = data_size
@@ -31,7 +34,7 @@ class ImprintBlock(torch.nn.Module):
                 self.linear2.weight.data = torch.ones_like(self.linear2.weight.data) / gain
                 self.linear2.bias.data -= torch.as_tensor(self.bins).mean()
 
-        self.relu = torch.nn.ReLU()
+        self.nonlin = torch.nn.ReLU()
 
     @torch.no_grad()
     def _init_linear_function(self, linfunc='fourier', mode=0):
@@ -48,28 +51,14 @@ class ImprintBlock(torch.nn.Module):
             weights = (weights - mu) / std / math.sqrt(N)  # Move to std=1 in output dist
         elif linfunc == 'rand':
             weights = torch.rand(N).repeat(K, 1)  # This might be a terrible idea haven't done the math
-            std, mu = torch.std_mean(weights[0])  # Enforce mean=0, std=1 with higher precision
+            std, mu = torch.std_mean(weights[0])  # Enforce mean=0, std=1
             weights = (weights - mu) / std / math.sqrt(N)  # Move to std=1 in output dist
+        else:
+            raise ValueError(f'Invalid linear function choice {linfunc}.')
 
         return weights
 
-    def forward(self, x):
-        x_in = x
-        x = self.linear0(x)
-        x = self.relu(x)
-        if self.connection == 'linear':
-            output = self.linear2(x)
-        elif self.connection == 'cat':
-            output = torch.cat([x, x_in[:, self.num_bins:]], dim=1)
-        elif self.connection == 'softmax':
-            s = torch.softmax(x, dim=1)[:, :, None]
-            output = (x_in[:, None, :] * s).sum(dim=1)
-        else:
-            output = x_in + x.mean(dim=1, keepdim=True)
-        return output
-
     def _get_bins(self, linfunc='avg'):
-        left_bins = []
         bins = []
         mass_per_bin = 1 / (self.num_bins)
         bins.append(-10)  # -Inf is not great here, but NormalDist(mu=0, sigma=1).cdf(10) approx 1
@@ -87,39 +76,10 @@ class ImprintBlock(torch.nn.Module):
         return new_biases
 
 
-class SparseImprintBlock(torch.nn.Module):
-    structure = 'sparse'
-
-    def __init__(self, data_size, num_bins, connection='linear', gain=1.0):
-        """
-        data_size is the size of the input images
-        num_bins is how many "paths" to include in the model
-
-        This block uses a single hardtanh for simplicity of presentation.
-        This not at all necessary and can be replaced with
-        another simple linear+relu layer which replicates the same computation.
-        """
-        super().__init__()
-        self.data_size = data_size
-        self.num_bins = num_bins
-        self.connection = connection
-        self.linear0 = torch.nn.Linear(data_size, num_bins)
-
-        self.bins, self.bin_sizes = self._get_bins(num_bins)
-        with torch.no_grad():
-            self.linear0.weight.data[:, :] = self._make_scaled_average_layer() * gain
-            self.linear0.bias.data[:] = self._make_biases() * gain
-        self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=gain)
-
-        if connection == 'linear':
-            self.linear2 = torch.nn.Linear(num_bins, data_size)
-            with torch.no_grad():
-                self.linear2.weight.data = torch.ones_like(self.linear2.weight.data) / gain  # / data_size / num_bins
-
     def forward(self, x):
         x_in = x
         x = self.linear0(x)
-        x = (self.hardtanh(x) + 1) / 2
+        x = self.nonlin(x)
         if self.connection == 'linear':
             output = self.linear2(x)
         elif self.connection == 'cat':
@@ -131,20 +91,32 @@ class SparseImprintBlock(torch.nn.Module):
             output = x_in + x.mean(dim=1, keepdim=True)
         return output
 
-    def _get_bins(self, num_bins, mu=0, sigma=1):
+
+class SparseImprintBlock(ImprintBlock):
+    structure = 'sparse'
+
+    """This block is sparse instead of cumulative which is more efficient in noise/param tradeoffs but requires
+    two ReLUs that construct the hard-tanh nonlinearity."""
+
+    def _get_bins(self, mu=0, sigma=1, linfunc='avg'):
         bins = []
         mass = 0
-        for path in range(num_bins + 1):
-            mass += 1 / (num_bins + 2)
-            bins += [NormalDist(mu=mu, sigma=sigma).inv_cdf(mass)]
+        for path in range(self.num_bins + 1):
+            mass += 1 / (self.num_bins + 2)
+            if 'fourier' in linfunc:
+                bins.append(laplace(loc=mu, scale=sigma / math.sqrt(2)).ppf(mass))
+            else:
+                bins += [NormalDist(mu=mu, sigma=sigma).inv_cdf(mass)]
         bin_sizes = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
-        return bins[1:], bin_sizes
+        self.bin_sizes = bin_sizes
+        return bins[1:]
 
-    def _make_scaled_average_layer(self):
-        new_data = 1 / self.linear0.weight.data.shape[-1] * torch.ones_like(self.linear0.weight.data)
-        for i, row in enumerate(new_data):
+    @torch.no_grad()
+    def _init_linear_function(self, linfunc='fourier', mode=0):
+        weights = super()._init_linear_function(linfunc, mode)
+        for i, row in enumerate(weights):
             row /= torch.as_tensor(self.bin_sizes[i], device=new_data.device)
-        return new_data
+        return weights
 
     def _make_biases(self):
         new_biases = torch.zeros_like(self.linear0.bias.data)
@@ -153,66 +125,34 @@ class SparseImprintBlock(torch.nn.Module):
         return new_biases
 
 
-class EquispacedImprintBlock(torch.nn.Module):
-    """The old implementation."""
+class OneShotBlock(ImprintBlock):
+    structure = 'cumulative'
+
+    """One-shot attack with minimal additional parameters. Can target a specific data point if its target_val is known."""
+    def __init__(self, data_size, num_bins, connection='linear', gain=1e-3, linfunc='fourier', mode=0, target_val=0):
+        self.virtual_bins = num_bins
+        self.target_val = target_val
+        num_bins = 2
+        super().__init__(data_size, num_bins, connection, gain, linfunc, mode)
+
+    def _get_bins(self, linfunc='avg'):
+        left_bins = []
+        bins = []
+        mass_per_bin = 1 / (self.virtual_bins)
+        bins.append(-10)  # -Inf is not great here, but NormalDist(mu=0, sigma=1).cdf(10) approx 1
+        for i in range(1, self.virtual_bins):
+            if 'fourier' in linfunc:
+                bins.append(laplace(loc=0.0, scale=1 / math.sqrt(2)).ppf(i * mass_per_bin))
+            else:
+                bins.append(NormalDist().inv_cdf(i * mass_per_bin))
+            if target_val < bins[-1]:
+                break
+        return bins[:-2]
+
+
+class OneShotBlockSparse(SparseImprintBlock):
     structure = 'sparse'
 
-    def __init__(self, data_size, num_bins, connection='linear', alpha=0.375):
-        """
-        data_size is the size of the input images
-        num_bins is how many "paths" to include in the model
-        Does not accept other connections
-        """
-        super().__init__()
-        self.data_size = data_size
-        self.num_bins = num_bins
-        self.linear0 = torch.nn.Linear(data_size, num_bins)
-        self.linear1 = torch.nn.Linear(num_bins, data_size)
-
-        self.alpha = alpha
-        self.bins, self.bin_val = self._get_bins()
-        with torch.no_grad():
-            self.linear0.weight.data[:, :] = self._make_average_layer()
-            self.linear0.bias.data[:] = self._make_biases()
-        self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=self.bin_val)
-
-    def forward(self, x):
-        x = self.linear0(x)
-        x = (self.hardtanh(x) + 1) / 2
-        output = self.linear1(x)
-        return output
-
-    def _get_bins(self):
-        order_stats = [self._get_order_stats(r + 1, self.num_bins) for r in range(self.num_bins)]
-        diffs = [order_stats[i] - order_stats[i + 1] for i in range(len(order_stats) - 1)]
-        bin_val = -sum(diffs) / len(diffs)
-        left_bins = [-i * bin_val for i in range(self.num_bins // 2 + 1)]
-        right_bins = [i * bin_val for i in range(1, self.num_bins // 2)]
-        left_bins.reverse()
-        bins = left_bins + right_bins
-        return bins, bin_val
-
-    def _get_order_stats(self, r, n):
-        r"""
-        r Order statistics can be computed as follows:
-        E(r:n) = \mu + \Phi^{-1}\left( \frac{r-a}{n-2a+1} \sigma \right)
-        where a = 0.375
-        """
-        return 0 + NormalDist().inv_cdf((r - self.alpha) / (n - 2 * self.alpha + 1)) * 1
-
-    def _make_average_layer(self):
-        new_data = 1 / self.linear0.weight.data.shape[-1] * torch.ones_like(self.linear0.weight.data)
-        return new_data
-
-    def _make_biases(self):
-        new_biases = torch.zeros_like(self.linear0.bias.data)
-        for i in range(len(new_biases)):
-            new_biases[i] = self.bins[i]
-
-        return new_biases
-
-
-class OneShotBlock(SparseImprintBlock):
     def __init__(self, data_size, num_bins, connection='linear'):
         """
         data_size is the size of the input images
@@ -222,34 +162,13 @@ class OneShotBlock(SparseImprintBlock):
         self.data_size = data_size
         self.num_bins = num_bins
 
-    def forward(self, x):
-        x = self.linear0(x)
-        x = self.hardtanh(x)
-        output = self.linear2(x)
-        return output
 
     def _get_bins(self):
         # Here we just build bins of uniform mass
-
         left_bins = []
         bins = []
         mass_per_bin = 1 / self.num_bins
         bins = [-NormalDist().inv_cdf(0.5), -NormalDist().inv_cdf(0.5 + mass_per_bin)]
-        bin_sizes = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
+        self.bin_sizes = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
         bins = bins[:-1]  # here we need to throw away one on the right
-        return bins, bin_sizes
-
-    def _make_scaled_identity(self):
-        new_data = torch.diag(1 / torch.tensor(self.bin_sizes))
-        return new_data
-
-    def _make_average_layer(self):
-        new_data = 1 / self.linear0.weight.data.shape[-1] * torch.ones_like(self.linear0.weight.data)
-        for i, row in enumerate(new_data):
-            row *= 1 / torch.tensor(self.bin_sizes[i])
-        return new_data
-
-    def _make_biases(self):
-        new_biases = torch.zeros_like(self.linear0.bias.data)
-        new_biases[0] = -self.bins[0] / self.bin_sizes[0]
-        return new_biases
+        return bins

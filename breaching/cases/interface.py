@@ -8,7 +8,7 @@ import torch
 from .data import construct_dataloader
 from .models import construct_model
 
-from .users import UserSingleStep, UserMultiStep
+from .users import UserSingleStep, UserMultiStep, MultiUserAggregate
 from .servers import HonestServer, MaliciousModelServer, MaliciousParameterServer, PathParameterServer, StackParameterServer
 
 
@@ -45,10 +45,11 @@ def construct_case(cfg_case, setup, dryrun=False):
     print(f'Overall this is a data ratio of {cfg_case.num_queries * num_params / target_information:7.0f}:1 '
           f'for target shape {[cfg_case.user.num_data_points, *cfg_case.data.shape]} given that num_queries={cfg_case.num_queries}.')
 
-    if cfg_case.user.num_local_updates == 1:
+    if cfg_case.user.user_type == 'local_gradient':
         # The user will deepcopy this model to have their own
-        user = UserSingleStep(model, loss, dataloader, setup, **cfg_case.user)
-    else:
-        user = UserMultiStep(model, loss, dataloader, setup, **cfg_case.user)
-
+        user = UserSingleStep(model, loss, dataloader, setup, cfg_case.user, num_queries=cfg_case.num_queries)
+    elif cfg_case.user.user_type == 'local_update':
+        user = UserMultiStep(model, loss, dataloader, setup, cfg_case.user, num_queries=cfg_case.num_queries)
+    elif cfg_case.user.user_type == 'multiuser_aggregate':
+        user = MultiUserAggregate(model, loss, dataloader, setup, cfg_case.user, num_queries=cfg_case.num_queries)
     return user, server

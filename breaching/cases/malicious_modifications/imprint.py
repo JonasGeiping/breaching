@@ -136,7 +136,6 @@ class OneShotBlock(ImprintBlock):
         super().__init__(data_size, num_bins, connection, gain, linfunc, mode)
 
     def _get_bins(self, linfunc='avg'):
-        left_bins = []
         bins = []
         mass_per_bin = 1 / (self.virtual_bins)
         bins.append(-10)  # -Inf is not great here, but NormalDist(mu=0, sigma=1).cdf(10) approx 1
@@ -145,9 +144,9 @@ class OneShotBlock(ImprintBlock):
                 bins.append(laplace(loc=0.0, scale=1 / math.sqrt(2)).ppf(i * mass_per_bin))
             else:
                 bins.append(NormalDist().inv_cdf(i * mass_per_bin))
-            if target_val < bins[-1]:
+            if self.target_val < bins[-1]:
                 break
-        return bins[:-2]
+        return bins[-2:]
 
 
 class OneShotBlockSparse(SparseImprintBlock):

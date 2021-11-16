@@ -19,7 +19,7 @@ class UserSingleStep(torch.nn.Module):
         if cfg_user.data_idx is None:
             self.data_idx = torch.randint(0, len(dataloader.dataset), (1,))
         else:
-            self.data_idx = data_idx
+            self.data_idx = cfg_user.data_idx
         self.data_with_labels = cfg_user.data_with_labels
 
         self.setup = setup
@@ -290,14 +290,13 @@ class MultiUserAggregate(UserMultiStep):
     def _generate_example_data(self, user_idx=0):
         """Take care to partition data among users on the fly."""
 
-        data_per_user = self.num_data_points // self.num_users
+        data_per_user = len(self.dataloader.dataset) // self.num_users
         user_data_subset = torch.utils.data.Subset(self.dataloader.dataset,
                                                    list(range(data_per_user * user_idx, (user_idx + 1) * data_per_user)))
-
         data = []
         labels = []
         pointer = self.data_idx
-        for _ in range(data_per_user):
+        for _ in range(self.num_data_points):
             datum, label = self.dataloader.dataset[pointer]
             data += [datum]
             labels += [torch.as_tensor(label)]
@@ -305,12 +304,10 @@ class MultiUserAggregate(UserMultiStep):
                 pointer += len(user_data_subset) // len(user_data_subset.dataset.classes)
             elif self.data_with_labels == 'same':
                 pointer += 1
-            elif self.data_with_labels == 'random-animals':  # only makes sense on ImageNet, disregard otherwise
-                last_animal_class_idx = 397
-                per_class = len(user_data_subset.dataset) // len(user_data_subset.dataset.classes)
-                pointer = torch.randint(0, per_class * last_animal_class_idx, (1,))
-            else:
+            elif self.data_with_labels == 'random': # This will collide with the user thing
                 pointer = torch.randint(0, len(user_data_subset), (1,))
+            else:
+                raise ValueError(f'Unknown {self.data_with_labels}')
             pointer = pointer % len(user_data_subset)  # Make sure not to leave the dataset range
         data = torch.stack(data).to(**self.setup)
         labels = torch.stack(labels).to(device=self.setup['device'])
@@ -349,7 +346,7 @@ class MultiUserAggregate(UserMultiStep):
 
                     optimizer.zero_grad()
                     # Compute the forward pass
-                    data_input = data + self.generator_inputi.sample(data.shape) if self.generator_input is not None else data
+                    data_input = data + self.generator_input.sample(data.shape) if self.generator_input is not None else data
                     outputs = self.model(data_input)
                     loss = self.loss(outputs, labels)
                     loss.backward()
@@ -366,11 +363,12 @@ class MultiUserAggregate(UserMultiStep):
                 # with the gradients sent in UserSingleStep
                 param_difference_to_server = torch._foreach_sub([p.cpu() for p in self.model.parameters()], server_parameters)
                 torch._foreach_sub_(param_difference_to_server, aggregate_params)
-                torch._foreach_add_(aggregate_params, param_difference_to_server, alpha=1 / self.num_users)
-
-                buffer_to_server = [b.to(device=torch.device('cpu'), dtype=torch.float) for b in self.model.buffers()]
-                torch._foreach_sub_(buffer_to_server, aggregate_buffers)
-                torch._foreach_add_(aggregate_buffers, buffer_to_server, alpha=1 / self.num_users)
+                torch._foreach_add_(aggregate_params, param_difference_to_server, alpha=-1 / self.num_users)
+                
+                if len(aggregate_buffers) > 0:
+                    buffer_to_server = [b.to(device=torch.device('cpu'), dtype=torch.float) for b in self.model.buffers()]
+                    torch._foreach_sub_(buffer_to_server, aggregate_buffers)
+                    torch._foreach_add_(aggregate_buffers, buffer_to_server, alpha=1 / self.num_users)
 
             shared_grads += [aggregate_params]
             shared_buffers += [aggregate_buffers]
@@ -381,7 +379,12 @@ class MultiUserAggregate(UserMultiStep):
                            local_hyperparams=dict(lr=self.local_learning_rate, steps=self.num_local_updates,
                                                   data_per_step=self.num_data_per_local_update_step,
                                                   labels=label_list) if self.provide_local_hyperparams else None)
-        true_user_data = dict(data=lambda idx: self._generate_example_data(idx)[0],
-                              labels=lambda idx: self._generate_example_data(idx)[1])
+        
+        def generate_user_data():
+            for user_idx in range(self.num_users):
+                yield self._generate_example_data(user_idx)[0]
+
+        true_user_data = dict(data=generate_user_data(),
+                              labels=None)
 
         return shared_data, true_user_data

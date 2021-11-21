@@ -1,17 +1,14 @@
-
+defaults:
+  - _default_optimization_attack
 type: invertinggradients
-
-attack_type: optimization   # analytic, equation solver
 
 objective:
   type: cosine-similarity
   scale: 1.0
 
 restarts:
-  num_trials: 8
+  num_trials: 1
   scoring: cosine-similarity
-
-init: randn
 
 optim:
   optimizer: adam
@@ -20,7 +17,7 @@ optim:
   boxed: True
   max_iterations: 24_000
   step_size_decay: cosine-decay
-  langevin_noise: 1e-3
+  langevin_noise: 1e-5
   warmup: 50
 
   callback: 1000  # Print objective value every callback many iterations
@@ -31,8 +28,6 @@ regularization:
     inner_exp: 2
     outer_exp: 0.5
     double_opponents: True
-  orthogonality:
-    scale: 0.0
   norm:
     scale: 1e-6
     pnorm: 2

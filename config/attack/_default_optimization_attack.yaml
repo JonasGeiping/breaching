@@ -1,0 +1,34 @@
+type: default
+
+attack_type: optimization   # analytic, equation solver
+
+objective:
+  type: euclidean
+  scale: 1.0
+
+restarts:
+  num_trials: 1
+  scoring: euclidean
+
+init: randn
+normalize_gradients: False
+
+optim:
+  optimizer: Adam
+  signed: False
+  step_size: 1.0
+  boxed: False
+  max_iterations: 400
+  step_size_decay:
+  langevin_noise: 0.0
+  warmup: 0
+
+  callback: 100  # Print objective value every callback many iterations
+
+regularization:
+
+impl:
+  dtype: float
+  mixed_precision: False
+  grad_scaling: False  # this is a no-op if mixed-precision is off
+  JIT:  # script currently break autocast mixed precision and trace breaks training

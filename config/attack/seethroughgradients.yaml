@@ -1,7 +1,6 @@
-
+defaults:
+  - _default_optimization_attack
 type: see-through-gradients
-
-attack_type: optimization   # analytic, equation solver
 
 objective:
   type: euclidean
@@ -11,7 +10,6 @@ restarts:
   num_trials: 1
   scoring: euclidean #'registered-mean' # todo: implement this option
 
-init: randn
 
 optim:
   optimizer: adam
@@ -30,8 +28,6 @@ regularization:
     scale: 1e-4
     inner_exp: 1
     outer_exp: 1
-  orthogonality:
-    scale: 0.0
   norm:
     scale: 1e-6
     pnorm: 2

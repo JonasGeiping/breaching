@@ -14,7 +14,7 @@ class _BaseAttacker():
 
     def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
         self.cfg = cfg_attack
-        self.setup = setup
+        self.setup = dict(device=setup['device'], dtype=getattr(torch, cfg_attack.impl.dtype))
         self.model_template = copy.deepcopy(model)
         self.loss_fn = copy.deepcopy(loss_fn)
 
@@ -39,12 +39,17 @@ class _BaseAttacker():
 
         # Load server_payload into state:
         rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data['buffers'])
+        shared_data = self._cast_shared_data(shared_data)
 
         # Consider label information
         if shared_data['labels'] is None:
             labels = self._recover_label_information(shared_data)
         else:
             labels = shared_data['labels']
+
+        # Condition gradients?
+        if self.cfg.normalize_gradients:
+            shared_data = self._normalize_gradients(shared_data)
         return rec_models, labels, stats
 
     def _construct_models_from_payload_and_buffers(self, server_payload, user_buffers):
@@ -69,6 +74,14 @@ class _BaseAttacker():
             models.append(new_model)
         return models
 
+    def _cast_shared_data(self, shared_data):
+        """Cast user data to reconstruction data type."""
+        cast_grad_list = []
+        for shared_grad in shared_data['gradients']:
+            cast_grad_list += [[g.to(dtype=self.setup['dtype']) for g in shared_grad]]
+        shared_data['gradients'] = cast_grad_list
+        return shared_data
+
     def _initialize_data(self, data_shape):
         init_type = self.cfg.init
         if init_type == 'randn':
@@ -78,6 +91,7 @@ class _BaseAttacker():
         elif init_type == 'zeros':
             candidate = torch.zeros(data_shape, **self.setup)
         candidate.requires_grad = True
+        candidate.grad = torch.zeros_like(candidate)
         return candidate
 
     def _init_optimizer(self, candidate):
@@ -86,6 +100,14 @@ class _BaseAttacker():
                                                 scheduler=self.cfg.optim.step_size_decay, warmup=self.cfg.optim.warmup,
                                                 max_iterations=self.cfg.optim.max_iterations)
         return optimizer, scheduler
+
+
+    def _normalize_gradients(self, shared_data, fudge_factor=1e-6):
+        """Normalize gradients to have norm of 1. No guarantees that this would be a good idea for FL updates."""
+        for shared_grad in shared_data['gradients']:
+            grad_norm = torch.stack([g.pow(2).sum() for g in shared_grad]).sum().sqrt()
+            torch._foreach_div_(shared_grad, max(grad_norm, fudge_factor))
+        return shared_data
 
     def _recover_label_information(self, user_data):
         raise NotImplementedError()

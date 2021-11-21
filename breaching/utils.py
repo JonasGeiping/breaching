@@ -105,11 +105,11 @@ def save_summary(cfg, metrics, stats, local_time):
                    **{k: v for k, v in metrics.items() if k != 'order'},
                    score=stats['opt_value'],
                    total_time=str(datetime.timedelta(seconds=local_time)).replace(',', ''),
-                   local_updates=cfg.case.user.num_local_updates,
+                   user_type=cfg.case.user.user_type,
                    gradient_noise=cfg.case.user.local_diff_privacy.gradient_noise,
                    seed=cfg.seed,
                    # dump extra values from here:
-                   **cfg.attack,
+                   **{f'ATK_{k}': v for k, v in cfg.attack.items()},
                    **{k: v for k, v in cfg.case.items() if k not in ['name', 'model']},
                    folder=local_folder)
     save_to_table(os.path.join(cfg.original_cwd, 'tables'),

@@ -304,7 +304,7 @@ class MultiUserAggregate(UserMultiStep):
                 pointer += len(user_data_subset) // len(user_data_subset.dataset.classes)
             elif self.data_with_labels == 'same':
                 pointer += 1
-            elif self.data_with_labels == 'random': # This will collide with the user thing
+            elif self.data_with_labels == 'random':  # This will collide with the user thing
                 pointer = torch.randint(0, len(user_data_subset), (1,))
             else:
                 raise ValueError(f'Unknown {self.data_with_labels}')
@@ -364,7 +364,7 @@ class MultiUserAggregate(UserMultiStep):
                 param_difference_to_server = torch._foreach_sub([p.cpu() for p in self.model.parameters()], server_parameters)
                 torch._foreach_sub_(param_difference_to_server, aggregate_params)
                 torch._foreach_add_(aggregate_params, param_difference_to_server, alpha=-1 / self.num_users)
-                
+
                 if len(aggregate_buffers) > 0:
                     buffer_to_server = [b.to(device=torch.device('cpu'), dtype=torch.float) for b in self.model.buffers()]
                     torch._foreach_sub_(buffer_to_server, aggregate_buffers)
@@ -379,7 +379,7 @@ class MultiUserAggregate(UserMultiStep):
                            local_hyperparams=dict(lr=self.local_learning_rate, steps=self.num_local_updates,
                                                   data_per_step=self.num_data_per_local_update_step,
                                                   labels=label_list) if self.provide_local_hyperparams else None)
-        
+
         def generate_user_data():
             for user_idx in range(self.num_users):
                 yield self._generate_example_data(user_idx)[0]

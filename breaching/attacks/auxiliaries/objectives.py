@@ -194,6 +194,7 @@ class PearlmutterLoss(torch.nn.Module):
         # Compute both model gradients and candidate gradients
         *gradients, dLdx = torch.autograd.grad(task_loss, (*model.parameters(), candidate), create_graph=False)
         if self.level_gradients:
+            # Only a good idea if normalize_gradients=True
             grad_norm = torch.stack([g.pow(2).sum() for g in gradients]).sum().sqrt()
             torch._foreach_div_(gradients, max(grad_norm, self.fudge_factor))
 

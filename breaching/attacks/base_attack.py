@@ -14,6 +14,7 @@ class _BaseAttacker():
 
     def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
         self.cfg = cfg_attack
+        self.memory_format = torch.channels_last if cfg_attack.impl.mixed_precision else torch.contiguous_format
         self.setup = dict(device=setup['device'], dtype=getattr(torch, cfg_attack.impl.dtype))
         self.model_template = copy.deepcopy(model)
         self.loss_fn = copy.deepcopy(loss_fn)
@@ -64,7 +65,7 @@ class _BaseAttacker():
             else:
                 buffers = payload['buffers']
             new_model = copy.deepcopy(self.model_template)
-            new_model.to(**self.setup)
+            new_model.to(**self.setup, memory_format=self.memory_format)
 
             with torch.no_grad():
                 for param, server_state in zip(new_model.parameters(), parameters):
@@ -115,6 +116,7 @@ class _BaseAttacker():
         else:
             raise ValueError(f'Unknown initialization scheme {init_type} given.')
 
+        candidate.to(memory_format=self.memory_format)
         candidate.requires_grad = True
         candidate.grad = torch.zeros_like(candidate)
         return candidate

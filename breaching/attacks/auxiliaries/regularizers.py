@@ -82,11 +82,9 @@ class TotalVariation(torch.nn.Module):
                                     [0, -1, 1],
                                     [0, 0, 0]], **setup).unsqueeze(0).unsqueeze(1)
         grad_weight = torch.cat((torch.transpose(grad_weight, 2, 3), grad_weight), 0)
-        if self.double_opponents:
-            self.groups = 6
-        else:
-            self.groups = 3
+        self.groups = 6 if self.double_opponents else 3
         grad_weight = torch.cat([grad_weight] * self.groups, 0)
+
         self.register_buffer('weight', grad_weight)
 
     def initialize(self, models, **kwargs):

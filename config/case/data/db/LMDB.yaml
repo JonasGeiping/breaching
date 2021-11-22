@@ -1,0 +1,28 @@
+
+name: LMDB
+path: "~/data/lmdb"
+
+# writing:
+rebuild_existing_database: False
+augmentations_train:
+  RandomCrop:
+    - 32
+    - 4
+  RandomHorizontalFlip: 0.5
+augmentations_val:
+normalize: False
+rounds: 10
+write_frequency: 5000 # how often to flush during database creation
+shuffle_while_writing: False
+
+# reading:
+max_readers: 128
+readahead: True # this should be beneficial for long sequential reads
+meminit: True
+max_spare_txns: 128
+
+access: get # cursor or get
+
+# Populate some fields from the base data folder
+pixels: ${data.pixels}
+mean: ${data.mean}

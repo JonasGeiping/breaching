@@ -6,6 +6,7 @@ Data Config Structure (cfg_data): See config/data
 import torch
 import torchvision
 from .datasets import TinyImageNet
+from .cached_datasets import CachedDataset
 
 import os
 
@@ -18,6 +19,12 @@ def construct_dataloader(cfg_data, cfg_impl, split, dryrun=False):
     """Return a dataloader with given dataset. Choose number of workers and their settings."""
 
     dataset = _build_dataset(cfg_data, split, can_download=True)
+    if cfg_data.db.name == 'LMDB':
+        from .lmdb_datasets import LMDBDataset  # this also depends on py-lmdb, that's why it's a lazy import
+        dataset = LMDBDataset(trainset, cfg_data.db, split, can_create=True)
+
+    if cfg_data.caching:
+        dataset = CachedDataset(dataset, num_workers=cfg_impl.threads, pin_memory=cfg_impl.pin_memory)
 
     if dryrun:
         dataset = torch.utils.data.Subset(dataset, torch.arange(0, cfg_data.batch_size))

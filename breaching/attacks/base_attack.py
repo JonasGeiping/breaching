@@ -83,6 +83,7 @@ class _BaseAttacker():
         return shared_data
 
     def _initialize_data(self, data_shape):
+        """Note that data is initialized "inside" the network normalization."""
         init_type = self.cfg.init
         if init_type == 'randn':
             candidate = torch.randn(data_shape, **self.setup)
@@ -90,6 +91,30 @@ class _BaseAttacker():
             candidate = (torch.rand(data_shape, **self.setup) * 2) - 1.0
         elif init_type == 'zeros':
             candidate = torch.zeros(data_shape, **self.setup)
+        # Initializations from Wei et al, "A Framework for Evaluating Gradient Leakage
+        #                                  Attacks in Federated Learning"
+        elif any(c in init_type for c in ['red', 'green', 'blue', 'dark', 'light']):  # init_types like 'red-true'
+            candidate = torch.zeros(data_shape, **self.setup)
+            if 'light' in init_type:
+                candidate = torch.ones(data_shape, **self.setup)
+            else:
+                nonzero_channel = 0 if 'red' in init_type else 1 if 'yellow' in init_type else 2
+                candidate[:, nonzero_channel, :, :] = 1
+            if '-true' in init_type:
+                # Shift to be truly RGB, not just normalized RGB
+                candidate = (candidate - self.dm) / self.ds
+        elif 'patterned' in init_type:  # Look for init_type=rand-patterned-4
+            pattern_width = int("".join(filter(str.isdigit, init_type)))
+            if 'rand' in init_type:
+                seed = torch.rand([1, 3, pattern_width, pattern_width], **self.setup)
+            else:
+                seed = torch.rand([1, 3, pattern_width, pattern_width], **self.setup)
+            # Shape expansion:
+            x_factor, y_factor = data_shape[2] // pattern_width, data_shape[3] // pattern_width
+            candidate = torch.tile(seed, (1, 1, x_factor, y_factor))[:, :, :data_shape[2], :data_shape[3]]
+        else:
+            raise ValueError(f'Unknown initialization scheme {init_type} given.')
+
         candidate.requires_grad = True
         candidate.grad = torch.zeros_like(candidate)
         return candidate

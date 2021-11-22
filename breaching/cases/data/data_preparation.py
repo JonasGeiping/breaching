@@ -6,7 +6,7 @@ Data Config Structure (cfg_data): See config/data
 import torch
 import torchvision
 from .datasets import TinyImageNet
-from .cached_datasets import CachedDataset
+from .cached_dataset import CachedDataset
 
 import os
 
@@ -64,7 +64,7 @@ def _build_dataset(cfg_data, split, can_download=True):
         dataset.lookup = dict(zip(list(range(len(dataset))), [label for (_, label) in dataset.samples]))
     elif cfg_data.name == 'TinyImageNet':
         dataset = TinyImageNet(root=cfg_data.path, split=split, download=can_download,
-                               transform=torchvision.torchvision.transforms.ToTensor(), cached=True)
+                               transform=torchvision.transforms.ToTensor(), cached=True)
         dataset.lookup = dict(zip(list(range(len(dataset))), [label for (_, label) in dataset.samples]))
     else:
         raise ValueError(f'Invalid dataset {cfg_data.name} provided.')

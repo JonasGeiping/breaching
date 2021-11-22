@@ -30,4 +30,5 @@ augmentations_val:
 
 caching: # dataset is alreay cached in RAM
 # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB
-db: none
+defaults:
+  - db: none

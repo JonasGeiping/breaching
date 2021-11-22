@@ -31,4 +31,5 @@ augmentations_val:
 
 caching: False
 # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB
-db: none
+defaults:
+  - db: none

@@ -21,7 +21,7 @@ def construct_dataloader(cfg_data, cfg_impl, split, dryrun=False):
     dataset = _build_dataset(cfg_data, split, can_download=True)
     if cfg_data.db.name == 'LMDB':
         from .lmdb_datasets import LMDBDataset  # this also depends on py-lmdb, that's why it's a lazy import
-        dataset = LMDBDataset(trainset, cfg_data.db, split, can_create=True)
+        dataset = LMDBDataset(dataset, cfg_data, split, can_create=True)
 
     if cfg_data.caching:
         dataset = CachedDataset(dataset, num_workers=cfg_impl.threads, pin_memory=cfg_impl.pin_memory)

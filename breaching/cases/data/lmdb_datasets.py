@@ -25,9 +25,9 @@ class LMDBDataset(torch.utils.data.Dataset):
     https://github.com/Lyken17/Efficient-PyTorch/blob/master/tools/folder2lmdb.py
     """
 
-    def __init__(self, dataset, cfg_db, name='train', can_create=True):
+    def __init__(self, dataset, cfg_data, name='train', can_create=True):
         """Initialize with a given pytorch dataset."""
-        if os.path.isfile(os.path.expanduser(cfg_db.path)):
+        if os.path.isfile(os.path.expanduser(cfg_data.db.path)):
             raise ValueError('LMDB path must lead to a folder containing the databases, not a file.')
         self.dataset = dataset
         self.img_shape = self.dataset[0][0].shape
@@ -42,12 +42,13 @@ class LMDBDataset(torch.utils.data.Dataset):
         else:
             self.skip_pillow = True
 
-        shuffled = 'shuffled' if cfg_db.shuffle_while_writing else ''
-        full_name = name + ''.join([l for l in repr(cfg_db.augmentations_train) if l.isalnum()]) + shuffled
-        self.path = os.path.join(os.path.expanduser(cfg_db.path), f'{type(dataset).__name__}_{full_name}.lmdb')
+        shuffled = 'shuffled' if cfg_data.db.shuffle_while_writing else ''
+        active_augs = cfg_data.augmentations_train if name == 'train' else cfg_data.augmentations_val
+        full_name = name + ''.join([l for l in repr(active_augs) if l.isalnum()]) + shuffled
+        self.path = os.path.join(os.path.expanduser(cfg_data.db.path), f'{type(dataset).__name__}_{full_name}.lmdb')
 
 
-        if cfg_db.rebuild_existing_database:
+        if cfg_data.db.rebuild_existing_database:
             if os.path.isfile(self.path):
                 os.remove(self.path)
                 os.remove(self.path + '-lock')
@@ -58,16 +59,16 @@ class LMDBDataset(torch.utils.data.Dataset):
         else:
             if not can_create:
                 raise ValueError(f'No database found at {self.path}. Database creation forbidden in this setting.')
-            os.makedirs(os.path.expanduser(cfg_db.path), exist_ok=True)
+            os.makedirs(os.path.expanduser(cfg_data.db.path), exist_ok=True)
             log.info(f'Creating database at {self.path}. This may take some time ...')
 
-            checksum = create_database(self.dataset, self.path, cfg_db)
+            checksum = create_database(self.dataset, self.path, cfg_data, name)
 
         # Setup database
-        self.cfg = cfg_db
-        self.db = lmdb.open(self.path, subdir=False, max_readers=cfg_db.max_readers, readonly=True, lock=False,
-                            readahead=cfg_db.readahead, meminit=cfg_db.meminit, max_spare_txns=cfg_db.max_spare_txns)
-        self.access = cfg_db.access
+        self.cfg = cfg_data.db
+        self.db = lmdb.open(self.path, subdir=False, max_readers=self.cfg.max_readers, readonly=True, lock=False,
+                            readahead=self.cfg.readahead, meminit=self.cfg.meminit, max_spare_txns=self.cfg.max_spare_txns)
+        self.access = self.cfg.access
 
         with self.db.begin(write=False) as txn:
             try:
@@ -150,14 +151,14 @@ class LMDBDataset(torch.utils.data.Dataset):
         return img, label
 
 
-def create_database(dataset, database_path, cfg_db):
+def create_database(dataset, database_path, cfg_data, split):
     """Create an LMDB database from the given pytorch dataset.
 
     https://github.com/Lyken17/Efficient-PyTorch/blob/master/tools/folder2lmdb.py
 
     Removed pyarrow dependency
     """
-    sample_transforms, _ = _parse_data_augmentations(cfg_db, PIL_only=True)
+    sample_transforms = _parse_data_augmentations(cfg_data, split, PIL_only=True)
     data_transform = dataset.transform
     dataset.transform = sample_transforms
 
@@ -167,12 +168,12 @@ def create_database(dataset, database_path, cfg_db):
         raise ValueError('Provide a reasonable default map_size for your operating system.')
     db = lmdb.open(database_path, subdir=False,
                    map_size=map_size, readonly=False,
-                   meminit=cfg_db.meminit, map_async=True)
+                   meminit=cfg_data.db.meminit, map_async=True)
     txn = db.begin(write=True)
 
     labels = []
     idx = 0
-    if cfg_db.shuffle_while_writing:
+    if cfg_data.db.shuffle_while_writing:
         order = torch.randperm(len(dataset)).tolist()
     else:
         order = torch.arange(0, len(dataset))
@@ -184,7 +185,7 @@ def create_database(dataset, database_path, cfg_db):
         txn.put(u'{}'.format(idx).encode('ascii'), byteflow)
         idx += 1
 
-        if idx % cfg_db.write_frequency == 0:
+        if idx % cfg_data.db.write_frequency == 0:
             log.info(f"[{idx} / {len(dataset)}]")
             txn.commit()
             txn = db.begin(write=True)

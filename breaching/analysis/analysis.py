@@ -63,7 +63,7 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
                 buffer.copy_(server_state.to(**setup))
 
             # Compute the forward passes
-            feat_mse += (model(reconstructed_user_data['data']) - model(true_user_data['data'])).pow(2).mean().item()
+            feat_mse += (model(reconstructed_user_data['data'].to(**setup)) - model(true_user_data['data'].to(**setup))).pow(2).mean().item()
 
     # Record model parameters:
     parameters = sum([p.numel() for p in model.parameters()])

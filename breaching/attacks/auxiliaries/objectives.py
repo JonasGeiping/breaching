@@ -179,7 +179,6 @@ class PearlmutterLoss(torch.nn.Module):
 
     def forward(self, model, gradient_data, candidate, labels):
         """Run through model twice to approximate 2nd-order derivative on residual."""
-
         model.zero_grad()
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             task_loss = self.loss_fn(model(candidate), labels)

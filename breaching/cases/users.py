@@ -181,6 +181,7 @@ class UserSingleStep(torch.nn.Module):
             data = (data - min_val) / (max_val - min_val)
         else:
             data.mul_(ds).add_(dm).clamp_(0, 1)
+        data = data.to(dtype=torch.float32)
 
         if data.shape[0] == 1:
             plt.axis('off')

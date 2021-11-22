@@ -29,7 +29,7 @@ class OptimizationBasedAttack(_BaseAttacker):
         self.regularizers = []
         for key in self.cfg.regularization.keys():
             if self.cfg.regularization[key].scale > 0:
-                self.regularizers += [regularizer_lookup[key](setup, **self.cfg.regularization[key])]
+                self.regularizers += [regularizer_lookup[key](self.setup, **self.cfg.regularization[key])]
 
     def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
         # Initialize stats module for later usage:
@@ -114,7 +114,8 @@ class OptimizationBasedAttack(_BaseAttacker):
             for regularizer in self.regularizers:
                 total_objective += regularizer(candidate)
 
-            total_objective.backward(inputs=candidate, create_graph=False)
+            if total_objective.requires_grad:
+                total_objective.backward(inputs=candidate, create_graph=False)
             if self.cfg.optim.signed:
                 candidate.grad.sign_()
             if self.cfg.optim.langevin_noise > 0:

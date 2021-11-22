@@ -8,6 +8,7 @@ class GradientLoss(torch.nn.Module):
     """Super-class to simplify gradient-based objectives."""
     def __init__(self):
         super().__init__()
+        self.task_regularization = 0
 
     def initialize(self, loss_fn, cfg_impl, local_hyperparams=None):
         self.loss_fn = loss_fn
@@ -20,10 +21,12 @@ class GradientLoss(torch.nn.Module):
         self.cfg_impl = cfg_impl
 
     def forward(self, model, gradient_data, candidate, labels):
-        gradient, loss = self._grad_fn(model, candidate, labels)
+        gradient, task_loss = self._grad_fn(model, candidate, labels)
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             objective = self.gradient_based_loss(gradient, gradient_data)
-        return objective, loss
+        if self.task_regularization > 0:
+            objective += self.task_regularization * task_loss
+        return objective, task_loss.detach()
 
     def gradient_based_loss(self, gradient_rec, gradient_data):
         raise NotImplementedError()
@@ -34,7 +37,7 @@ class GradientLoss(torch.nn.Module):
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             task_loss = self.loss_fn(model(candidate), labels)
         gradient = torch.autograd.grad(task_loss, model.parameters(), create_graph=True)
-        return gradient, task_loss.detach()
+        return gradient, task_loss
 
     def _grad_fn_multi_step(self, model, candidate, labels):
         """Compute the full graph for multiple local update steps."""
@@ -60,15 +63,16 @@ class GradientLoss(torch.nn.Module):
         gradient = [p_local - p_server for p_local, p_server in zip(params, initial_params)]
 
         # Return last loss as the "best" task loss
-        return gradient, task_loss.detach()
+        return gradient, task_loss
 
 
 class Euclidean(GradientLoss):
     """Gradient matching based on the euclidean distance of two gradient vectors."""
 
-    def __init__(self, scale=1.0, **kwargs):
+    def __init__(self, scale=1.0, task_regularization=0.0, **kwargs):
         super().__init__()
         self.scale = scale
+        self.task_regularization = task_regularization
 
     def gradient_based_loss(self, gradient_rec, gradient_data):
         objective = 0
@@ -82,9 +86,10 @@ class Euclidean(GradientLoss):
 class CosineSimilarity(GradientLoss):
     """Gradient matching based on cosine similarity of two gradient vectors."""
 
-    def __init__(self, scale=1.0, **kwargs):
+    def __init__(self, scale=1.0, task_regularization=0.0, **kwargs):
         super().__init__()
         self.scale = scale
+        self.task_regularization = task_regularization
 
     def gradient_based_loss(self, gradient_rec, gradient_data):
         scalar_product, rec_norm, data_norm = 0.0, 0.0, 0.0
@@ -103,10 +108,11 @@ class MaskedCosineSimilarity(GradientLoss):
     All positions that are zero in the data gradient are masked.
     """
 
-    def __init__(self, scale=1.0, mask_value=1e-6, **kwargs):
+    def __init__(self, scale=1.0, mask_value=1e-6, task_regularization=0.0, **kwargs):
         super().__init__()
         self.scale = scale
         self.mask_value = 1e-6
+        self.task_regularization = task_regularization
 
     def gradient_based_loss(self, gradient_rec, gradient_data):
         scalar_product, rec_norm, data_norm = 0.0, 0.0, 0.0
@@ -124,9 +130,10 @@ class MaskedCosineSimilarity(GradientLoss):
 class ParameterCosineSimilarity(GradientLoss):
     """Gradient matching based on cosine similarity of two gradient vectors."""
 
-    def __init__(self, scale=1.0, **kwargs):
+    def __init__(self, scale=1.0, task_regularization=0.0, **kwargs):
         super().__init__()
         self.scale = scale
+        self.task_regularization = task_regularization
 
     def gradient_based_loss(self, gradient_rec, gradient_data):
         similarities, counter = 0, 0
@@ -142,9 +149,10 @@ class FastCosineSimilarity(GradientLoss):
     """Gradient matching based on cosine similarity of two gradient vectors.
     No gradient flows through the normalization."""
 
-    def __init__(self, scale=1.0, **kwargs):
+    def __init__(self, scale=1.0, task_regularization=0.0, **kwargs):
         super().__init__()
         self.scale = scale
+        self.task_regularization = task_regularization
 
     def gradient_based_loss(self, gradient_rec, gradient_data):
         scalar_product, rec_norm, data_norm = 0.0, 0.0, 0.0
@@ -161,12 +169,13 @@ class FastCosineSimilarity(GradientLoss):
 
 class PearlmutterLoss(torch.nn.Module):
     """Use a first-order approximation of \nabla_x \nabla_g instead of the correct autograd value."""
-    def __init__(self, scale=1.0, eps=1e-3, level_gradients=True, fudge_factor=1e-6, **kwargs):
+    def __init__(self, scale=1.0, eps=1e-3, level_gradients=True, fudge_factor=1e-6, task_regularization=0.0, **kwargs):
         super().__init__()
         self.scale = scale
+        self.task_regularization = task_regularization
+
         self.eps = eps
         self.level_gradients = level_gradients
-
         self.fudge_factor = fudge_factor
 
     def initialize(self, loss_fn, cfg_impl, local_hyperparams=None):
@@ -198,6 +207,8 @@ class PearlmutterLoss(torch.nn.Module):
 
         # Compute finite difference approximation
         candidate.grad += (dLv_dx - dLdx) / self.eps * self.scale
+        # Add task loss
+        candidate.grad += self.task_regularization * dLdx
         # Unpatch model:
         torch._foreach_sub_(list(model.parameters()), residuals, alpha=self.eps)
 

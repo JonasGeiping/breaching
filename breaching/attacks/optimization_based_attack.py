@@ -70,7 +70,7 @@ class OptimizationBasedAttack(_BaseAttacker):
         try:
             for iteration in range(self.cfg.optim.max_iterations):
                 closure = self._compute_objective(candidate, labels, rec_model, optimizer, shared_data)
-                objective_value, task_loss = optimizer.step(closure)
+                objective_value, task_loss = optimizer.step(closure), self.current_task_loss
                 scheduler.step()
 
                 with torch.no_grad():
@@ -120,7 +120,8 @@ class OptimizationBasedAttack(_BaseAttacker):
                 candidate.grad.sign_()
             if self.cfg.optim.langevin_noise > 0:
                 candidate.grad += self.cfg.optim.langevin_noise * torch.randn_like(candidate.grad)
-            return total_objective, total_task_loss
+            self.current_task_loss = total_task_loss  # Side-step this because of L-BFGS closure limitations :<
+            return total_objective
         return closure
 
 

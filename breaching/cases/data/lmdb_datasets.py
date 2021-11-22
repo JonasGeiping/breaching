@@ -43,10 +43,8 @@ class LMDBDataset(torch.utils.data.Dataset):
             self.skip_pillow = True
 
         shuffled = 'shuffled' if cfg_db.shuffle_while_writing else ''
-        full_name = name + ''.join([l for l in repr(cfg_db.augmentations_train) if l.isalnum()]) + f'R{cfg_db.rounds}' + shuffled
-
+        full_name = name + ''.join([l for l in repr(cfg_db.augmentations_train) if l.isalnum()]) + shuffled
         self.path = os.path.join(os.path.expanduser(cfg_db.path), f'{type(dataset).__name__}_{full_name}.lmdb')
-
 
 
         if cfg_db.rebuild_existing_database:
@@ -63,11 +61,7 @@ class LMDBDataset(torch.utils.data.Dataset):
             os.makedirs(os.path.expanduser(cfg_db.path), exist_ok=True)
             log.info(f'Creating database at {self.path}. This may take some time ...')
 
-            if name == 'train':
-                repeat_dataset = True
-            else:
-                repeat_dataset = False
-            checksum = create_database(self.dataset, self.path, cfg_db, repeat_dataset)
+            checksum = create_database(self.dataset, self.path, cfg_db)
 
         # Setup database
         self.cfg = cfg_db
@@ -156,7 +150,7 @@ class LMDBDataset(torch.utils.data.Dataset):
         return img, label
 
 
-def create_database(dataset, database_path, cfg_db, repeat_dataset):
+def create_database(dataset, database_path, cfg_db):
     """Create an LMDB database from the given pytorch dataset.
 
     https://github.com/Lyken17/Efficient-PyTorch/blob/master/tools/folder2lmdb.py
@@ -177,27 +171,23 @@ def create_database(dataset, database_path, cfg_db, repeat_dataset):
     txn = db.begin(write=True)
 
     labels = []
-
-
-    iterations = cfg_db.rounds if repeat_dataset else 1
     idx = 0
-    for round in range(iterations):
-        if cfg_db.shuffle_while_writing:
-            order = torch.randperm(len(dataset)).tolist()
-        else:
-            order = torch.arange(0, len(dataset))
-        for indexing in order:
-            img, label = dataset[indexing]
-            labels.append(label)
-            # serialize
-            byteflow = np.asarray(img, dtype=np.uint8).transpose(2, 0, 1).tobytes()
-            txn.put(u'{}'.format(idx).encode('ascii'), byteflow)
-            idx += 1
+    if cfg_db.shuffle_while_writing:
+        order = torch.randperm(len(dataset)).tolist()
+    else:
+        order = torch.arange(0, len(dataset))
+    for indexing in order:
+        img, label = dataset[indexing]
+        labels.append(label)
+        # serialize
+        byteflow = np.asarray(img, dtype=np.uint8).transpose(2, 0, 1).tobytes()
+        txn.put(u'{}'.format(idx).encode('ascii'), byteflow)
+        idx += 1
 
-            if idx % cfg_db.write_frequency == 0:
-                log.info(f"[{idx} / {len(dataset) * iterations}]")
-                txn.commit()
-                txn = db.begin(write=True)
+        if idx % cfg_db.write_frequency == 0:
+            log.info(f"[{idx} / {len(dataset)}]")
+            txn.commit()
+            txn = db.begin(write=True)
 
     # finalize dataset
     txn.commit()

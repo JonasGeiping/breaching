@@ -11,7 +11,6 @@ augmentations_train:
   RandomHorizontalFlip: 0.5
 augmentations_val:
 normalize: False
-rounds: 10
 write_frequency: 5000 # how often to flush during database creation
 shuffle_while_writing: False
 

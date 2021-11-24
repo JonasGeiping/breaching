@@ -5,7 +5,7 @@ Data Config Structure (cfg_data): See config/data
 
 import torch
 import torchvision
-from .datasets import TinyImageNet
+from .datasets import TinyImageNet, Birdsnap
 from .cached_dataset import CachedDataset
 
 import os
@@ -65,7 +65,11 @@ def _build_dataset(cfg_data, split, can_download=True):
     elif cfg_data.name == 'TinyImageNet':
         dataset = TinyImageNet(root=cfg_data.path, split=split, download=can_download,
                                transform=torchvision.transforms.ToTensor(), cached=True)
-        dataset.lookup = dict(zip(list(range(len(dataset))), [label for (_, label) in dataset.samples]))
+        dataset.lookup = dict(zip(list(range(len(dataset))), dataset.targets))
+    elif cfg_data.name == 'Birdsnap':
+        dataset = Birdsnap(root=cfg_data.path, split=split, download=can_download,
+                           transform=torchvision.transforms.ToTensor())
+        dataset.lookup = dict(zip(list(range(len(dataset))), dataset.labels))
     else:
         raise ValueError(f'Invalid dataset {cfg_data.name} provided.')
 
@@ -92,9 +96,24 @@ def _build_dataset(cfg_data, split, can_download=True):
 
 
 def _get_meanstd(dataset):
-    cc = torch.cat([dataset[i][0].reshape(3, -1) for i in range(len(dataset))], dim=1)
-    data_mean = torch.mean(cc, dim=1).tolist()
-    data_std = torch.std(cc, dim=1).tolist()
+    print('Computing dataset mean and std manually ... ')
+    # Run parallelized Wellford:
+    current_mean = 0
+    current_M2 = 0
+    n = 0
+    for data, _ in dataset:
+        datapoint = data.view(3, -1)
+        ds, dm = torch.std_mean(datapoint, dim=1)
+        n_a, n_b = n, datapoint.shape[1]
+        n += n_b
+        delta = dm.to(dtype=torch.double) - current_mean
+        current_mean += delta * n_b / n
+        current_M2 += ds.to(dtype=torch.double) / (n_b - 1) + delta ** 2 * n_a * n_b / n
+        # print(current_mean, (current_M2 / (n - 1)).sqrt())
+
+    data_mean = current_mean.tolist()
+    data_std = (current_M2 / (n - 1)).sqrt().tolist()
+    print(f'Mean: {data_mean}. Standard deviation: {data_std}')
     return data_mean, data_std
 
 

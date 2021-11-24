@@ -24,7 +24,7 @@ class GradientLoss(torch.nn.Module):
         gradient, task_loss = self._grad_fn(model, candidate, labels)
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             objective = self.gradient_based_loss(gradient, gradient_data)
-        if self.task_regularization > 0:
+        if self.task_regularization != 0:
             objective += self.task_regularization * task_loss
         return objective, task_loss.detach()
 
@@ -204,7 +204,7 @@ class PearlmutterLoss(torch.nn.Module):
         torch._foreach_add_(list(model.parameters()), residuals, alpha=self.eps)
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             offset_task_loss = self.loss_fn(model(candidate), labels)
-        dLv_dx = torch.autograd.grad(offset_task_loss, (candidate,), create_graph=False)[0]
+        dLv_dx, = torch.autograd.grad(offset_task_loss, (candidate,), create_graph=False)
 
         # Compute finite difference approximation
         candidate.grad += (dLv_dx - dLdx) / self.eps * self.scale

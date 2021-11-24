@@ -36,7 +36,7 @@ def main_launcher(cfg):
     log.info('-------------------------------------------------------------')
     log.info(f'Finished computations with total train time: '
              f'{str(datetime.timedelta(seconds=time.time() - launch_time))}')
-    log.info('-----------------Job finished.---------------------------d----')
+    log.info('-----------------Job finished.-------------------------------')
 
 
 def main_process(process_idx, local_group_size, cfg):

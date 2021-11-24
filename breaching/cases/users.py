@@ -245,7 +245,7 @@ class UserMultiStep(UserSingleStep):
 
                 optimizer.zero_grad()
                 # Compute the forward pass
-                data_input = data + self.generator_inputi.sample(data.shape) if self.generator_input is not None else data
+                data_input = data + self.generator_input.sample(data.shape) if self.generator_input is not None else data
                 outputs = self.model(data_input)
                 loss = self.loss(outputs, labels)
                 loss.backward()

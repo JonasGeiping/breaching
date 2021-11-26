@@ -27,10 +27,8 @@ optim:
   callback: 100  # Print objective value every callback many iterations
 
 regularization:
-  none:
-    scale: 0
 
 impl:
   dtype: float
   mixed_precision: False
-  JIT:  # script currently break autocast mixed precision and trace breaks training
+  JIT: # bembel with care

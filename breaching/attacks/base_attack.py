@@ -72,6 +72,13 @@ class _BaseAttacker():
                     param.copy_(server_state.to(**self.setup))
                 for buffer, server_state in zip(new_model.buffers(), buffers):
                     buffer.copy_(server_state.to(**self.setup))
+
+            if self.cfg.impl.JIT == 'script':
+                example_inputs = self._initialize_data((1, *self.data_shape))
+                new_model = torch.jit.script(new_model, example_inputs=[(example_inputs,)])
+            elif self.cfg.impl.JIT == 'trace':
+                example_inputs = self._initialize_data((1, *self.data_shape))
+                new_model = torch.jit.trace(new_model, example_inputs=example_inputs)
             models.append(new_model)
         return models
 

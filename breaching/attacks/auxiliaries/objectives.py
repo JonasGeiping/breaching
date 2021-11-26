@@ -1,6 +1,8 @@
 """Various utility functions that can be re-used for multiple attacks."""
 
 import torch
+from typing import List
+
 from .make_functional import make_functional_with_buffers
 
 
@@ -75,13 +77,17 @@ class Euclidean(GradientLoss):
         self.task_regularization = task_regularization
 
     def gradient_based_loss(self, gradient_rec, gradient_data):
-        objective = 0
-        # param_count = 0
+        return self._euclidean(gradient_rec, gradient_data) * self.scale
+
+    @staticmethod
+    @torch.jit.script
+    def _euclidean(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
+        objective = gradient_rec[0].new_zeros(1,)
         for rec, data in zip(gradient_rec, gradient_data):
             objective += (rec - data).pow(2).sum()
-            # param_count += rec.numel()
-        return 0.5 * self.scale * objective  # / param_count
+        return 0.5 * objective
 
+        return objective
 
 class CosineSimilarity(GradientLoss):
     """Gradient matching based on cosine similarity of two gradient vectors."""
@@ -92,7 +98,15 @@ class CosineSimilarity(GradientLoss):
         self.task_regularization = task_regularization
 
     def gradient_based_loss(self, gradient_rec, gradient_data):
-        scalar_product, rec_norm, data_norm = 0.0, 0.0, 0.0
+        return self._cosine_sim(gradient_rec, gradient_data) * self.scale
+
+    @staticmethod
+    @torch.jit.script
+    def _cosine_sim(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
+        scalar_product = gradient_rec[0].new_zeros(1,)
+        rec_norm = gradient_rec[0].new_zeros(1,)
+        data_norm = gradient_rec[0].new_zeros(1,)
+
         for rec, data in zip(gradient_rec, gradient_data):
             scalar_product += (rec * data).sum()
             rec_norm += rec.pow(2).sum()
@@ -100,7 +114,7 @@ class CosineSimilarity(GradientLoss):
 
         objective = 1 - scalar_product / rec_norm.sqrt() / data_norm.sqrt()
 
-        return objective * self.scale
+        return objective
 
 
 class MaskedCosineSimilarity(GradientLoss):

@@ -10,11 +10,11 @@ and convers subsequent developments such as
 
 import torch
 import time
+import os
 
 from .base_attack import _BaseAttacker
 from .auxiliaries.regularizers import regularizer_lookup, TotalVariation
 from .auxiliaries.objectives import Euclidean, CosineSimilarity, objective_lookup
-
 
 class OptimizationBasedAttack(_BaseAttacker):
     """Implements a wide spectrum of optimization-based attacks."""
@@ -30,6 +30,15 @@ class OptimizationBasedAttack(_BaseAttacker):
         for key in self.cfg.regularization.keys():
             if self.cfg.regularization[key].scale > 0:
                 self.regularizers += [regularizer_lookup[key](self.setup, **self.cfg.regularization[key])]
+
+
+    def __repr__(self):
+        return f"""Attacker (of type {self.__class__.__name__}) with settings:
+    Hyperparameter Template: {self.cfg.type}
+
+    Objective: {repr(self.objective)}
+    Regularizers: {(os.linesep + ' '*18).join([repr(r) for r in self.regularizers])}
+        """
 
     def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
         # Initialize stats module for later usage:

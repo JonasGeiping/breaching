@@ -143,6 +143,8 @@ def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
         else:
             raise ValueError('Model could not be found.')
 
+    # Save nametag for printouts later:
+    model.name = cfg_model
     return model
 
 

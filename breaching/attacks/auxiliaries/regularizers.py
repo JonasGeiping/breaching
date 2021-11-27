@@ -4,62 +4,6 @@ import torch
 
 from .deepinversion import DeepInversionFeatureHook
 
-class TotalVariationOld(torch.nn.Module):
-    """Computes the total variation value of an (image) tensor, based on its last two dimensions.
-       Optionally also Color TV based on its last three dimensions."""
-
-    def __init__(self, setup, scale=0.1, inner_exp=1, outer_exp=1, gamma=0.0):
-        """scale is the overall scaling. inner_exp and outer_exp control isotropy vs anisotropy.
-           gamma optionally also includes proper color TV via double opponents."""
-        super().__init__()
-        self.setup = setup
-        self.scale = scale
-        self.inner_exp = inner_exp
-        self.outer_exp = outer_exp
-        self.gamma = gamma
-        if self.gamma > 0:
-            self.forward = self._forward_full
-        else:
-            if self.inner_exp == self.outer_exp == 1:
-                self.forward = self._forward_simplified
-            else:
-                self.forward = self._forward_variso
-
-    def initialize(self, model, **kwargs):
-        pass
-
-    def _forward_simplified(self, tensor, **kwargs):
-        """Anisotropic TV."""
-        dx = torch.mean(torch.abs(tensor[:, :, :, :-1] - tensor[:, :, :, 1:]))
-        dy = torch.mean(torch.abs(tensor[:, :, :-1, :] - tensor[:, :, 1:, :]))
-        return self.scale * (dx + dy)
-
-    def _forward_variso(self, tensor, **kwargs):
-        """Anisotropic TV."""
-        dx = torch.abs(tensor[:, :, :, :-1] - tensor[:, :, :, 1:]).pow(self.inner_exp)
-        dy = torch.abs(tensor[:, :, :-1, :] - tensor[:, :, 1:, :]).pow(self.inner_exp)
-        return self.scale * (dx + dy).pow(self.outer_exp).mean()
-
-    def _forward_full(self, tensor, **kwargs):
-        """Double opponent TV as in Aström and Schnörr "Double-Opponent Vectorial Total Variation".
-
-        TODO: Extract and move this mess into a proper Conv2d operation for efficiency reasons...
-        """
-        q, p = self.inner_exp, self.outer_exp
-
-        dxdy = ((tensor[:, :, :, :-1] - tensor[:, :, :, 1:]).pow(q) +
-                (tensor[:, :, :-1, :] - tensor[:, :, 1:, :]).pow(q)).pow(p)
-
-        rg = tensor[:, 0, :, :] - tensor[:, 1, :, :]
-        rb = tensor[:, 0, :, :] - tensor[:, 2, :, :]
-        gb = tensor[:, 1, :, :] - tensor[:, 2, :, :]
-
-        rg_dxdy = ((rg[:, :, :-1] - rg[:, :, 1:]).pow(q) + (rg[:, :-1, :] - rg[:, 1:, :]).pow(q)).pow(p)
-        rb_dxdy = ((rb[:, :, :-1] - rb[:, :, 1:]).pow(q) + (rb[:, :-1, :] - rb[:, 1:, :]).pow(q)).pow(p)
-        gb_dxdy = ((gb[:, :, :-1] - gb[:, :, 1:]).pow(q) + (gb[:, :-1, :] - gb[:, 1:, :]).pow(q)).pow(p)
-
-        return self.scale * (dxdy.mean() + self.gamma * (rg_dxdy.mean() + rb_dxdy.mean() + gb_dxdy.mean()))
-
 
 class TotalVariation(torch.nn.Module):
     """Computes the total variation value of an (image) tensor, based on its last two dimensions.
@@ -103,6 +47,10 @@ class TotalVariation(torch.nn.Module):
         squared_sums = (squares[:, 0::2] + squares[:, 1::2]).pow(self.outer_exp)
         return squared_sums.mean() * self.scale
 
+    def __repr__(self):
+        return (f"Total Variation, scale={self.scale}. p={self.inner_exp} q={self.outer_exp}. "
+                f"{'Color TV: double oppponents (double opp.)' if self.double_opponents else ''}")
+
 
 class OrthogonalityRegularization(torch.nn.Module):
     """This is the orthogonality regularizer described Qian et al.,
@@ -128,6 +76,9 @@ class OrthogonalityRegularization(torch.nn.Module):
             full_products[idx, idx] = 0
             return full_products.sum()
 
+    def __repr__(self):
+        return f"Input Orthogonality, scale={self.scale}"
+
 
 class NormRegularization(torch.nn.Module):
     """Implement basic norm-based regularization, e.g. an L2 penalty."""
@@ -143,6 +94,9 @@ class NormRegularization(torch.nn.Module):
 
     def forward(self, tensor, **kwargs):
         return 1 / self.pnorm * tensor.pow(self.pnorm).mean() * self.scale
+
+    def __repr__(self):
+        return f"Input L^p norm regularization, scale={self.scale}, p={self.pnorm}"
 
 
 class DeepInversion(torch.nn.Module):
@@ -170,6 +124,9 @@ class DeepInversion(torch.nn.Module):
         for loss in self.losses:
             feature_reg += sum([mod.r_feature * rescale[idx] for (idx, mod) in enumerate(loss)])
         return self.scale * feature_reg
+
+    def __repr__(self):
+        return f"Deep Inversion Regularization (matching batch norms), scale={self.scale}, first-bn-mult={self.first_bn_multiplier}"
 
 
 regularizer_lookup = dict(

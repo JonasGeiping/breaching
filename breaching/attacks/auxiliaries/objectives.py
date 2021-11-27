@@ -33,6 +33,9 @@ class GradientLoss(torch.nn.Module):
     def gradient_based_loss(self, gradient_rec, gradient_data):
         raise NotImplementedError()
 
+    def __repr__(self):
+        raise NotImplementedError()
+
     def _grad_fn_single_step(self, model, candidate, labels):
         """Compute a single gradient."""
         model.zero_grad()
@@ -48,7 +51,7 @@ class GradientLoss(torch.nn.Module):
         initial_params = [p.clone() for p in params]
 
         seen_data_idx = 0
-        for i in range(local_hyperparams['steps']):
+        for i in range(self.local_hyperparams['steps']):
             data = candidate[seen_data_idx: seen_data_idx + self.local_hyperparams['data_per_step']]
             seen_data_idx += self.local_hyperparams['data_per_step']
             seen_data_idx = seen_data_idx % candidate.shape[0]
@@ -79,6 +82,9 @@ class Euclidean(GradientLoss):
     def gradient_based_loss(self, gradient_rec, gradient_data):
         return self._euclidean(gradient_rec, gradient_data) * self.scale
 
+    def __repr__(self):
+        return f"Euclidean loss with scale={self.scale} and task reg={self.task_regularization}"
+
     @staticmethod
     @torch.jit.script
     def _euclidean(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
@@ -99,6 +105,9 @@ class CosineSimilarity(GradientLoss):
 
     def gradient_based_loss(self, gradient_rec, gradient_data):
         return self._cosine_sim(gradient_rec, gradient_data) * self.scale
+
+    def __repr__(self):
+        return f"Cosine Similarity with scale={self.scale} and task reg={self.task_regularization}"
 
     @staticmethod
     @torch.jit.script
@@ -128,6 +137,9 @@ class MaskedCosineSimilarity(GradientLoss):
         self.mask_value = 1e-6
         self.task_regularization = task_regularization
 
+    def __repr__(self):
+        return f"Masked Cosine Similarity with scale={self.scale} and task reg={self.task_regularization}. Mask val={self.mask_value}"
+
     def gradient_based_loss(self, gradient_rec, gradient_data):
         scalar_product, rec_norm, data_norm = 0.0, 0.0, 0.0
         for rec, data in zip(gradient_rec, gradient_data):
@@ -142,12 +154,17 @@ class MaskedCosineSimilarity(GradientLoss):
 
 
 class ParameterCosineSimilarity(GradientLoss):
-    """Gradient matching based on cosine similarity of two gradient vectors."""
+    """Gradient matching based on cosine similarity of two gradient vectors.
+
+    In this variant all parameter blocks are matched separately."""
 
     def __init__(self, scale=1.0, task_regularization=0.0, **kwargs):
         super().__init__()
         self.scale = scale
         self.task_regularization = task_regularization
+
+    def __repr__(self):
+        return f"Parameter-wise Cosine Similarity with scale={self.scale} and task reg={self.task_regularization}"
 
     def gradient_based_loss(self, gradient_rec, gradient_data):
         similarities, counter = 0, 0
@@ -169,16 +186,26 @@ class FastCosineSimilarity(GradientLoss):
         self.task_regularization = task_regularization
 
     def gradient_based_loss(self, gradient_rec, gradient_data):
-        scalar_product, rec_norm, data_norm = 0.0, 0.0, 0.0
+        return self._cosine_sim(gradient_rec, gradient_data) * self.scale
+
+    @staticmethod
+    @torch.jit.script
+    def _cosine_sim(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
+        scalar_product = gradient_rec[0].new_zeros(1,)
+        rec_norm = gradient_rec[0].new_zeros(1,)
+        data_norm = gradient_rec[0].new_zeros(1,)
+
         for rec, data in zip(gradient_rec, gradient_data):
             scalar_product += (rec * data).sum()
-            rec_norm += rec.pow(2).sum().detach()
-            data_norm += data.pow(2).sum().detach()
+            rec_norm += rec.detach().pow(2).sum()
+            data_norm += data.detach().pow(2).sum()
 
         objective = 1 - scalar_product / rec_norm.sqrt() / data_norm.sqrt()
 
-        return objective * self.scale
+        return objective
 
+    def __repr__(self):
+        return f"Fast Cosine Similarity with scale={self.scale} and task reg={self.task_regularization}"
 
 
 class PearlmutterLoss(torch.nn.Module):
@@ -199,6 +226,11 @@ class PearlmutterLoss(torch.nn.Module):
             raise ValueError('This loss is only implemented for local gradients so far.')
 
         self.cfg_impl = cfg_impl
+
+    def __repr__(self):
+        return (f"Pearlmutter-type Finite Differences Loss with scale={self.scale} and task reg={self.task_regularization}."
+                f"Finite Difference Eps: {self.eps}. Level gradients: {self.level_gradients}. "
+                f"{f'Fudge-factor: {self.fudge_factor}' if self.level_gradients else ''}")
 
     def forward(self, model, gradient_data, candidate, labels):
         """Run through model twice to approximate 2nd-order derivative on residual."""

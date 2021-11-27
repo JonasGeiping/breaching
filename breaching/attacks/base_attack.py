@@ -29,6 +29,10 @@ class _BaseAttacker():
 
         return reconstructed_data, stats
 
+    def __repr__(self):
+        raise NotImplementedError()
+
+
     def prepare_attack(self, server_payload, shared_data):
         """Basic startup common to many reconstruction methods."""
         stats = defaultdict(list)

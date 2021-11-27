@@ -15,15 +15,21 @@ from .aux_training import train_encoder_decoder
 from .malicious_modifications.feat_decoders import generate_decoder
 
 class HonestServer():
-    """Implement an honest server protocol."""
+    """Implement an honest server protocol.
+
+    This class loads and selects the initial model and then sends this model to the (simulated) user.
+    If multiple queries are possible, then the query sent to the user will contain multiple model states.
+
+    Central output: self.distribute_payload -> Dict[queries=List[Queries], data=DataHyperparams]
+    For each Query -> Dict[parameters=parameters, buffers=buffers]
+    """
+    THREAT = 'Honest-but-curious'
 
     def __init__(self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device('cpu')), external_dataloader=None):
         """Inialize the server settings."""
         self.model = model
-        if cfg_case.user.batch_norm_training:
-            self.model.train()
-        else:
-            self.model.eval()
+        self.model.eval()
+
         self.loss = loss
         self.setup = setup
 
@@ -35,6 +41,19 @@ class HonestServer():
         self.external_dataloader = external_dataloader
 
         self.secrets = dict()  # Should be nothing in here
+
+    def __repr__(self):
+        return f"""Server (of type {self.__class__.__name__}) with settings:
+    Threat model: {self.THREAT}
+    Has external/public data: {self.cfg_server.has_external_data}
+
+    Model:
+    model specification: {str(self.model.name)}
+    model state: {self.cfg_server.model_state}
+    public buffers: {self.cfg_server.provide_public_buffers}
+
+    Secrets: {self.secrets}
+    """
 
     def reconfigure_model(self, model_state):
         """Reinitialize, continue training or otherwise modify model parameters in a benign way."""
@@ -77,13 +96,16 @@ class HonestServer():
                 raise ValueError('No MoCo data found for this architecture.')
 
     def distribute_payload(self):
-        """Server payload to send to users. These are only references, to simplfiy the simulation."""
+        """Server payload to send to users. These are only references to simplfiy the simulation."""
 
         queries = []
         for round in range(self.num_queries):
             self.reconfigure_model(self.cfg_server.model_state)
             honest_model_parameters = [p for p in self.model.parameters()]  # do not send only the generators
-            honest_model_buffers = [b for b in self.model.buffers()]
+            if self.cfg_server.provide_public_buffers:
+                honest_model_buffers = [b for b in self.model.buffers()]
+            else:
+                honest_model_buffers = None
             queries.append(dict(parameters=honest_model_parameters, buffers=honest_model_buffers))
         return dict(queries=queries, data=self.cfg_data)
 
@@ -93,7 +115,13 @@ class HonestServer():
 
 
 class MaliciousModelServer(HonestServer):
-    """Implement a malicious server protocol."""
+    """Implement a malicious server protocol.
+
+    This server is now also able to modify the model maliciously, before sending out payloads.
+    Architectural changes (via self.prepare_model) are triggered before instantation of user objects.
+    These architectural changes can also be understood as a 'malicious analyst' and happen first.
+    """
+    THREAT = 'Malicious (Analyst)'
 
     def __init__(self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device('cpu')), external_dataloader=None):
         """Inialize the server settings."""
@@ -273,7 +301,11 @@ class MaliciousModelServer(HonestServer):
         return modified_model, decoder
 
 class MaliciousParameterServer(HonestServer):
-    """Implement a malicious server protocol."""
+    """Implement a malicious server protocol.
+
+    This server cannot modify the 'honest' model architecture posed by an analyst,
+    but may modify the model parameters freely."""
+    THREAT = 'Malicious (Parameters)'
 
     def __init__(self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device('cpu')), external_dataloader=None):
         """Inialize the server settings."""

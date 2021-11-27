@@ -19,6 +19,13 @@ class RecursiveAttacker(_BaseAttacker):
     def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
         super().__init__(model, loss_fn, cfg_attack, setup)
 
+    def __repr__(self):
+        return f"""Attacker (of type {self.__class__.__name__}) with settings:
+               inversion:
+                - step size: {self.cfg.step_size}
+                - steps    : {self.cfg.step_size}
+                """
+
     def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
         # Initialize stats module for later usage:
         rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)

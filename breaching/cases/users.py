@@ -2,7 +2,7 @@
 
 import torch
 import copy
-
+import os
 
 class UserSingleStep(torch.nn.Module):
     """A user who computes a single local update step."""
@@ -15,6 +15,7 @@ class UserSingleStep(torch.nn.Module):
 
         self.provide_labels = cfg_user.provide_labels
         self.provide_num_data_points = cfg_user.provide_num_data_points
+        self.provide_buffers = cfg_user.provide_buffers
 
         if cfg_user.data_idx is None:
             self.data_idx = torch.randint(0, len(dataloader.dataset), (1,))
@@ -26,32 +27,27 @@ class UserSingleStep(torch.nn.Module):
 
         self.model = copy.deepcopy(model)
         self.model.to(**setup)
-        if cfg_user.batch_norm_training:
-            self.model.training()
-        else:
-            self.model.eval()
 
+        self.defense_repr = []
         self._initialize_local_privacy_measures(cfg_user.local_diff_privacy)
 
         self.dataloader = dataloader
         self.loss = copy.deepcopy(loss)  # Just in case the loss contains state
 
     def __repr__(self):
-        return f"""User (of type {self.__class__.__name__} with settings:
-            number of data points: {self.num_data_points}
-            number of user queries {self.num_user_queries}
+        return f"""User (of type {self.__class__.__name__}) with settings:
+    Number of data points: {self.num_data_points}
+    Number of user queries {self.num_user_queries}
 
-            Threat model:
-            User provides labels: {self.provide_labels}
-            User provides number of data points: {self.provide_num_data_points}
+    Threat model:
+    User provides labels: {self.provide_labels}
+    User provides buffers: {self.provide_buffers}
+    User provides number of data points: {self.provide_num_data_points}
 
-            Model:
-            model specification: {str(self.model.__class__.__name__)}
-            loss function: {str(self.loss)}
-
-            Data:
-            Dataset: {self.dataloader.dataset.__class__.__name__}
-            data_idx: {self.data_idx.item() if isinstance(self.data_idx, torch.Tensor) else self.data_idx}
+    Data:
+    Dataset: {self.dataloader.dataset.__class__.__name__}
+    idx: {self.data_idx.item() if isinstance(self.data_idx, torch.Tensor) else self.data_idx}:{self.data_with_labels}
+    {os.linesep.join(self.defense_repr)}
         """
 
     def _initialize_local_privacy_measures(self, local_diff_privacy):
@@ -65,6 +61,7 @@ class UserSingleStep(torch.nn.Module):
                 self.generator = torch.distributions.laplace.Laplace(loc=loc, scale=scale)
             else:
                 raise ValueError(f'Invalid distribution {local_diff_privacy["distribution"]} given.')
+            self.defense_repr.append(f'Defense: Local {local_diff_privacy["distribution"]} gradient noise with strength {scale.item()}.')
         else:
             self.generator = None
         if local_diff_privacy['input_noise'] > 0.0:
@@ -76,12 +73,19 @@ class UserSingleStep(torch.nn.Module):
                 self.generator_input = torch.distributions.laplace.Laplace(loc=loc, scale=scale)
             else:
                 raise ValueError(f'Invalid distribution {local_diff_privacy["distribution"]} given.')
+            self.defense_repr.append(f'Defense: Local {local_diff_privacy["distribution"]} input noise with strength {scale.item()}.')
         else:
             self.generator_input = None
         self.clip_value = local_diff_privacy.get('per_example_clipping', 0.0)
+        if self.clip_value > 0:
+            self.defense_repr.append(f'Defense: Gradient clipping to maximum of {self.clip_value}.')
 
     def compute_local_updates(self, server_payload):
-        """Compute local updates to the given model based on server payload."""
+        """Compute local updates to the given model based on server payload.
+
+        Batchnorm behavior:
+        If public buffers are sent by the server, then the user will be set into evaluation mode
+        Otherwise the user is in training mode and sends back buffer based on .provide_buffers."""
 
         data, labels = self._generate_example_data()
         # Compute local updates
@@ -95,8 +99,12 @@ class UserSingleStep(torch.nn.Module):
             with torch.no_grad():
                 for param, server_state in zip(self.model.parameters(), parameters):
                     param.copy_(server_state.to(**self.setup))
-                for buffer, server_state in zip(self.model.buffers(), buffers):
-                    buffer.copy_(server_state.to(**self.setup))
+                if buffers is not None:
+                    for buffer, server_state in zip(self.model.buffers(), buffers):
+                        buffer.copy_(server_state.to(**self.setup))
+                    self.model.eval()
+                else:
+                    self.model.train()
 
             def _compute_batch_gradient(data, labels):
                 data_input = data + self.generator_input.sample(data.shape) if self.generator_input is not None else data
@@ -118,7 +126,8 @@ class UserSingleStep(torch.nn.Module):
             shared_grads += [grads]
             shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
 
-        shared_data = dict(gradients=shared_grads, buffers=shared_buffers,
+        shared_data = dict(gradients=shared_grads,
+                           buffers=shared_buffers if self.provide_buffers else None,
                            num_data_points=self.num_data_points if self.provide_num_data_points else None,
                            labels=labels if self.provide_labels else None,
                            local_hyperparams=None)
@@ -214,6 +223,18 @@ class UserMultiStep(UserSingleStep):
         self.local_learning_rate = cfg_user.local_learning_rate
         self.provide_local_hyperparams = cfg_user.provide_local_hyperparams
 
+
+    def __repr__(self):
+        return (super().__repr__() + '\n' + f"""    Local FL Setup:
+        Number of local update steps: {self.num_local_updates}
+        Data per local update step: {self.num_data_per_local_update_step}
+        Local learning rate: {self.local_learning_rate}
+
+        Threat model:
+        Share these hyperparams to server: {self.provide_local_hyperparams}
+
+        """)
+
     def compute_local_updates(self, server_payload):
         """Compute local updates to the given model based on server payload."""
 
@@ -230,8 +251,13 @@ class UserMultiStep(UserSingleStep):
             with torch.no_grad():
                 for param, server_state in zip(self.model.parameters(), parameters):
                     param.copy_(server_state.to(**self.setup))
-                for buffer, server_state in zip(self.model.buffers(), buffers):
-                    buffer.copy_(server_state.to(**self.setup))
+                if buffers is not None:
+                    for buffer, server_state in zip(self.model.buffers(), buffers):
+                        buffer.copy_(server_state.to(**self.setup))
+                    self.model.eval()
+                else:
+                    self.model.train()
+
 
             optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
             seen_data_idx = 0
@@ -263,7 +289,8 @@ class UserMultiStep(UserSingleStep):
                               for (p_local, p_server) in zip(self.model.parameters(), parameters)]]
             shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
 
-        shared_data = dict(gradients=shared_grads, buffers=shared_buffers,
+        shared_data = dict(gradients=shared_grads,
+                           buffers=shared_buffers if self.provide_buffers else None,
                            num_data_points=self.num_data_points if self.provide_num_data_points else None,
                            labels=user_labels if self.provide_labels else None,
                            local_hyperparams=dict(lr=self.local_learning_rate, steps=self.num_local_updates,
@@ -286,6 +313,19 @@ class MultiUserAggregate(UserMultiStep):
         super().__init__(model, loss, dataloader, setup, cfg_user, num_queries)
 
         self.num_users = cfg_user.num_users
+
+
+    def __repr__(self):
+        return (UserSingleStep.__repr__(self) + '\n' + f"""    Local FL Setup:
+        Number of aggregated users: {self.num_users}
+        Number of local update steps: {self.num_local_updates}
+        Data per local update step: {self.num_data_per_local_update_step}
+        Local learning rate: {self.local_learning_rate}
+
+        Threat model:
+        Share these hyperparams to server: {self.provide_local_hyperparams}
+
+        """)
 
 
     def _generate_example_data(self, user_idx=0):
@@ -332,8 +372,12 @@ class MultiUserAggregate(UserMultiStep):
                 with torch.no_grad():
                     for param, server_state in zip(self.model.parameters(), server_parameters):
                         param.copy_(server_state.to(**self.setup))
-                    for buffer, server_state in zip(self.model.buffers(), server_buffers):
-                        buffer.copy_(server_state.to(**self.setup))
+                    if server_buffers is not None:
+                        for buffer, server_state in zip(self.model.buffers(), server_buffers):
+                            buffer.copy_(server_state.to(**self.setup))
+                        self.model.eval()
+                    else:
+                        self.model.train()
 
                 optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
                 seen_data_idx = 0
@@ -374,7 +418,8 @@ class MultiUserAggregate(UserMultiStep):
             shared_grads += [aggregate_params]
             shared_buffers += [aggregate_buffers]
 
-        shared_data = dict(gradients=shared_grads, buffers=shared_buffers,
+        shared_data = dict(gradients=shared_grads,
+                           buffers=shared_buffers if self.provide_buffers else None,
                            num_data_points=self.num_data_points if self.provide_num_data_points else None,
                            labels=user_labels if self.provide_labels else None, num_users=self.num_users,
                            local_hyperparams=dict(lr=self.local_learning_rate, steps=self.num_local_updates,

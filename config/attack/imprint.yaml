@@ -1,3 +1,8 @@
 type: analytic
 
 attack_type: imprint-readout
+normalize_gradients: False
+impl:
+  dtype: float
+  mixed_precision: False
+  JIT: # bembel with care

@@ -1,13 +1,19 @@
 """
-Example script to run attacks in this repository directly without simulation.
-This can be useful if you want to check a model architecture and model gradients computed/defended in some shape or form
-against some of the attacks implemented in this repository, without implementing your model into the simulation.
+Example script to run an attack from this repository directly without simulation.
+
+This is a quick example for the imprint module attack described in
+- Fowl et al. "Robbing the Fed: Directly Obtaining Private Information in Federated Learning"
+
+The jupyter notebooks have more details about the attack, but this code snippet is hopefully useful if you want
+to check a model architecture and model gradients computed/defended in some shape or form without implementing
+your model into the simulation.
 
 All caveats apply. Make sure not to leak any unexpected information.
 """
 import torch
 import torchvision
 import breaching
+from breaching.cases.malicious_modifications.imprint import ImprintBlock
 
 import hydra  # You could even skip this import and manually represent a cfg.attack variant
 
@@ -29,15 +35,23 @@ transforms = torchvision.transforms.Compose([
 ])
 
 
-@hydra.main(config_path="config/attack", config_name="invertinggradients")
+@hydra.main(config_path="config/attack", config_name="imprint")
 def main(cfg_attack):
     setup = dict(device=torch.device('cpu'), dtype=torch.float)
 
 
-    # This could be your model:
-    model = torchvision.models.resnet152()
+    # This could be any model:
+    model = torchvision.models.resnet18()
     model.eval()
     loss_fn = torch.nn.CrossEntropyLoss()
+    # It will be modified maliciously:
+    input_dim = data_cfg_default.shape[0] * data_cfg_default.shape[1] * data_cfg_default.shape[2]
+    block = ImprintBlock(input_dim, num_bins=16)
+    model = torch.nn.Sequential(torch.nn.Flatten(), block,
+                                torch.nn.Unflatten(dim=1, unflattened_size=data_cfg_default.shape),
+                                model)
+    secret = dict(weight_idx=0, bias_idx=1, shape=tuple(data_cfg_default.shape), structure=block.structure)
+    secrets = {'ImprintBlock': secret}
 
     # And your dataset:
     dataset = torchvision.datasets.ImageNet(root='~/data/imagenet', split='val', transform=transforms)
@@ -61,7 +75,7 @@ def main(cfg_attack):
                        local_hyperparams=None)
 
     # Attack:
-    reconstructed_user_data, stats = attacker.reconstruct(server_payload, shared_data, {}, dryrun=False)
+    reconstructed_user_data, stats = attacker.reconstruct(server_payload, shared_data, secrets, dryrun=False)
 
     # Do some processing of your choice here. Maybe save the output image?
 

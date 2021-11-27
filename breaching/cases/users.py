@@ -2,7 +2,6 @@
 
 import torch
 import copy
-import os
 
 class UserSingleStep(torch.nn.Module):
     """A user who computes a single local update step."""
@@ -47,7 +46,7 @@ class UserSingleStep(torch.nn.Module):
     Data:
     Dataset: {self.dataloader.dataset.__class__.__name__}
     idx: {self.data_idx.item() if isinstance(self.data_idx, torch.Tensor) else self.data_idx}:{self.data_with_labels}
-    {os.linesep.join(self.defense_repr)}
+    {chr(133).join(self.defense_repr)}
         """
 
     def _initialize_local_privacy_measures(self, local_diff_privacy):
@@ -225,7 +224,7 @@ class UserMultiStep(UserSingleStep):
 
 
     def __repr__(self):
-        return (super().__repr__() + '\n' + f"""    Local FL Setup:
+        return (super().__repr__() + chr(133) + f"""    Local FL Setup:
         Number of local update steps: {self.num_local_updates}
         Data per local update step: {self.num_data_per_local_update_step}
         Local learning rate: {self.local_learning_rate}
@@ -316,7 +315,7 @@ class MultiUserAggregate(UserMultiStep):
 
 
     def __repr__(self):
-        return (UserSingleStep.__repr__(self) + '\n' + f"""    Local FL Setup:
+        return (UserSingleStep.__repr__(self) + chr(133) + f"""    Local FL Setup:
         Number of aggregated users: {self.num_users}
         Number of local update steps: {self.num_local_updates}
         Data per local update step: {self.num_data_per_local_update_step}

@@ -10,7 +10,6 @@ and convers subsequent developments such as
 
 import torch
 import time
-import os
 
 from .base_attack import _BaseAttacker
 from .auxiliaries.regularizers import regularizer_lookup, TotalVariation
@@ -37,7 +36,10 @@ class OptimizationBasedAttack(_BaseAttacker):
     Hyperparameter Template: {self.cfg.type}
 
     Objective: {repr(self.objective)}
-    Regularizers: {(os.linesep + ' '*18).join([repr(r) for r in self.regularizers])}
+    Regularizers: {(chr(133) + ' '*18).join([repr(r) for r in self.regularizers])}
+
+    Optimization Setup:
+        {(chr(133) + ' ' * 8).join([f'{key}: {val}' for key, val in self.cfg.optim.items()])}
         """
 
     def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):

@@ -48,9 +48,9 @@ class HonestServer():
     Has external/public data: {self.cfg_server.has_external_data}
 
     Model:
-    model specification: {str(self.model.name)}
-    model state: {self.cfg_server.model_state}
-    public buffers: {self.cfg_server.provide_public_buffers}
+        model specification: {str(self.model.name)}
+        model state: {self.cfg_server.model_state}
+        public buffers: {self.cfg_server.provide_public_buffers}
 
     Secrets: {self.secrets}
     """

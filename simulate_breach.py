@@ -48,6 +48,9 @@ def main_process(process_idx, local_group_size, cfg):
     user, server = breaching.cases.construct_case(cfg.case, setup)
     attacker = breaching.attacks.prepare_attack(server.model, server.loss, cfg.attack, setup)
 
+    print(user)
+    print(server)
+    print(attacker)
     # Simulate an attacked FL protocol
     server_payload = server.distribute_payload()
     shared_data, true_user_data = user.compute_local_updates(server_payload)  # True user data is returned only for analysis

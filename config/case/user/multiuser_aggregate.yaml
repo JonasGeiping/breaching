@@ -1,7 +1,7 @@
 user_type: multiuser_aggregate
 num_data_points: 8 # 1_000_000
 
-batch_norm_training: False
+provide_buffers: False
 provide_labels: True # not actually used
 provide_num_data_points: True
 

@@ -1,6 +1,8 @@
 
 name: malicious_model
 model_state: trained
+provide_public_buffers: True # Send public buffers to users (this is batch norm specific)
+
 model_modification:
   type: ImprintBlock
   num_bins: 64

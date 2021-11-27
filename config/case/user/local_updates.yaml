@@ -1,7 +1,7 @@
 user_type: local_update
 num_data_points: 4
 
-batch_norm_training: False
+provide_buffers: False
 provide_labels: True
 provide_num_data_points: True
 

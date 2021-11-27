@@ -2,7 +2,7 @@
 
 type: r-gap
 attack_type: recursive
-
+label_strategy: 'wainakh-simple'
 
 inversion:
   step_size: 0.01

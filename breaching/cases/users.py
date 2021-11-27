@@ -84,7 +84,9 @@ class UserSingleStep(torch.nn.Module):
 
         Batchnorm behavior:
         If public buffers are sent by the server, then the user will be set into evaluation mode
-        Otherwise the user is in training mode and sends back buffer based on .provide_buffers."""
+        Otherwise the user is in training mode and sends back buffer based on .provide_buffers.
+
+        Shared labels are canonically sorted for simplicity."""
 
         data, labels = self._generate_example_data()
         # Compute local updates
@@ -128,9 +130,9 @@ class UserSingleStep(torch.nn.Module):
         shared_data = dict(gradients=shared_grads,
                            buffers=shared_buffers if self.provide_buffers else None,
                            num_data_points=self.num_data_points if self.provide_num_data_points else None,
-                           labels=labels if self.provide_labels else None,
+                           labels=labels.sort()[0] if self.provide_labels else None,
                            local_hyperparams=None)
-        true_user_data = dict(data=data, labels=labels)
+        true_user_data = dict(data=data, labels=labels.sort()[0])
 
         return shared_data, true_user_data
 
@@ -266,7 +268,7 @@ class UserMultiStep(UserSingleStep):
                 labels = user_labels[seen_data_idx: seen_data_idx + self.num_data_per_local_update_step]
                 seen_data_idx += self.num_data_per_local_update_step
                 seen_data_idx = seen_data_idx % self.num_data_points
-                label_list.append(labels)
+                label_list.append(labels.sort()[0])
 
                 optimizer.zero_grad()
                 # Compute the forward pass
@@ -295,7 +297,7 @@ class UserMultiStep(UserSingleStep):
                            local_hyperparams=dict(lr=self.local_learning_rate, steps=self.num_local_updates,
                                                   data_per_step=self.num_data_per_local_update_step,
                                                   labels=label_list) if self.provide_local_hyperparams else None)
-        true_user_data = dict(data=user_data, labels=user_labels)
+        true_user_data = dict(data=user_data, labels=user_labels.sort()[0])
 
         return shared_data, true_user_data
 

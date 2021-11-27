@@ -18,6 +18,11 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     rec_denormalized = torch.clamp(reconstructed_user_data['data'] * ds + dm, 0, 1)
     ground_truth_denormalized = torch.clamp(true_user_data['data'] * ds + dm, 0, 1)
 
+    if any(reconstructed_user_data['labels'] != true_user_data['labels']):
+        missed_labels = (reconstructed_user_data['labels'] != true_user_data['labels']).sum()
+        print(f'Label recovery was not sucessfull in {missed_labels} cases.')
+        test_label_acc = 1 - missed_labels / len(true_user_data['labels'])
+
     if order_batch:
         order = compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalized, setup)
         reconstructed_user_data['data'] = reconstructed_user_data['data'][order]
@@ -71,11 +76,12 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     # Print report:
     iip_scoring = ' | '.join([f'IIP-{k}: {v:5.2%}' for k, v in iip_scores.items()])
     print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}|"
-          f" R-PSNR: {test_rpsnr:4.2f} | {iip_scoring}")
+          f" R-PSNR: {test_rpsnr:4.2f} | {iip_scoring} | Label Acc: {test_label_acc:2.2%}")
 
 
     metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse, lpips=test_lpips, rpsnr=test_rpsnr,
-                   order=order, **{f'IIP-{k}': v for k, v in iip_scores.items()}, parameters=parameters)
+                   order=order, **{f'IIP-{k}': v for k, v in iip_scores.items()}, parameters=parameters,
+                   label_acc=test_label_acc)
     return metrics
 
 

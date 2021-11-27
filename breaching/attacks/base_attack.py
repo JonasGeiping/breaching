@@ -48,7 +48,7 @@ class _BaseAttacker():
 
         # Consider label information
         if shared_data['labels'] is None:
-            labels = self._recover_label_information(shared_data)
+            labels = self._recover_label_information(shared_data, rec_models)
         else:
             labels = shared_data['labels']
 
@@ -147,5 +147,142 @@ class _BaseAttacker():
             torch._foreach_div_(shared_grad, max(grad_norm, fudge_factor))
         return shared_data
 
-    def _recover_label_information(self, user_data):
-        raise NotImplementedError()
+    def _recover_label_information(self, user_data, rec_models):
+        """Recover label information.
+
+        This method runs under the assumption that the last two entries in the gradient vector
+        correpond to the weight and bias of the last layer (mapping to num_classes).
+        For non-classification tasks this has to be modified.
+
+        The behavior with respect to multiple queries is work in progress and subject of debate.
+        """
+        num_data_points = user_data['num_data_points']
+        num_classes = user_data['gradients'][0][-1].shape[0]
+        num_queries = len(user_data['gradients'])
+
+        breakpoint()
+        # In the simplest case, the label can just be inferred from the last layer
+        if self.label_strategy == 'iDLG':
+            # This was popularized in "iDLG" by Zhao et al., 2020
+            # assert num_data_points == 1
+            label_list = []
+            for query_id, shared_grad in enumerate(user_data['gradients']):
+                last_weight_min = torch.argmin(torch.sum(shared_grad[-2], dim=-1), dim=-1)
+                label_list += [last_weight_min.detach()]
+            labels = torch.stack(label_list).unique()
+        elif self.cfg.label_strategy == 'analytic':
+            # Analytic recovery simply works as long as all labels are unique.
+            label_list = []
+            for query_id, shared_grad in enumerate(user_data['gradients']):
+                valid_classes = (shared_grad[-1] < 0).nonzero()
+                label_list += [valid_classes]
+            labels = torch.stack(label_list).unique()[:num_data_points]
+        elif self.cfg.label_strategy == 'yin':
+            # As seen in Yin et al. 2021, "See Through Gradients: Image Batch Recovery via GradInversion"
+            # This additionally assumes that there is a nonlinearity with positive output (like ReLU) in front of the
+            # last classification layer.
+            # This scheme also works best if all labels are unique
+            # Otherwise this is an extension of iDLG to multiple labels:
+            total_min_vals = 0
+            for query_id, shared_grad in enumerate(user_data['gradients']):
+                total_min_vals += shared_grad[-2].min(dim=-1)[0]
+            labels = total_min_vals.argsort()[:num_data_points]
+
+        elif 'wainakh' in self.cfg.label_strategy:
+
+            if self.cfg.label_strategy == 'wainakh-simple':
+                # As seen in Weinakh et al., "User Label Leakage from Gradients in Federated Learning"
+                m_impact = 0
+                for query_id, shared_grad in enumerate(user_data['gradients']):
+                    g_i = shared_grad[-2].sum(dim=1)
+                    m_query = torch.where(g_i < 0, g_i, torch.zeros_like(g_i)).sum() * (1 + 1 / num_classes) / num_data_points
+                    s_offset = 0
+                    m_impact += m_query / num_queries
+
+            elif self.cfg.label_strategy == 'wainakh-whitebox':
+                # Augment previous strategy with measurements of label impact for dummy data.
+                m_impact = 0
+                s_offset = torch.zeros(num_classes, **self.setup)
+
+                print('Starting a white-box search for optimal labels. This will take some time.')
+                for query_id, (shared_grad, model) in enumerate(zip(user_data['gradients'], rec_models)):
+                    # Estimate m:
+                    weight_params = (list(rec_models[0].parameters())[-2],)
+                    for class_idx in range(num_classes):
+                        fake_data = torch.randn([num_data_points, *self.data_shape], **self.setup)
+                        fake_labels = torch.as_tensor([class_idx] * num_data_points, **self.setup)
+                        with torch.autocast(self.setup['device'].type, enabled=self.cfg.impl.mixed_precision):
+                            loss = self.loss_fn(model(fake_data), fake_labels)
+                        W_cls, = torch.autograd.grad(loss, weight_params)
+                        g_i = W_cls.sum(dim=1)
+                        m_impact += g_i.sum() * (1 + 1 / num_classes) / num_data_points / num_classes / num_queries
+
+                    # Estimate s:
+                    T = num_classes - 1
+                    for class_idx in range(num_classes):
+                        fake_data = torch.randn([T, *self.data_shape], **self.setup)
+                        fake_labels = torch.arange(num_classes, **self.setup)
+                        fake_labels = fake_labels[fake_labels != class_idx]
+                        with torch.autocast(self.setup['device'].type, enabled=self.cfg.impl.mixed_precision):
+                            loss = self.loss_fn(model(fake_data), fake_labels)
+                        W_cls, = torch.autograd.grad(loss, (weight_params[0][class_idx],))
+                        s_offset[class_idx] += W_cls.sum() / T / num_queries
+
+            else:
+                raise ValueError(f'Invalid Wainakh strategy {self.cfg.label_strategy}.')
+
+            # After determining impact and offset, run the actual recovery algorithm
+            label_list = []
+            g_per_query = [shared_grad[-2].sum(dim=1) for shared_grad in user_data['gradients']]
+            g_i = torch.stack(g_per_query).mean(dim=0)
+            # Stage 1:
+            for idx in range(num_classes):
+                if g_i[idx] < 0:
+                    label_list.apppend(idx)
+                    g_i[idx] -= m_impact
+            # Stage 2:
+            g_i = g_i - s_offset
+            while len(label_list) < num_data_points:
+                selected_idx = g_i.argmin()
+                label_list.append(selected_idx)
+                g_i[idx] -= m_impact
+            # Finalize labels:
+            labels = torch.stack(label_list)
+
+        elif self.cfg.label_strategy == 'sanity-bias':  # WIP
+            # This is slightly modified analytic label recovery in the style of Wainakh
+            label_list = []
+            bias_per_query = [shared_grad[-1] for shared_grad in user_data['gradients']]
+            # Stage 1
+            average_bias = torch.stack(bias_per_query).mean(dim=0)
+            valid_classes = (average_bias < 0).nonzero()
+            label_list += [valid_classes]
+            m_impact = average_bias_correct_label = average_bias[valid_classes].sum() / num_classes
+            average_bias[valid_classes] = average_bias[valid_classes] - m_impact
+
+            # Stage 2
+            while len(label_list) < num_data_points:
+                selected_idx = average_bias.argmin()
+                label_list.append(selected_idx)
+                average_bias[selected_idx] -= m_impact
+
+            labels = torch.stack(label_list)
+
+        elif self.cfg.label_strategy == 'random':
+            # A random baseline
+            labels = torch.randint(0, num_classes, (num_data_points,))
+        elif self.cfg.label_strategy == 'exhaustive':
+            # Exhaustive search is possible in principle
+            combinations = num_classes ** num_data_points
+            raise ValueError(f'Exhaustive label searching not implemented. Nothing stops you though from running your'
+                             f'attack algorithm for any possible combination of labels, except computational effort.'
+                             f'In the given setting, a naive exhaustive strategy would attack {combinations} label vectors.')
+            # Although this is arguably a worst-case estimate, you might be able to get "close enough" to the actual
+            # label vector in much fewer queries, depending on which notion of close-enough makes sense for a given attack.
+        else:
+            raise ValueError(f'Invalid label recovery strategy {self.cfg.label_strategy} given.')
+
+        # Always sort, order does not matter here:
+        labels = labels.sort()[0]
+        print(f'Recovered labels {labels} through strategy {self.cfg.label_strategy}.')
+        return labels

@@ -71,6 +71,52 @@ def psnr_compute(img_batch, ref_batch, batched=False, factor=1.0, clip=False):
 
 
 def registered_psnr_compute(img_batch, ref_batch, factor=1.0):
+    """Use kornia for now."""
+    return _registered_psnr_compute_kornia(img_batch, ref_batch, factor)
+
+def _registered_psnr_compute_kornia(img_batch, ref_batch, factor=1.0):
+    """Kornia version. Todo: Use a smarter/deeper matching tool."""
+    from kornia.geometry import ImageRegistrator, homography_warp  # lazy import here as well
+    B = img_batch.shape[0]
+    mse_per_example = ((img_batch.detach() - ref_batch)**2).view(B, -1).mean(dim=1)
+    default_psnrs = 10 * torch.log10(factor**2 / mse_per_example)
+    # Align by homography:
+    registrator = ImageRegistrator('similarity')
+    homography = registrator.register(ref_batch.detach(), img_batch.detach())
+    warped_imgs = homography_warp(img_batch, homography, ref_batch.shape[-2:])
+    # Compute new PSNR:
+    mse_per_example = ((warped_imgs.detach() - ref_batch)**2).view(B, -1).mean(dim=1)
+    registered_psnrs = 10 * torch.log10(factor**2 / mse_per_example)
+
+    # Return best of default and warped PSNR:
+    return torch.stack([default_psnrs, registered_psnrs]).max(dim=0)[0].mean()
+
+
+def _registered_psnr_compute_kornia_loftr(img_batch, ref_batch, factor=1.0):
+    """Kornia version. WIP."""
+    from kornia.feature import LoFTR
+    from kornia.geometry.homography import find_homography_dlt
+    B = img_batch.shape[0]
+    mse_per_example = ((img_batch.detach() - ref_batch)**2).view(B, -1).mean(dim=1)
+    default_psnrs = 10 * torch.log10(factor**2 / mse_per_example)
+    # Align by homography:
+    matcher = LoFTR(pretrained="indoor")
+    with torch.no_grad():
+        correspondences_dict = matcher(dict(image0=img_batch.mean(dim=1, keepdim=True),
+                                            image1=ref_batch.mean(dim=1, keepdim=True)))
+        homography = find_homography_dlt(correspondences_dict['keypoints0'],
+                                         correspondences_dict['keypoints1'])
+        warped_imgs = homography_warp(img_batch, homography, ref_batch.shape[-2:])
+    # Compute new PSNR:
+    mse_per_example = ((warped_imgs.detach() - ref_batch)**2).view(B, -1).mean(dim=1)
+    registered_psnrs = 10 * torch.log10(factor**2 / mse_per_example)
+
+    # Return best of default and warped PSNR:
+    return torch.stack([default_psnrs, registered_psnrs]).max(dim=0)[0].mean()
+
+
+
+def _registered_psnr_compute_skimage(img_batch, ref_batch, factor=1.0):
     """Use ORB features to register images onto reference before computing PSNR scores."""
     import skimage.feature  # Lazy metric stuff import
     import skimage.measure

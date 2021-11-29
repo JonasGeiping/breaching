@@ -7,7 +7,7 @@ from .metrics import psnr_compute, registered_psnr_compute, image_identifiabilit
 
 def report(reconstructed_user_data, true_user_data, server_payload, model, dataloader=None,
            setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=True, compute_full_iip=False,
-           skip_rpsnr=True):
+           compute_rpsnr=True):
     import lpips   # lazily import this only if report is used.
     lpips_scorer = lpips.LPIPS(net='alex').to(**setup)
 
@@ -22,6 +22,8 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
         missed_labels = (reconstructed_user_data['labels'] != true_user_data['labels']).sum()
         print(f'Label recovery was not sucessfull in {missed_labels} cases.')
         test_label_acc = 1 - missed_labels / len(true_user_data['labels'])
+    else:
+        test_label_acc = 1
 
     if order_batch:
         order = compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalized, setup)
@@ -40,8 +42,8 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     test_lpips = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True).mean().item()
 
     # Compute registered psnr. This is a bit computationally intensive:
-    if not skip_rpsnr:
-        test_rpsnr = registered_psnr_compute(rec_denormalized.cpu(), ground_truth_denormalized.cpu(), factor=1).item()
+    if compute_rpsnr:
+        test_rpsnr = registered_psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1).item()
     else:
         test_rpsnr = float('nan')
 

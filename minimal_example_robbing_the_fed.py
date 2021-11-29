@@ -12,19 +12,25 @@ All caveats apply. Make sure not to leak any unexpected information.
 """
 import torch
 import torchvision
-import breaching
+from breaching.attacks.analytic_attack import ImprintAttacker
 from breaching.cases.malicious_modifications.imprint import ImprintBlock
+from collections import namedtuple
 
-import hydra  # You could even skip this import and manually represent a cfg.attack variant
 
-
-class data_cfg_default:
+class data_cfg_default():
     size = 1_281_167,
     classes = 1000
     shape = (3, 224, 224)
     normalize = True
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
+
+class attack_cfg_default():
+    type = 'analytic'
+    attack_type = 'imprint-readout'
+    label_strategy = 'random'  # Labels are not actually required for this attack
+    normalize_gradients = False
+    impl = namedtuple('impl', ['dtype', 'mixed_precision', 'JIT'])('float', False, '')
 
 
 transforms = torchvision.transforms.Compose([
@@ -35,8 +41,8 @@ transforms = torchvision.transforms.Compose([
 ])
 
 
-@hydra.main(config_path="config/attack", config_name="imprint")
-def main(cfg_attack):
+
+def main():
     setup = dict(device=torch.device('cpu'), dtype=torch.float)
 
 
@@ -60,7 +66,7 @@ def main(cfg_attack):
 
 
     # This is the attacker:
-    attacker = breaching.attacks.prepare_attack(model, loss_fn, cfg_attack, setup)
+    attacker = ImprintAttacker(model, loss_fn, attack_cfg_default, setup)
 
     # ## Simulate an attacked FL protocol
     # Server-side computation:

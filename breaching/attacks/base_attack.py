@@ -63,13 +63,28 @@ class _BaseAttacker():
         # Load states into multiple models if necessary
         models = []
         for idx, payload in enumerate(server_payload['queries']):
-            parameters = payload['parameters']
-            if user_buffers is not None and idx < len(user_buffers):
-                buffers = user_buffers[idx]
-            else:
-                buffers = payload['buffers']
+
             new_model = copy.deepcopy(self.model_template)
             new_model.to(**self.setup, memory_format=self.memory_format)
+
+            # Load parameters
+            parameters = payload['parameters']
+            if user_buffers is not None and idx < len(user_buffers):
+                # User sends buffers. These should be used!
+                buffers = user_buffers[idx]
+                new_model.eval()
+            elif payload['buffers'] is not None:
+                # The server has public buffers in any case
+                buffers = payload['buffers']
+                new_model.eval()
+            else:
+                # The user sends no buffers and there are no public bufers
+                # (i.e. the user in in training mode and does not send updates)
+                new_model.train()
+                for module in new_module.named_modules():
+                    if hasattr(module, 'track_running_stats'):
+                        module.track_running_stats = False
+                buffers = []
 
             with torch.no_grad():
                 for param, server_state in zip(new_model.parameters(), parameters):

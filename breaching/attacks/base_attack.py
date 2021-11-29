@@ -174,6 +174,7 @@ class _BaseAttacker():
             label_list = []
             for query_id, shared_grad in enumerate(user_data['gradients']):
                 valid_classes = (shared_grad[-1] < 0).nonzero()
+                print(valid_classes)
                 label_list += [valid_classes]
             labels = torch.stack(label_list).unique()[:num_data_points]
         elif self.cfg.label_strategy == 'yin':
@@ -250,26 +251,25 @@ class _BaseAttacker():
 
         elif self.cfg.label_strategy == 'sanity-bias':  # WIP
             # This is slightly modified analytic label recovery in the style of Wainakh
-            label_list = []
             bias_per_query = [shared_grad[-1] for shared_grad in user_data['gradients']]
+            label_list = []
             # Stage 1
             average_bias = torch.stack(bias_per_query).mean(dim=0)
             valid_classes = (average_bias < 0).nonzero()
-            label_list += [valid_classes]
+            label_list += [*valid_classes.squeeze()]
             m_impact = average_bias_correct_label = average_bias[valid_classes].sum() / num_classes
             average_bias[valid_classes] = average_bias[valid_classes] - m_impact
-
+            
             # Stage 2
             while len(label_list) < num_data_points:
                 selected_idx = average_bias.argmin()
                 label_list.append(selected_idx)
                 average_bias[selected_idx] -= m_impact
-
             labels = torch.stack(label_list)
 
         elif self.cfg.label_strategy == 'random':
             # A random baseline
-            labels = torch.randint(0, num_classes, (num_data_points,))
+            labels = torch.randint(0, num_classes, (num_data_points,), device=self.setup['device'])
         elif self.cfg.label_strategy == 'exhaustive':
             # Exhaustive search is possible in principle
             combinations = num_classes ** num_data_points
@@ -281,7 +281,11 @@ class _BaseAttacker():
         else:
             raise ValueError(f'Invalid label recovery strategy {self.cfg.label_strategy} given.')
 
+        # Pad with random labels if too few were produced:
+        if len(labels) < num_data_points:
+            labels = torch.cat([labels, torch.randint(0, num_classes, (num_data_points - len(labels),), device=self.setup['device'])])
+
         # Always sort, order does not matter here:
         labels = labels.sort()[0]
-        print(f'Recovered labels {labels} through strategy {self.cfg.label_strategy}.')
+        print(f'Recovered labels {labels.tolist()} through strategy {self.cfg.label_strategy}.')
         return labels

@@ -81,8 +81,10 @@ def _registered_psnr_compute_kornia(img_batch, ref_batch, factor=1.0):
     mse_per_example = ((img_batch.detach() - ref_batch)**2).view(B, -1).mean(dim=1)
     default_psnrs = 10 * torch.log10(factor**2 / mse_per_example)
     # Align by homography:
-    registrator = ImageRegistrator('similarity')
-    homography = registrator.register(ref_batch.detach(), img_batch.detach())
+    breakpoint()
+    registrator = ImageRegistrator('similarity').to(ref_batch.device)
+    homography = registrator.register(ref_batch.detach(), img_batch.detach()).to(ref_batch.device)
+    breakpoint()
     warped_imgs = homography_warp(img_batch, homography, ref_batch.shape[-2:])
     # Compute new PSNR:
     mse_per_example = ((warped_imgs.detach() - ref_batch)**2).view(B, -1).mean(dim=1)

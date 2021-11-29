@@ -169,9 +169,11 @@ class MaliciousModelServer(HonestServer):
         if position is None:
             input_dim = self.cfg_data.shape[0] * self.cfg_data.shape[1] * self.cfg_data.shape[2]
             block = block_fn(input_dim, **kwargs)
+            original_name = modified_model.name
             modified_model = torch.nn.Sequential(torch.nn.Flatten(), block,
                                                  torch.nn.Unflatten(dim=1, unflattened_size=tuple(self.cfg_data.shape)),
                                                  modified_model)
+            modified_model.name = original_name
             secrets = dict(weight_idx=0, bias_idx=1, shape=tuple(self.cfg_data.shape), structure=block.structure)
         else:
             block_found = False

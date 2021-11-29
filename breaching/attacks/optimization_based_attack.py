@@ -32,14 +32,15 @@ class OptimizationBasedAttack(_BaseAttacker):
 
 
     def __repr__(self):
+        n = '\n'
         return f"""Attacker (of type {self.__class__.__name__}) with settings:
     Hyperparameter Template: {self.cfg.type}
 
     Objective: {repr(self.objective)}
-    Regularizers: {(chr(133) + ' '*18).join([repr(r) for r in self.regularizers])}
+    Regularizers: {(n + ' '*18).join([repr(r) for r in self.regularizers])}
 
     Optimization Setup:
-        {(chr(133) + ' ' * 8).join([f'{key}: {val}' for key, val in self.cfg.optim.items()])}
+        {(n + ' ' * 8).join([f'{key}: {val}' for key, val in self.cfg.optim.items()])}
         """
 
     def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):

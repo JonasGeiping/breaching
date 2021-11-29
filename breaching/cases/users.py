@@ -34,9 +34,10 @@ class UserSingleStep(torch.nn.Module):
         self.loss = copy.deepcopy(loss)  # Just in case the loss contains state
 
     def __repr__(self):
+        n = '\n'
         return f"""User (of type {self.__class__.__name__}) with settings:
     Number of data points: {self.num_data_points}
-    Number of user queries {self.num_user_queries}
+    Number of user queries: {self.num_user_queries}
 
     Threat model:
     User provides labels: {self.provide_labels}
@@ -46,7 +47,7 @@ class UserSingleStep(torch.nn.Module):
     Data:
     Dataset: {self.dataloader.dataset.__class__.__name__}
     idx: {self.data_idx.item() if isinstance(self.data_idx, torch.Tensor) else self.data_idx}:{self.data_with_labels}
-    {chr(133).join(self.defense_repr)}
+    {n.join(self.defense_repr)}
         """
 
     def _initialize_local_privacy_measures(self, local_diff_privacy):
@@ -226,7 +227,8 @@ class UserMultiStep(UserSingleStep):
 
 
     def __repr__(self):
-        return (super().__repr__() + chr(133) + f"""    Local FL Setup:
+        n = '\n'
+        return (super().__repr__() + n + f"""    Local FL Setup:
         Number of local update steps: {self.num_local_updates}
         Data per local update step: {self.num_data_per_local_update_step}
         Local learning rate: {self.local_learning_rate}
@@ -317,7 +319,8 @@ class MultiUserAggregate(UserMultiStep):
 
 
     def __repr__(self):
-        return (UserSingleStep.__repr__(self) + chr(133) + f"""    Local FL Setup:
+        n = '\n'
+        return (UserSingleStep.__repr__(self) + n + f"""    Local FL Setup:
         Number of aggregated users: {self.num_users}
         Number of local update steps: {self.num_local_updates}
         Data per local update step: {self.num_data_per_local_update_step}

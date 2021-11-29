@@ -50,7 +50,7 @@ class HonestServer():
     Model:
         model specification: {str(self.model.name)}
         model state: {self.cfg_server.model_state}
-        public buffers: {self.cfg_server.provide_public_buffers}
+        {f'public buffers: {self.cfg_server.provide_public_buffers}' if len(list(self.model.buffers())) > 0 else ''}
 
     Secrets: {self.secrets}
     """

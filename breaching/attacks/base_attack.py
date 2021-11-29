@@ -160,9 +160,8 @@ class _BaseAttacker():
         num_classes = user_data['gradients'][0][-1].shape[0]
         num_queries = len(user_data['gradients'])
 
-        breakpoint()
         # In the simplest case, the label can just be inferred from the last layer
-        if self.label_strategy == 'iDLG':
+        if self.cfg.label_strategy == 'iDLG':
             # This was popularized in "iDLG" by Zhao et al., 2020
             # assert num_data_points == 1
             label_list = []
@@ -238,13 +237,13 @@ class _BaseAttacker():
             # Stage 1:
             for idx in range(num_classes):
                 if g_i[idx] < 0:
-                    label_list.apppend(idx)
+                    label_list.append(torch.as_tensor(idx, device=self.setup['device']))
                     g_i[idx] -= m_impact
             # Stage 2:
             g_i = g_i - s_offset
             while len(label_list) < num_data_points:
                 selected_idx = g_i.argmin()
-                label_list.append(selected_idx)
+                label_list.append(torch.as_tensor(selected_idx), device=self.setup['device'])
                 g_i[idx] -= m_impact
             # Finalize labels:
             labels = torch.stack(label_list)

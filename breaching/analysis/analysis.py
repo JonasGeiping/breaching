@@ -18,13 +18,6 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     rec_denormalized = torch.clamp(reconstructed_user_data['data'] * ds + dm, 0, 1)
     ground_truth_denormalized = torch.clamp(true_user_data['data'] * ds + dm, 0, 1)
 
-    if any(reconstructed_user_data['labels'] != true_user_data['labels']):
-        missed_labels = (reconstructed_user_data['labels'] != true_user_data['labels']).sum()
-        print(f'Label recovery was not sucessfull in {missed_labels} cases.')
-        test_label_acc = 1 - missed_labels / len(true_user_data['labels'])
-    else:
-        test_label_acc = 1
-
     if order_batch:
         order = compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalized, setup)
         reconstructed_user_data['data'] = reconstructed_user_data['data'][order]
@@ -34,6 +27,18 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     else:
         order = None
 
+    if any(reconstructed_user_data['labels'] != true_user_data['labels']):
+        found_labels = 0
+        label_pool = true_user_data['labels'].clone().tolist()
+        for label in reconstructed_user_data['labels']:
+            if label in label_pool:
+                found_labels += 1
+                label_pool.remove(label)
+
+        print(f'Label recovery was sucessfull in {found_labels} cases.')
+        test_label_acc = found_labels / len(true_user_data['labels'])
+    else:
+        test_label_acc = 1
 
     test_mse = (rec_denormalized - ground_truth_denormalized).pow(2).mean().item()
     test_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1).item()

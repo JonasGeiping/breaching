@@ -1,6 +1,7 @@
 defaults:
   - _default_optimization_attack
 type: see-through-gradients
+label_strategy: yin
 
 objective:
   type: euclidean

@@ -106,6 +106,9 @@ class UserSingleStep(torch.nn.Module):
                         buffer.copy_(server_state.to(**self.setup))
                     self.model.eval()
                 else:
+                    for module in self.model.modules():
+                        if hasattr(module, 'momentum'):
+                            module.momentum = None  # Force recovery without division
                     self.model.train()
 
             def _compute_batch_gradient(data, labels):
@@ -126,7 +129,11 @@ class UserSingleStep(torch.nn.Module):
                 grads = _compute_batch_gradient(data, labels)
             self._apply_differential_noise(grads)
             shared_grads += [grads]
-            shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
+
+            if buffers is not None:
+                shared_buffers = None
+            else:
+                shared_buffers += [[b.clone().detach() for b in self.model.buffers()]]
 
         shared_data = dict(gradients=shared_grads,
                            buffers=shared_buffers if self.provide_buffers else None,

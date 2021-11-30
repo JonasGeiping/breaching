@@ -189,7 +189,6 @@ class _BaseAttacker():
             label_list = []
             for query_id, shared_grad in enumerate(user_data['gradients']):
                 valid_classes = (shared_grad[-1] < 0).nonzero()
-                print(valid_classes)
                 label_list += [valid_classes]
             labels = torch.stack(label_list).unique()[:num_data_points]
         elif self.cfg.label_strategy == 'yin':
@@ -213,7 +212,6 @@ class _BaseAttacker():
                     m_query = torch.where(g_i < 0, g_i, torch.zeros_like(g_i)).sum() * (1 + 1 / num_classes) / num_data_points
                     s_offset = 0
                     m_impact += m_query / num_queries
-
             elif self.cfg.label_strategy == 'wainakh-whitebox':
                 # Augment previous strategy with measurements of label impact for dummy data.
                 m_impact = 0
@@ -259,12 +257,12 @@ class _BaseAttacker():
             g_i = g_i - s_offset
             while len(label_list) < num_data_points:
                 selected_idx = g_i.argmin()
-                label_list.append(torch.as_tensor(selected_idx), device=self.setup['device'])
+                label_list.append(torch.as_tensor(selected_idx, device=self.setup['device']))
                 g_i[idx] -= m_impact
             # Finalize labels:
             labels = torch.stack(label_list)
 
-        elif self.cfg.label_strategy == 'sanity-bias':  # WIP
+        elif self.cfg.label_strategy == 'bias-corrected':  # WIP
             # This is slightly modified analytic label recovery in the style of Wainakh
             bias_per_query = [shared_grad[-1] for shared_grad in user_data['gradients']]
             label_list = []
@@ -272,9 +270,9 @@ class _BaseAttacker():
             average_bias = torch.stack(bias_per_query).mean(dim=0)
             valid_classes = (average_bias < 0).nonzero()
             label_list += [*valid_classes.squeeze()]
-            m_impact = average_bias_correct_label = average_bias[valid_classes].sum() / num_classes
-            average_bias[valid_classes] = average_bias[valid_classes] - m_impact
+            m_impact = average_bias_correct_label = average_bias[valid_classes].sum() / num_data_points
             
+            average_bias[valid_classes] = average_bias[valid_classes] - m_impact
             # Stage 2
             while len(label_list) < num_data_points:
                 selected_idx = average_bias.argmin()

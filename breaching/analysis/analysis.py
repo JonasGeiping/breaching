@@ -27,7 +27,7 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     else:
         order = None
 
-    if any(reconstructed_user_data['labels'] != true_user_data['labels']):
+    if any(reconstructed_user_data['labels'].sort()[0] != true_user_data['labels']):
         found_labels = 0
         label_pool = true_user_data['labels'].clone().tolist()
         for label in reconstructed_user_data['labels']:

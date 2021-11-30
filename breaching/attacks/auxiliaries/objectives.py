@@ -210,7 +210,7 @@ class FastCosineSimilarity(GradientLoss):
 
 class PearlmutterLoss(torch.nn.Module):
     """Use a first-order approximation of \nabla_x \nabla_g instead of the correct autograd value."""
-    def __init__(self, scale=1.0, eps=1e-3, level_gradients=True, fudge_factor=1e-6, task_regularization=0.0, **kwargs):
+    def __init__(self, scale=1.0, eps=1e-3, level_gradients=False, fudge_factor=1e-6, task_regularization=0.0, **kwargs):
         super().__init__()
         self.scale = scale
         self.task_regularization = task_regularization

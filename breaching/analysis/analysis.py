@@ -64,7 +64,7 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
         iip_scores = dict(none=float('NaN'))
 
     feat_mse = 0.0
-    for payload in server_payload['queries']:
+    for idx, payload in enumerate(server_payload['queries']):
         parameters = payload['parameters']
         buffers = payload['buffers']
 
@@ -75,7 +75,7 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
                 for buffer, server_state in zip(model.buffers(), buffers):
                     buffer.copy_(server_state.to(**setup))
             else:
-                for buffer, user_state in zip(model.buffers(), true_user_data['buffers']):
+                for buffer, user_state in zip(model.buffers(), true_user_data['buffers'][idx]):
                     buffer.copy_(user_state.to(**setup))
 
             # Compute the forward passes

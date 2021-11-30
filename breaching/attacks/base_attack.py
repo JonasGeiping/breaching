@@ -81,7 +81,7 @@ class _BaseAttacker():
                 # The user sends no buffers and there are no public bufers
                 # (i.e. the user in in training mode and does not send updates)
                 new_model.train()
-                for module in new_module.named_modules():
+                for module in new_model.modules():
                     if hasattr(module, 'track_running_stats'):
                         module.track_running_stats = False
                 buffers = []

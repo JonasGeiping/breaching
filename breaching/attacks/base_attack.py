@@ -84,6 +84,8 @@ class _BaseAttacker():
                 for module in new_model.modules():
                     if hasattr(module, 'track_running_stats'):
                         module.track_running_stats = False
+                        # After resetting the parameters, the DeepInversion works correctly,
+                        # penalizing mean/var to the normal distribution
                         module.reset_parameters()
                 buffers = []
 

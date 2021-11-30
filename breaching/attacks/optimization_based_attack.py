@@ -128,11 +128,11 @@ class OptimizationBasedAttack(_BaseAttacker):
 
             if total_objective.requires_grad:
                 total_objective.backward(inputs=candidate, create_graph=False)
-            if self.cfg.optim.signed:
-                candidate.grad.sign_()
             if self.cfg.optim.langevin_noise > 0:
                 candidate.grad += self.cfg.optim.langevin_noise * torch.randn_like(candidate.grad)
-            self.current_task_loss = total_task_loss  # Side-step this because of L-BFGS closure limitations :<
+            if self.cfg.optim.signed:
+                candidate.grad.sign_()
+            self.current_task_loss = total_task_loss  # Side-effect this because of L-BFGS closure limitations :<
             return total_objective
         return closure
 

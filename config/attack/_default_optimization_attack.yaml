@@ -1,7 +1,7 @@
 type: default
 
 attack_type: optimization   # analytic, equation solver
-label_strategy: wainakh-simple  # Only in effect if the user does not provide labels
+label_strategy: bias-corrected  # Only in effect if the user does not provide labels
 # Label strategy options are 'iDLG', 'analytic', 'yin', 'wainakh-simple', 'wainakh-whitebox', 'random', 'exhaustive'
 
 objective:

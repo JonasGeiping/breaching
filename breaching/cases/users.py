@@ -140,7 +140,7 @@ class UserSingleStep(torch.nn.Module):
                            num_data_points=self.num_data_points if self.provide_num_data_points else None,
                            labels=labels.sort()[0] if self.provide_labels else None,
                            local_hyperparams=None)
-        true_user_data = dict(data=data, labels=labels.sort()[0])
+        true_user_data = dict(data=data, labels=labels.sort()[0], buffers=shared_buffers)
 
         return shared_data, true_user_data
 
@@ -306,7 +306,7 @@ class UserMultiStep(UserSingleStep):
                            local_hyperparams=dict(lr=self.local_learning_rate, steps=self.num_local_updates,
                                                   data_per_step=self.num_data_per_local_update_step,
                                                   labels=label_list) if self.provide_local_hyperparams else None)
-        true_user_data = dict(data=user_data, labels=user_labels.sort()[0])
+        true_user_data = dict(data=user_data, labels=user_labels.sort()[0], buffers=shared_buffers)
 
         return shared_data, true_user_data
 
@@ -442,6 +442,6 @@ class MultiUserAggregate(UserMultiStep):
                 yield self._generate_example_data(user_idx)[0]
 
         true_user_data = dict(data=generate_user_data(),
-                              labels=None)
+                              labels=None, buffers=shared_buffers)
 
         return shared_data, true_user_data

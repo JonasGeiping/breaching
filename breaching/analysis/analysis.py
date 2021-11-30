@@ -71,8 +71,12 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
         with torch.no_grad():
             for param, server_state in zip(model.parameters(), parameters):
                 param.copy_(server_state.to(**setup))
-            for buffer, server_state in zip(model.buffers(), buffers):
-                buffer.copy_(server_state.to(**setup))
+            if buffers is not None:
+                for buffer, server_state in zip(model.buffers(), buffers):
+                    buffer.copy_(server_state.to(**setup))
+            else:
+                for buffer, user_state in zip(model.buffers(), true_user_data['buffers']):
+                    buffer.copy_(user_state.to(**setup))
 
             # Compute the forward passes
             feat_mse += (model(reconstructed_user_data['data'].to(**setup)) - model(true_user_data['data'].to(**setup))).pow(2).mean().item()

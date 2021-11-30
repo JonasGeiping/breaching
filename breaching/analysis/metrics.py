@@ -76,7 +76,7 @@ def registered_psnr_compute(img_batch, ref_batch, factor=1.0):
 
 def _registered_psnr_compute_kornia(img_batch, ref_batch, factor=1.0):
     """Kornia version. Todo: Use a smarter/deeper matching tool."""
-    from kornia.geometry import ImageRegistrator, homography_warp, HomographyWarper  # lazy import here as well
+    from kornia.geometry import ImageRegistrator, HomographyWarper  # lazy import here as well
     B = img_batch.shape[0]
     default_psnrs = []
     registered_psnrs = []
@@ -87,10 +87,10 @@ def _registered_psnr_compute_kornia(img_batch, ref_batch, factor=1.0):
         default_psnrs += [10 * torch.log10(factor**2 / mse)]
         # Align by homography:
         registrator = ImageRegistrator('similarity', num_iterations=2500)
-        registrator.warper = partial(HomographyWarper,  padding_mode='reflection')
+        registrator.warper = partial(HomographyWarper, padding_mode='reflection')
         registrator.to(ref.device)
         homography = registrator.register(img, ref)
-        warped_img = registrator.warp_src_into_dst(img)    
+        warped_img = registrator.warp_src_into_dst(img)
         # Compute new PSNR:
         mse = ((warped_img.detach() - ref_batch)**2).mean()
         registered_psnrs += [10 * torch.log10(factor**2 / mse)]

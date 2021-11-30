@@ -84,6 +84,7 @@ class _BaseAttacker():
                 for module in new_model.modules():
                     if hasattr(module, 'track_running_stats'):
                         module.track_running_stats = False
+                        module.reset_parameters()
                 buffers = []
 
             with torch.no_grad():
@@ -271,7 +272,7 @@ class _BaseAttacker():
             valid_classes = (average_bias < 0).nonzero()
             label_list += [*valid_classes.squeeze()]
             m_impact = average_bias_correct_label = average_bias[valid_classes].sum() / num_data_points
-            
+
             average_bias[valid_classes] = average_bias[valid_classes] - m_impact
             # Stage 2
             while len(label_list) < num_data_points:

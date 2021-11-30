@@ -244,10 +244,11 @@ class PearlmutterLoss(torch.nn.Module):
             grad_norm = torch.stack([g.pow(2).sum() for g in gradients]).sum().sqrt()
             torch._foreach_div_(gradients, max(grad_norm, self.fudge_factor))
 
+        # Compute first-order gradients of objective
+        objective_value, first_order_grad = self._compute_objective_and_first_order(candidate, gradients, gradient_data)
+
         # Patch model and compute loss at offset vector:
-        torch._foreach_sub_(gradients, gradient_data)  # Save one copy of the gradient list here
-        residuals = gradients
-        torch._foreach_add_(list(model.parameters()), residuals, alpha=self.eps)
+        torch._foreach_add_(list(model.parameters()), first_order_grad, alpha=self.eps)
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             offset_task_loss = self.loss_fn(model(candidate), labels)
         dLv_dx, = torch.autograd.grad(offset_task_loss, (candidate,), create_graph=False)
@@ -257,13 +258,46 @@ class PearlmutterLoss(torch.nn.Module):
         # Add task loss
         candidate.grad += self.task_regularization * dLdx
         # Unpatch model:
-        torch._foreach_sub_(list(model.parameters()), residuals, alpha=self.eps)
+        torch._foreach_sub_(list(model.parameters()), first_order_grad, alpha=self.eps)
 
+        return objective_value, task_loss
+
+    def _compute_objective_and_first_order(self, candidate, gradients, gradient_data):
+        torch._foreach_sub_(gradients, gradient_data)  # Save one copy of the gradient list here
+        residuals = gradients
         # Gradients have already been populated. Make sure not to kill them later on.
         with torch.no_grad():
             with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
                 objective_value = 0.5 * self.scale * torch.stack([r.detach().pow(2).sum() for r in residuals]).sum()
-        return objective_value, task_loss
+        return objective_value, residuals
+
+
+class PearlmutterCosine(PearlmutterLoss):
+    """Use a first-order approximation of \nabla_x \nabla_g instead of the correct autograd value."""
+
+    def _compute_objective_and_first_order(self, candidate, gradients, gradient_data):
+        with torch.no_grad():
+            scalar_product, grad_norm, data_norm = self._cosine_sim_components(gradients, gradient_data)
+
+        first_order_cosine = torch._foreach_sub(gradient_data, gradients, alpha=scalar_product / grad_norm.pow(2))
+        torch._foreach_div_(first_order_cosine, -(grad_norm * data_norm))
+        objective_value = self.scale * (1 - scalar_product / (grad_norm * data_norm))
+        return objective_value, first_order_cosine
+
+    @staticmethod
+    @torch.jit.script
+    def _cosine_sim_components(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
+        scalar_product = torch.tensor(0, device=gradient_rec[0].device, dtype=gradient_rec[0].dtype)
+        rec_norm = torch.tensor(0, device=gradient_rec[0].device, dtype=gradient_rec[0].dtype)
+        data_norm = torch.tensor(0, device=gradient_rec[0].device, dtype=gradient_rec[0].dtype)
+
+        for rec, data in zip(gradient_rec, gradient_data):
+            scalar_product += (rec * data).sum()
+            rec_norm += rec.detach().pow(2).sum()
+            data_norm += data.detach().pow(2).sum()
+
+        return scalar_product, rec_norm.sqrt(), data_norm.sqrt()
+
 
 
 
@@ -273,4 +307,5 @@ objective_lookup = {'euclidean': Euclidean,
                     'paramwise-cosine-similarity': ParameterCosineSimilarity,
                     'fast-cosine-similarity': FastCosineSimilarity,
                     'pearlmutter-loss': PearlmutterLoss,
+                    'pearlmutter-cosine': PearlmutterCosine,
                     }

@@ -24,12 +24,18 @@ def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
             if 'nfnet' in cfg_model:
                 model = NFNet(channels, classes, variant='F0', stochdepth_rate=0.25, alpha=0.2, se_ratio=0.5,
                               activation='ReLU', stem='ImageNet', use_dropout=True)
-            elif 'resnet50wsl' in cfg_model:
-                model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x48d_wsl')
+            elif 'resnet101wsl' in cfg_model:
+                model = torch.hub.load('facebookresearch/WSL-Images', 'resnext101_32x8d_wsl')
             elif 'resnet50swsl' in cfg_model:
                 model = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnet50_swsl')
             elif 'resnet50ssl' in cfg_model:
                 model = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnet50_ssl')
+            elif 'vit_base' in cfg_model:
+                import timm  # lazily import
+                model = timm.create_model('vit_base_patch16_224', pretrained=pretrained)
+            elif 'vit_small' in cfg_model:
+                import timm
+                model = timm.create_model('vit_base_patch16_224', pretrained=pretrained)
             elif 'linear' == cfg_model:
                 input_dim = cfg_data.shape[0] * cfg_data.shape[1] * cfg_data.shape[2]
                 model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(input_dim, classes))

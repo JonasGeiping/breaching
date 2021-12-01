@@ -15,6 +15,7 @@ from .base_attack import _BaseAttacker
 from .auxiliaries.regularizers import regularizer_lookup, TotalVariation
 from .auxiliaries.objectives import Euclidean, CosineSimilarity, objective_lookup
 
+
 class OptimizationBasedAttack(_BaseAttacker):
     """Implements a wide spectrum of optimization-based attacks."""
 
@@ -71,13 +72,12 @@ class OptimizationBasedAttack(_BaseAttacker):
         self.objective.initialize(self.loss_fn, self.cfg.impl, shared_data['local_hyperparams'])
 
         # Initialize candidate reconstruction data
-        candidate = self._initialize_data([shared_data['num_data_points'], 3, 56, 56])
+        candidate = self._initialize_data([shared_data['num_data_points'], *self.data_shape])
         best_candidate = candidate.detach().clone()
         minimal_value_so_far = torch.as_tensor(float('inf'), **self.setup)
 
         # Initialize optimizers
         optimizer, scheduler = self._init_optimizer(candidate)
-        # candidate = torch.nn.functional.interpolate(candidate, size=self.data_shape[1:], mode='nearest', align_corners=False)
 
         current_wallclock = time.time()
         try:
@@ -120,13 +120,12 @@ class OptimizationBasedAttack(_BaseAttacker):
 
             total_objective = 0
             total_task_loss = 0
-            upsampled_candidate = torch.nn.functional.interpolate(candidate, size=self.data_shape[1:], mode='bilinear', align_corners=False)
             for model, shared_grad in zip(rec_model, shared_data['gradients']):
-                objective, task_loss = self.objective(model, shared_grad, upsampled_candidate, labels)
+                objective, task_loss = self.objective(model, shared_grad, candidate, labels)
                 total_objective += objective
                 total_task_loss += task_loss
             for regularizer in self.regularizers:
-                total_objective += regularizer(upsampled_candidate)
+                total_objective += regularizer(candidate)
 
             if total_objective.requires_grad:
                 total_objective.backward(inputs=candidate, create_graph=False)

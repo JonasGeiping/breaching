@@ -246,19 +246,19 @@ class PearlmutterLoss(torch.nn.Module):
 
         # Compute first-order gradients of objective
         objective_value, first_order_grad = self._compute_objective_and_first_order(candidate, gradients, gradient_data)
-
+        eps_n = self.eps / torch.stack([g.pow(2).sum() for g in first_order_grad]).sum().sqrt()  # Adapts eps to different block strengths
         # Patch model and compute loss at offset vector:
-        torch._foreach_add_(list(model.parameters()), first_order_grad, alpha=self.eps)
+        torch._foreach_add_(list(model.parameters()), first_order_grad, alpha=eps_n)
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             offset_task_loss = self.loss_fn(model(candidate), labels)
         dLv_dx, = torch.autograd.grad(offset_task_loss, (candidate,), create_graph=False)
 
         # Compute finite difference approximation
-        candidate.grad += (dLv_dx - dLdx) / self.eps * self.scale
+        candidate.grad += (dLv_dx - dLdx) / eps_n  * self.scale
         # Add task loss
         candidate.grad += self.task_regularization * dLdx
         # Unpatch model:
-        torch._foreach_sub_(list(model.parameters()), first_order_grad, alpha=self.eps)
+        torch._foreach_sub_(list(model.parameters()), first_order_grad, alpha=eps_n)
 
         return objective_value, task_loss
 

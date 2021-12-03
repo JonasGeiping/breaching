@@ -83,10 +83,8 @@ class _BaseAttacker():
                 new_model.train()
                 for module in new_model.modules():
                     if hasattr(module, 'track_running_stats'):
-                        module.track_running_stats = False
-                        # After resetting the parameters, the DeepInversion works correctly,
-                        # penalizing mean/var to the normal distribution
                         module.reset_parameters()
+                        module.track_running_stats = False
                 buffers = []
 
             with torch.no_grad():
@@ -140,8 +138,8 @@ class _BaseAttacker():
             else:
                 seed = torch.rand([1, 3, pattern_width, pattern_width], **self.setup)
             # Shape expansion:
-            x_factor, y_factor = data_shape[2] // pattern_width, data_shape[3] // pattern_width
-            candidate = torch.tile(seed, (1, 1, x_factor, y_factor))[:, :, :data_shape[2], :data_shape[3]]
+            x_factor, y_factor = torch.as_tensor(data_shape[2] / pattern_width).ceil(), torch.as_tensor(data_shape[3] / pattern_width).ceil()
+            candidate = torch.tile(seed, (1, 1, int(x_factor), int(y_factor)))[:, :, :data_shape[2], :data_shape[3]].contiguous().clone()
         else:
             raise ValueError(f'Unknown initialization scheme {init_type} given.')
 

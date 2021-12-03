@@ -45,7 +45,7 @@ class _BaseAttacker():
         # Load server_payload into state:
         rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data['buffers'])
         shared_data = self._cast_shared_data(shared_data)
-
+        self.rec_models = rec_models
         # Consider label information
         if shared_data['labels'] is None:
             labels = self._recover_label_information(shared_data, rec_models)

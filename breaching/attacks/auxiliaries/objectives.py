@@ -343,7 +343,7 @@ class PearlmutterEuclidean(torch.nn.Module):
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             task_loss = self.loss_fn(model(candidate), labels)
         # Compute both model gradients and candidate gradients
-        gradients = torch.autograd.grad(task_loss, model.parameters(), create_graph=False)
+        *gradients, dLdx = torch.autograd.grad(task_loss, (*model.parameters(), candidate), create_graph=False)
 
         # Compute first-order gradients of objective
         objective_value, first_order_grad = self._compute_objective_and_first_order(candidate, gradients, gradient_data)

@@ -2,12 +2,12 @@
 import torch
 
 
-from .metrics import psnr_compute, registered_psnr_compute, image_identifiability_precision
+from .metrics import psnr_compute, registered_psnr_compute, image_identifiability_precision, cw_ssim
 
 
 def report(reconstructed_user_data, true_user_data, server_payload, model, dataloader=None,
            setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=True, compute_full_iip=False,
-           compute_rpsnr=True):
+           compute_rpsnr=True, compute_ssim=True):
     import lpips   # lazily import this only if report is used.
     lpips_scorer = lpips.LPIPS(net='alex').to(**setup)
 
@@ -42,6 +42,7 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
 
     test_mse = (rec_denormalized - ground_truth_denormalized).pow(2).mean().item()
     test_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1).item()
+    test_ssim = cw_ssim(rec_denormalized, ground_truth_denormalized, scales=5).item()
 
     # Hint: This part switches to the lpips [-1, 1] normalization:
     test_lpips = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True).mean().item()
@@ -87,10 +88,10 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     # Print report:
     iip_scoring = ' | '.join([f'IIP-{k}: {v:5.2%}' for k, v in iip_scores.items()])
     print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}|"
-          f" R-PSNR: {test_rpsnr:4.2f} | {iip_scoring} | Label Acc: {test_label_acc:2.2%}")
+          f" R-PSNR: {test_rpsnr:4.2f} | {iip_scoring} | SSIM: {test_ssim:2.4f} Label Acc: {test_label_acc:2.2%}")
 
 
-    metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse, lpips=test_lpips, rpsnr=test_rpsnr,
+    metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse, lpips=test_lpips, rpsnr=test_rpsnr, ssim=test_ssim,
                    order=order, **{f'IIP-{k}': v for k, v in iip_scores.items()}, parameters=parameters,
                    label_acc=test_label_acc)
     return metrics

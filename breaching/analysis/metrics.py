@@ -2,6 +2,51 @@
 import torch
 from functools import partial
 
+
+def cw_ssim(img_batch, ref_batch, scales=5, skip_scales=None, K=1e-6):
+    """Batched complex wavelet structural similarity.
+
+    As in Zhou Wang and Eero P. Simoncelli, "TRANSLATION INSENSITIVE IMAGE SIMILARITY IN COMPLEX WAVELET DOMAIN"
+    Ok, not quite, this implementation does not local SSIM and averaging over local patches and uses only
+    the existing wavelet structure to provide something similar.
+
+    skip_scales can be a list like [True, False, False, False] marking levels to be skipped.
+    K is a small fudge factor.
+    """
+    try:
+        from pytorch_wavelets import DTCWTForward
+    except ModuleNotFoundError:
+        raise ModuleNotFoundError('To utilize wavelet SSIM, install pytorch wavelets from ' +
+                                  'https://github.com/fbcotter/pytorch_wavelets')
+
+    # 1) Compute wavelets:
+    setup = dict(device=img_batch.device, dtype=img_batch.dtype)
+    if skip_scales is not None:
+        include_scale = [~s for s in skip_scales]
+        total_scales = scales - sum(skip_scales)
+    else:
+        include_scale = True
+        total_scales = scales
+    xfm = DTCWTForward(J=scales, biort='near_sym_b', qshift='qshift_b', include_scale=include_scale).to(**setup)
+    img_coefficients = xfm(img_batch)
+    ref_coefficients = xfm(ref_batch)
+
+    # 2) Multiscale complex SSIM:
+    ssim = 0
+    for xs, ys in zip(img_coefficients[1], ref_coefficients[1]):
+        if len(xs) > 0:
+            xc = torch.view_as_complex(xs)
+            yc = torch.view_as_complex(ys)
+
+            conj_product = (xc * yc.conj()).sum(dim=2).abs()
+            square_img = (xc * xc.conj()).abs().sum(dim=2)
+            square_ref = (yc * yc.conj()).abs().sum(dim=2)
+
+            ssim_val = (2 * conj_product + K) / (square_img + square_ref + K)
+            ssim += ssim_val.mean()
+    return ssim / total_scales
+
+
 def gradient_uniqueness(model, loss_fn, user_data, server_payload, setup, query=0, fudge=1e-7):
     """Count the number of gradient entries that are only affected by a single data point."""
 

@@ -19,7 +19,7 @@ optim:
   boxed: True
   max_iterations: 20_000
   step_size_decay: cosine-decay
-  langevin_noise: 0.2
+  langevin_noise: 0.001 # the paper has 0.2 but I have no idea how to scale this in a way that makes sense
   warmup: 50
 
   callback: 1000  # Print objective value every callback many iterations
@@ -34,5 +34,5 @@ regularization:
     pnorm: 2
   deep_inversion:  # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
     scale: 0.1
-  # group_regularization: # Not implemented. Unclear how this was done without accesss to the source code
+  # group_regularization: # Not implemented. Unclear to me how this was implemented without accesss to the source code
   #  scale: 0.01

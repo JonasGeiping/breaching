@@ -24,7 +24,7 @@ optim:
 
 regularization:
   total_variation:
-    scale: 0.2
+    scale: 0.1
     inner_exp: 2
     outer_exp: 0.5
     double_opponents: True
@@ -33,5 +33,3 @@ regularization:
     pnorm: 2
   deep_inversion:  # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
     scale: 0.001
-  # group_regularization: # Not implemented. Unclear how this was done without accesss to the source code
-  #  scale: 0.01

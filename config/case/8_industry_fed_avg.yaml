@@ -12,9 +12,4 @@ model: ResNet18
 # Server and user:
 num_queries: 1
 
-# User data:
-# user:
-#   num_data_points: 64
-
-
 examples_from_split: validation

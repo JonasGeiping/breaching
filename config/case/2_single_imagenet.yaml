@@ -7,7 +7,7 @@ defaults:
   - server: honest-but-curious
   - user: local_gradient
 loss: CrossEntropy
-model: ResNet50
+model: ResNet18
 
 # Server and user:
 num_queries: 1

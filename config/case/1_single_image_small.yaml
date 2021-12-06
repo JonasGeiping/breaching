@@ -9,6 +9,9 @@ defaults:
 loss: CrossEntropy
 model: ConvNet
 
+user:
+  provide_labels: True
+
 # Server and user:
 num_queries: 1
 

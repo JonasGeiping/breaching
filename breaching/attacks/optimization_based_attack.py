@@ -31,9 +31,12 @@ class OptimizationBasedAttack(_BaseAttacker):
         else:
             self.objective = objective_fn(**self.cfg.objective)
         self.regularizers = []
-        for key in self.cfg.regularization.keys():
-            if self.cfg.regularization[key].scale > 0:
-                self.regularizers += [regularizer_lookup[key](self.setup, **self.cfg.regularization[key])]
+        try:
+            for key in self.cfg.regularization.keys():
+                if self.cfg.regularization[key].scale > 0:
+                    self.regularizers += [regularizer_lookup[key](self.setup, **self.cfg.regularization[key])]
+        except AttributeError:
+            pass  # No regularizers selected.
 
     def __repr__(self):
         n = '\n'

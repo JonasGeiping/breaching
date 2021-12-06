@@ -15,8 +15,8 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
     ds = torch.as_tensor(server_payload['data'].std, **setup)[None, :, None, None]
     model.to(**setup)
 
-    rec_denormalized = torch.clamp(reconstructed_user_data['data'] * ds + dm, 0, 1)
-    ground_truth_denormalized = torch.clamp(true_user_data['data'] * ds + dm, 0, 1)
+    rec_denormalized = torch.clamp(reconstructed_user_data['data'].to(**setup) * ds + dm, 0, 1)
+    ground_truth_denormalized = torch.clamp(true_user_data['data'].to(**setup) * ds + dm, 0, 1)
 
     if order_batch:
         order = compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalized, setup)

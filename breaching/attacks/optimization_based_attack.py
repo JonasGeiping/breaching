@@ -16,6 +16,10 @@ from .auxiliaries.regularizers import regularizer_lookup, TotalVariation
 from .auxiliaries.objectives import Euclidean, CosineSimilarity, objective_lookup
 
 
+import logging
+log = logging.getLogger(__name__)
+
+
 class OptimizationBasedAttack(_BaseAttacker):
     """Implements a wide spectrum of optimization-based attacks."""
 
@@ -30,7 +34,6 @@ class OptimizationBasedAttack(_BaseAttacker):
         for key in self.cfg.regularization.keys():
             if self.cfg.regularization[key].scale > 0:
                 self.regularizers += [regularizer_lookup[key](self.setup, **self.cfg.regularization[key])]
-
 
     def __repr__(self):
         n = '\n'
@@ -96,12 +99,12 @@ class OptimizationBasedAttack(_BaseAttacker):
 
                 if iteration + 1 == self.cfg.optim.max_iterations or iteration % self.cfg.optim.callback == 0:
                     timestamp = time.time()
-                    print(f'| It: {iteration + 1} | Rec. loss: {objective_value.item():2.4f} | '
-                          f' Task loss: {task_loss.item():2.4f} | T: {timestamp - current_wallclock:4.2f}s')
+                    log.info(f'| It: {iteration + 1} | Rec. loss: {objective_value.item():2.4f} | '
+                             f' Task loss: {task_loss.item():2.4f} | T: {timestamp - current_wallclock:4.2f}s')
                     current_wallclock = timestamp
 
                 if not torch.isfinite(objective_value):
-                    print(f'Recovery loss is non-finite in iteration {iteration}. Cancelling reconstruction!')
+                    log.info(f'Recovery loss is non-finite in iteration {iteration}. Cancelling reconstruction!')
                     break
 
                 stats[f'Trial_{trial}_Val'].append(objective_value.item())
@@ -137,7 +140,6 @@ class OptimizationBasedAttack(_BaseAttacker):
             return total_objective
         return closure
 
-
     def _score_trial(self, candidate, labels, rec_model, shared_data):
         """Score candidate solutions based on some criterion."""
 
@@ -161,8 +163,8 @@ class OptimizationBasedAttack(_BaseAttacker):
         optimal_solution = candidate_solutions[optimal_index]
         stats['opt_value'] = optimal_val.item()
         if optimal_val.isfinite():
-            print(f'Optimal condidate solution with rec. loss {optimal_val.item():2.4f} selected.')
+            log.info(f'Optimal condidate solution with rec. loss {optimal_val.item():2.4f} selected.')
             return optimal_solution
         else:
-            print('No valid reconstruction could be found.')
+            log.info('No valid reconstruction could be found.')
             return torch.zeros_like(optimal_solution)

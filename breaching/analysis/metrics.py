@@ -16,8 +16,7 @@ def cw_ssim(img_batch, ref_batch, scales=5, skip_scales=None, K=1e-6):
     try:
         from pytorch_wavelets import DTCWTForward
     except ModuleNotFoundError:
-        raise ModuleNotFoundError('To utilize wavelet SSIM, install pytorch wavelets from ' +
-                                  'https://github.com/fbcotter/pytorch_wavelets')
+        raise ModuleNotFoundError('To utilize wavelet SSIM, install pytorch wavelets from https://github.com/fbcotter/pytorch_wavelets.')
 
     # 1) Compute wavelets:
     setup = dict(device=img_batch.device, dtype=img_batch.dtype)

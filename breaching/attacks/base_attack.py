@@ -9,6 +9,9 @@ import copy
 from ..common import optimizer_lookup
 
 
+import logging
+log = logging.getLogger(__name__)
+
 class _BaseAttacker():
     """This is a template class for an attack."""
 
@@ -301,5 +304,5 @@ class _BaseAttacker():
 
         # Always sort, order does not matter here:
         labels = labels.sort()[0]
-        print(f'Recovered labels {labels.tolist()} through strategy {self.cfg.label_strategy}.')
+        log.info(f'Recovered labels {labels.tolist()} through strategy {self.cfg.label_strategy}.')
         return labels

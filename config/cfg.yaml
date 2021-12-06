@@ -12,12 +12,12 @@ defaults:
 
 hydra:
   sweep:
-    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M}/${name}
   run:
-    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M}/${name}
 
 seed: # Optional: Set initial seed
-name: # A name for this run [will be used for the summary table]
+name: default # A name for this run [will be used for the summary table]
 
 
 # debug implementation by running every loop just once.

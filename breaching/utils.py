@@ -74,7 +74,7 @@ def initialize_multiprocess_log(cfg):
         cfg.original_cwd = hydra.utils.get_original_cwd()
 
 
-def save_summary(cfg, metrics, stats, local_time):
+def save_summary(cfg, metrics, stats, local_time, original_cwd=True, table_name='breach'):
     """Save two summary tables. A detailed table of iterations/loss+acc and a summary of the end results."""
     # 1) detailed table:
     for step in range(len(stats['train_loss'])):
@@ -112,8 +112,9 @@ def save_summary(cfg, metrics, stats, local_time):
                    **{f'ATK_{k}': v for k, v in cfg.attack.items()},
                    **{k: v for k, v in cfg.case.items() if k not in ['name', 'model']},
                    folder=local_folder)
-    save_to_table(os.path.join(cfg.original_cwd, 'tables'),
-                  f'breach_{cfg.case.name}_{cfg.case.data.name}_reports', dryrun=cfg.dryrun, **summary)
+
+    location = os.path.join(cfg.original_cwd, 'tables') if original_cwd else 'tables'
+    save_to_table(location, f'{table_name}_{cfg.case.name}_{cfg.case.data.name}_reports', dryrun=cfg.dryrun, **summary)
 
 
 def save_to_table(out_dir, table_name, dryrun, **kwargs):
@@ -170,3 +171,16 @@ def set_deterministic():
     torch.backends.cudnn.benchmark = False
     torch.use_deterministic_algorithms(True)
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
+
+def avg_n_dicts(dicts):
+    """https://github.com/wronnyhuang/metapoison/blob/master/utils.py."""
+    # given a list of dicts with the same exact schema, return a single dict with same schema whose values are the
+    # key-wise average over all input dicts
+    means = {}
+    for dic in dicts:
+        for key in dic:
+            if key not in means:
+                means[key] = 0
+            means[key] += dic[key] / len(dicts)
+    return means

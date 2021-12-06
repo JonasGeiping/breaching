@@ -10,6 +10,8 @@ from .models import construct_model
 
 from .users import UserSingleStep, UserMultiStep, MultiUserAggregate
 from .servers import HonestServer, MaliciousModelServer, MaliciousParameterServer, PathParameterServer, StackParameterServer
+import logging
+log = logging.getLogger(__name__)
 
 
 def construct_case(cfg_case, setup, dryrun=False):
@@ -41,9 +43,9 @@ def construct_case(cfg_case, setup, dryrun=False):
     model = server.prepare_model()
     num_params, num_buffers = sum([p.numel() for p in model.parameters()]), sum([b.numel() for b in model.buffers()])
     target_information = cfg_case.user.num_data_points * torch.as_tensor(cfg_case.data.shape).prod()
-    print(f'Model architecture {cfg_case.model} loaded with {num_params:,} parameters and {num_buffers:,} buffers.')
-    print(f'Overall this is a data ratio of {cfg_case.num_queries * num_params / target_information:7.0f}:1 '
-          f'for target shape {[cfg_case.user.num_data_points, *cfg_case.data.shape]} given that num_queries={cfg_case.num_queries}.')
+    log.info(f'Model architecture {cfg_case.model} loaded with {num_params:,} parameters and {num_buffers:,} buffers.')
+    log.info(f'Overall this is a data ratio of {cfg_case.num_queries * num_params / target_information:7.0f}:1 '
+             f'for target shape {[cfg_case.user.num_data_points, *cfg_case.data.shape]} given that num_queries={cfg_case.num_queries}.')
 
     if cfg_case.user.user_type == 'local_gradient':
         # The user will deepcopy this model to have their own

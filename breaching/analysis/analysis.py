@@ -5,11 +5,14 @@ import torch
 from .metrics import psnr_compute, registered_psnr_compute, image_identifiability_precision, cw_ssim
 
 
+import logging
+log = logging.getLogger(__name__)
+
 def report(reconstructed_user_data, true_user_data, server_payload, model, dataloader=None,
            setup=dict(device=torch.device('cpu'), dtype=torch.float), order_batch=True, compute_full_iip=False,
            compute_rpsnr=True, compute_ssim=True):
     import lpips   # lazily import this only if report is used.
-    lpips_scorer = lpips.LPIPS(net='alex').to(**setup)
+    lpips_scorer = lpips.LPIPS(net='alex', verbose=False).to(**setup)
 
     dm = torch.as_tensor(server_payload['data'].mean, **setup)[None, :, None, None]
     ds = torch.as_tensor(server_payload['data'].std, **setup)[None, :, None, None]
@@ -35,7 +38,7 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
                 found_labels += 1
                 label_pool.remove(label)
 
-        print(f'Label recovery was sucessfull in {found_labels} cases.')
+        log.info(f'Label recovery was sucessfull in {found_labels} cases.')
         test_label_acc = found_labels / len(true_user_data['labels'])
     else:
         test_label_acc = 1
@@ -87,8 +90,9 @@ def report(reconstructed_user_data, true_user_data, server_payload, model, datal
 
     # Print report:
     iip_scoring = ' | '.join([f'IIP-{k}: {v:5.2%}' for k, v in iip_scores.items()])
-    print(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}|"
-          f" R-PSNR: {test_rpsnr:4.2f} | {iip_scoring} | SSIM: {test_ssim:2.4f} Label Acc: {test_label_acc:2.2%}")
+    log.info(f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}|"
+             + '\n'
+             f" R-PSNR: {test_rpsnr:4.2f} | {iip_scoring} | SSIM: {test_ssim:2.4f} | Label Acc: {test_label_acc:2.2%}")
 
 
     metrics = dict(mse=test_mse, psnr=test_psnr, feat_mse=feat_mse, lpips=test_lpips, rpsnr=test_rpsnr, ssim=test_ssim,

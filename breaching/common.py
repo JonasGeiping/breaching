@@ -5,34 +5,31 @@ import torch
 
 
 def optimizer_lookup(params, optim_name, step_size, scheduler=None, warmup=0, max_iterations=10_000):
-    if optim_name.lower() == 'adam':
+    if optim_name.lower() == "adam":
         optimizer = torch.optim.Adam(params, lr=step_size)
-    elif optim_name.lower() == 'momgd':
+    elif optim_name.lower() == "momgd":
         optimizer = torch.optim.SGD(params, lr=step_size, momentum=0.9, nesterov=True)
-    elif optim_name.lower() == 'gd':
+    elif optim_name.lower() == "gd":
         optimizer = torch.optim.SGD(params, lr=step_size, momentum=0.0)
-    elif optim_name.lower() == 'l-bfgs':
+    elif optim_name.lower() == "l-bfgs":
         optimizer = torch.optim.LBFGS(params, lr=step_size)
     else:
-        raise ValueError(f'Invalid optimizer {optim_name} given.')
+        raise ValueError(f"Invalid optimizer {optim_name} given.")
 
-    if scheduler == 'step-lr':
+    if scheduler == "step-lr":
 
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                         milestones=[max_iterations // 2.667, max_iterations // 1.6,
-                                                                     max_iterations // 1.142], gamma=0.1)
-    elif scheduler == 'cosine-decay':
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer, milestones=[max_iterations // 2.667, max_iterations // 1.6, max_iterations // 1.142], gamma=0.1
+        )
+    elif scheduler == "cosine-decay":
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, max_iterations, eta_min=0.0)
     else:
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[], gamma=1)
 
     if warmup > 0:
-        scheduler = GradualWarmupScheduler(optimizer, multiplier=1.0,
-                                           total_epoch=warmup, after_scheduler=scheduler)
+        scheduler = GradualWarmupScheduler(optimizer, multiplier=1.0, total_epoch=warmup, after_scheduler=scheduler)
 
     return optimizer, scheduler
-
-
 
 
 """The following code block is part of https://github.com/ildoonet/pytorch-gradual-warmup-lr.
@@ -67,7 +64,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 class GradualWarmupScheduler(_LRScheduler):
-    """ Gradually warm-up(increasing) learning rate in optimizer.
+    """Gradually warm-up(increasing) learning rate in optimizer.
     Proposed in 'Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour'.
     Args:
         optimizer (Optimizer): Wrapped optimizer.
@@ -78,8 +75,8 @@ class GradualWarmupScheduler(_LRScheduler):
 
     def __init__(self, optimizer, multiplier, total_epoch, after_scheduler=None):
         self.multiplier = multiplier
-        if self.multiplier < 1.:
-            raise ValueError('multiplier should be greater thant or equal to 1.')
+        if self.multiplier < 1.0:
+            raise ValueError("multiplier should be greater thant or equal to 1.")
         self.total_epoch = total_epoch
         self.after_scheduler = after_scheduler
         self.finished = False
@@ -97,16 +94,24 @@ class GradualWarmupScheduler(_LRScheduler):
         if self.multiplier == 1.0:
             return [base_lr * (float(self.last_epoch) / self.total_epoch) for base_lr in self.base_lrs]
         else:
-            return [base_lr * ((self.multiplier - 1.) * self.last_epoch / self.total_epoch + 1.) for base_lr in self.base_lrs]
+            return [
+                base_lr * ((self.multiplier - 1.0) * self.last_epoch / self.total_epoch + 1.0)
+                for base_lr in self.base_lrs
+            ]
 
     def step_ReduceLROnPlateau(self, metrics, epoch=None):
         if epoch is None:
             epoch = self.last_epoch + 1
-        self.last_epoch = epoch if epoch != 0 else 1  # ReduceLROnPlateau is called at the end of epoch, whereas others are called at beginning
+        self.last_epoch = (
+            epoch if epoch != 0 else 1
+        )  # ReduceLROnPlateau is called at the end of epoch, whereas others are called at beginning
         if self.last_epoch <= self.total_epoch:
-            warmup_lr = [base_lr * ((self.multiplier - 1.) * self.last_epoch / self.total_epoch + 1.) for base_lr in self.base_lrs]
+            warmup_lr = [
+                base_lr * ((self.multiplier - 1.0) * self.last_epoch / self.total_epoch + 1.0)
+                for base_lr in self.base_lrs
+            ]
             for param_group, lr in zip(self.optimizer.param_groups, warmup_lr):
-                param_group['lr'] = lr
+                param_group["lr"] = lr
         else:
             if epoch is None:
                 self.after_scheduler.step(metrics, None)
@@ -126,15 +131,16 @@ class GradualWarmupScheduler(_LRScheduler):
         else:
             self.step_ReduceLROnPlateau(metrics, epoch)
 
-
     def state_dict(self):
         """Returns the state of the scheduler as a :class:`dict`.
         It contains an entry for every variable in self.__dict__ which
         is not the optimizer.
         """
-        after_scheduler_dict = {key: value for key, value in self.after_scheduler.__dict__.items() if key != 'optimizer'}
-        state_dict = {key: value for key, value in self.__dict__.items() if key != 'optimizer'}
-        state_dict['after_scheduler'] = after_scheduler_dict
+        after_scheduler_dict = {
+            key: value for key, value in self.after_scheduler.__dict__.items() if key != "optimizer"
+        }
+        state_dict = {key: value for key, value in self.__dict__.items() if key != "optimizer"}
+        state_dict["after_scheduler"] = after_scheduler_dict
         return state_dict
 
     def load_state_dict(self, state_dict):
@@ -143,6 +149,6 @@ class GradualWarmupScheduler(_LRScheduler):
             state_dict (dict): scheduler state. Should be an object returned
                 from a call to :meth:`state_dict`.
         """
-        after_scheduler_dict = state_dict.pop('after_scheduler')
+        after_scheduler_dict = state_dict.pop("after_scheduler")
         self.after_scheduler.__dict__.update(after_scheduler_dict)
         self.__dict__.update(state_dict)

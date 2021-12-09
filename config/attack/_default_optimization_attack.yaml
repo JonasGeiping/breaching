@@ -1,7 +1,7 @@
 type: default
 
-attack_type: optimization   # analytic, equation solver
-label_strategy: bias-corrected  # Only in effect if the user does not provide labels
+attack_type: optimization # analytic, equation solver
+label_strategy: bias-corrected # Only in effect if the user does not provide labels
 # Label strategy options are 'iDLG', 'analytic', 'yin', 'wainakh-simple', 'wainakh-whitebox', 'random', 'exhaustive'
 
 objective:
@@ -26,7 +26,7 @@ optim:
   langevin_noise: 0.0
   warmup: 0
 
-  callback: 100  # Print objective value every callback many iterations
+  callback: 100 # Print objective value every callback many iterations
 
 regularization:
 

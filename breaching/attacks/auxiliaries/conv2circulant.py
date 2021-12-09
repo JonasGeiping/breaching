@@ -23,8 +23,9 @@ def generate_coordinates(x_shape, kernel, stride, padding):
             circulant_unit = []
             for row in range(len(rows)):
                 for col in range(len(cols)):
-                    circulant_unit.append([f * y_i * y_j + row * y_j + col, c *
-                                           x_i * x_j + rows[row] * x_j + cols[col]])
+                    circulant_unit.append(
+                        [f * y_i * y_j + row * y_j + col, c * x_i * x_j + rows[row] * x_j + cols[col]]
+                    )
             circulant_row.append(circulant_unit)
         circulant_w.append(circulant_row)
     return np.array(circulant_w), x_shape[1] * x_i * x_j, kernel.shape[0] * y_i * y_j

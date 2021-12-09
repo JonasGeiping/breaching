@@ -1,4 +1,3 @@
-
 name: CIFAR10
 path: "~/data"
 size: 50_000

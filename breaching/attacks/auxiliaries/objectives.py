@@ -52,18 +52,18 @@ class GradientLoss(torch.nn.Module):
         initial_params = [p.clone() for p in params]
 
         seen_data_idx = 0
-        for i in range(self.local_hyperparams['steps']):
-            data = candidate[seen_data_idx: seen_data_idx + self.local_hyperparams['data_per_step']]
-            seen_data_idx += self.local_hyperparams['data_per_step']
+        for i in range(self.local_hyperparams["steps"]):
+            data = candidate[seen_data_idx : seen_data_idx + self.local_hyperparams["data_per_step"]]
+            seen_data_idx += self.local_hyperparams["data_per_step"]
             seen_data_idx = seen_data_idx % candidate.shape[0]
-            labels = self.local_hyperparams['labels'][i]
+            labels = self.local_hyperparams["labels"][i]
             with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
                 task_loss = self.loss_fn(func_model(params, buffers, data), labels)
 
             step_gradient = torch.autograd.grad(task_loss, params, create_graph=True)
 
             # Update parameters in graph:
-            params = [param - self.local_hyperparams['lr'] * grad for param, grad in zip(params, step_gradient)]
+            params = [param - self.local_hyperparams["lr"] * grad for param, grad in zip(params, step_gradient)]
 
         # Finally return differentiable difference in state:
         gradient = [p_local - p_server for p_local, p_server in zip(params, initial_params)]
@@ -89,7 +89,9 @@ class Euclidean(GradientLoss):
     @staticmethod
     @torch.jit.script
     def _euclidean(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        objective = gradient_rec[0].new_zeros(1,)
+        objective = gradient_rec[0].new_zeros(
+            1,
+        )
         for rec, data in zip(gradient_rec, gradient_data):
             objective += (rec - data).pow(2).sum()
         return 0.5 * objective
@@ -114,7 +116,9 @@ class L1Loss(GradientLoss):
     @staticmethod
     @torch.jit.script
     def _l1loss(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        objective = gradient_rec[0].new_zeros(1,)
+        objective = gradient_rec[0].new_zeros(
+            1,
+        )
         for rec, data in zip(gradient_rec, gradient_data):
             objective += (rec - data).abs().sum()
         return 0.5 * objective
@@ -139,9 +143,15 @@ class CosineSimilarity(GradientLoss):
     @staticmethod
     @torch.jit.script
     def _cosine_sim(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        scalar_product = gradient_rec[0].new_zeros(1,)
-        rec_norm = gradient_rec[0].new_zeros(1,)
-        data_norm = gradient_rec[0].new_zeros(1,)
+        scalar_product = gradient_rec[0].new_zeros(
+            1,
+        )
+        rec_norm = gradient_rec[0].new_zeros(
+            1,
+        )
+        data_norm = gradient_rec[0].new_zeros(
+            1,
+        )
 
         for rec, data in zip(gradient_rec, gradient_data):
             scalar_product += (rec * data).sum()
@@ -212,12 +222,18 @@ class FastCosineSimilarity(GradientLoss):
     def gradient_based_loss(self, gradient_rec, gradient_data):
         return self._cosine_sim(gradient_rec, gradient_data) * self.scale
 
-    @ staticmethod
-    @ torch.jit.script
+    @staticmethod
+    @torch.jit.script
     def _cosine_sim(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        scalar_product = gradient_rec[0].new_zeros(1,)
-        rec_norm = gradient_rec[0].new_zeros(1,)
-        data_norm = gradient_rec[0].new_zeros(1,)
+        scalar_product = gradient_rec[0].new_zeros(
+            1,
+        )
+        rec_norm = gradient_rec[0].new_zeros(
+            1,
+        )
+        data_norm = gradient_rec[0].new_zeros(
+            1,
+        )
 
         for rec, data in zip(gradient_rec, gradient_data):
             scalar_product += (rec * data).sum()
@@ -235,8 +251,16 @@ class FastCosineSimilarity(GradientLoss):
 class PearlmutterEuclidean(torch.nn.Module):
     """Use a first-order approximation of \nabla_x \nabla_g instead of the correct autograd value."""
 
-    def __init__(self, scale=1.0, eps=1e-3, level_gradients=False, fudge_factor=1e-6, task_regularization=0.0,
-                 implementation='forward', **kwargs):
+    def __init__(
+        self,
+        scale=1.0,
+        eps=1e-3,
+        level_gradients=False,
+        fudge_factor=1e-6,
+        task_regularization=0.0,
+        implementation="forward",
+        **kwargs,
+    ):
         super().__init__()
         self.scale = scale
         self.task_regularization = task_regularization
@@ -250,24 +274,26 @@ class PearlmutterEuclidean(torch.nn.Module):
         self.loss_fn = loss_fn
         self.local_hyperparams = local_hyperparams
         if self.local_hyperparams is not None:
-            raise ValueError('This loss is only implemented for local gradients so far.')
+            raise ValueError("This loss is only implemented for local gradients so far.")
 
         self.cfg_impl = cfg_impl
-        if self.implementation == 'forward':
+        if self.implementation == "forward":
             self._forward_impl = self._forward_differences
-        elif self.implementation == 'backward':
+        elif self.implementation == "backward":
             self._forward_impl = self._backward_differences
-        elif self.implementation == 'central':
+        elif self.implementation == "central":
             self._forward_impl = self._central_differences
-        elif self.implementation == 'upwind':
+        elif self.implementation == "upwind":
             self._forward_impl = self._upwind_differences
         else:
-            raise ValueError(f'Invalid finite difference implementation {self.implementation} given.')
+            raise ValueError(f"Invalid finite difference implementation {self.implementation} given.")
 
     def __repr__(self):
-        return (f"Pearlmutter-type Finite Differences Loss with scale={self.scale} and task reg={self.task_regularization}."
-                f"Finite Difference Eps: {self.eps}. Level gradients: {self.level_gradients}. "
-                f"{f'Fudge-factor: {self.fudge_factor}' if self.level_gradients else ''}")
+        return (
+            f"Pearlmutter-type Finite Differences Loss with scale={self.scale} and task reg={self.task_regularization}."
+            f"Finite Difference Eps: {self.eps}. Level gradients: {self.level_gradients}. "
+            f"{f'Fudge-factor: {self.fudge_factor}' if self.level_gradients else ''}"
+        )
 
     def forward(self, model, gradient_data, candidate, labels):
         """Run through model twice to approximate 2nd-order derivative on residual."""
@@ -301,7 +327,7 @@ class PearlmutterEuclidean(torch.nn.Module):
         torch._foreach_add_(list(model.parameters()), first_order_grad, alpha=eps_n)
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             offset_task_loss = self.loss_fn(model(candidate), labels)
-        dLv_dx, = torch.autograd.grad(offset_task_loss, (candidate,), create_graph=False)
+        (dLv_dx,) = torch.autograd.grad(offset_task_loss, (candidate,), create_graph=False)
 
         # Compute finite difference approximation
         candidate.grad += (dLv_dx - dLdx) / eps_n * self.scale
@@ -329,7 +355,7 @@ class PearlmutterEuclidean(torch.nn.Module):
         torch._foreach_sub_(list(model.parameters()), first_order_grad, alpha=eps_n)
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             offset_task_loss = self.loss_fn(model(candidate), labels)
-        dLv_dx, = torch.autograd.grad(offset_task_loss, (candidate,), create_graph=False)
+        (dLv_dx,) = torch.autograd.grad(offset_task_loss, (candidate,), create_graph=False)
 
         # Compute finite difference approximation
         candidate.grad += (dLdx - dLv_dx) / eps_n * self.scale
@@ -354,12 +380,12 @@ class PearlmutterEuclidean(torch.nn.Module):
         torch._foreach_add_(list(model.parameters()), first_order_grad, alpha=0.5 * eps_n)
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             offset_plus = self.loss_fn(model(candidate), labels)
-        dLvp_dx, = torch.autograd.grad(offset_plus, (candidate,), create_graph=False)
+        (dLvp_dx,) = torch.autograd.grad(offset_plus, (candidate,), create_graph=False)
 
         torch._foreach_sub_(list(model.parameters()), first_order_grad, alpha=eps_n)
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             offset_minus = self.loss_fn(model(candidate), labels)
-        dLvm_dx, = torch.autograd.grad(offset_minus, (candidate,), create_graph=False)
+        (dLvm_dx,) = torch.autograd.grad(offset_minus, (candidate,), create_graph=False)
 
         # Compute finite difference approximation
         candidate.grad += (dLvp_dx - dLvm_dx) / eps_n * self.scale
@@ -384,12 +410,12 @@ class PearlmutterEuclidean(torch.nn.Module):
         torch._foreach_add_(list(model.parameters()), first_order_grad, alpha=0.5 * eps_n)
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             offset_plus = self.loss_fn(model(candidate), labels)
-        dLvp_dx, = torch.autograd.grad(offset_plus, (candidate,), create_graph=False)
+        (dLvp_dx,) = torch.autograd.grad(offset_plus, (candidate,), create_graph=False)
 
         torch._foreach_sub_(list(model.parameters()), first_order_grad, alpha=eps_n)
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             offset_minus = self.loss_fn(model(candidate), labels)
-        dLvm_dx, = torch.autograd.grad(offset_minus, (candidate,), create_graph=False)
+        (dLvm_dx,) = torch.autograd.grad(offset_minus, (candidate,), create_graph=False)
 
         # Compute both finite differences
         Dp = (dLvp_dx - dLdx) / eps_n
@@ -440,12 +466,13 @@ class PearlmutterCosine(PearlmutterEuclidean):
         return scalar_product, rec_norm.sqrt(), data_norm.sqrt()
 
 
-objective_lookup = {'euclidean': Euclidean,
-                    'cosine-similarity': CosineSimilarity,
-                    'masked-cosine-similarity': MaskedCosineSimilarity,
-                    'fast-cosine-similarity': FastCosineSimilarity,
-                    'angular': AngularSimilarity,
-                    'l1': L1Loss,
-                    'pearlmutter-loss': PearlmutterEuclidean,
-                    'pearlmutter-cosine': PearlmutterCosine,
-                    }
+objective_lookup = {
+    "euclidean": Euclidean,
+    "cosine-similarity": CosineSimilarity,
+    "masked-cosine-similarity": MaskedCosineSimilarity,
+    "fast-cosine-similarity": FastCosineSimilarity,
+    "angular": AngularSimilarity,
+    "l1": L1Loss,
+    "pearlmutter-loss": PearlmutterEuclidean,
+    "pearlmutter-cosine": PearlmutterCosine,
+}

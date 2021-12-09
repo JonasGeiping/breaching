@@ -26,36 +26,44 @@ SOFTWARE.
 """
 
 
-
-'''VGG11/13/16/19 in Pytorch.'''
+"""VGG11/13/16/19 in Pytorch."""
 import torch
 import torch.nn as nn
 
 from .utils import get_layer_functions
 
 
-
 cfg = {
-    'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'VGG13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'VGG16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
+    "VGG11": [64, "M", 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"],
+    "VGG13": [64, 64, "M", 128, 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"],
+    "VGG16": [64, 64, "M", 128, 128, "M", 256, 256, 256, "M", 512, 512, 512, "M", 512, 512, 512, "M"],
     # 'VGG16-TI': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M', 'M'],
-    'VGG19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
+    "VGG19": [64, 64, "M", 128, 128, "M", 256, 256, 256, 256, "M", 512, 512, 512, 512, "M", 512, 512, 512, 512, "M"],
 }
 
 
 class VGG(nn.Module):
-    def __init__(self, vgg_name, in_channels=3, num_classes=10, norm='BatchNorm2d', nonlin='ReLU', stem='CIFAR',
-                 convolution_type='Standard', head='CIFAR', drop_rate=0.0, classical_weight_init=False):
+    def __init__(
+        self,
+        vgg_name,
+        in_channels=3,
+        num_classes=10,
+        norm="BatchNorm2d",
+        nonlin="ReLU",
+        stem="CIFAR",
+        convolution_type="Standard",
+        head="CIFAR",
+        drop_rate=0.0,
+        classical_weight_init=False,
+    ):
         super().__init__()
         self._conv_layer, self._norm_layer, self._nonlin_layer = get_layer_functions(convolution_type, norm, nonlin)
         self.features = self._make_layers(cfg[vgg_name], in_channels)
 
-        if head == 'CIFAR':
+        if head == "CIFAR":
             self.classifier = nn.Linear(512, num_classes)
-        elif head == 'TinyImageNet':
-            self.classifier = torch.nn.Sequential(nn.AdaptiveAvgPool2d((1, 1)),
-                                                  nn.Linear(512, num_classes))
+        elif head == "TinyImageNet":
+            self.classifier = torch.nn.Sequential(nn.AdaptiveAvgPool2d((1, 1)), nn.Linear(512, num_classes))
         else:
             self.classifier = nn.Sequential(
                 nn.AdaptiveAvgPool2d((7, 7)),
@@ -65,7 +73,8 @@ class VGG(nn.Module):
                 nn.Linear(4096, 4096),
                 nn.ReLU(True),
                 nn.Dropout(drop_rate),
-                nn.Linear(4096, num_classes))
+                nn.Linear(4096, num_classes),
+            )
 
         if classical_weight_init:
             self._initialize_weights()
@@ -79,12 +88,14 @@ class VGG(nn.Module):
     def _make_layers(self, cfg, in_channels):
         layers = []
         for x in cfg:
-            if x == 'M':
+            if x == "M":
                 layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
             else:
-                layers += [self._conv_layer(in_channels, x, kernel_size=3, padding=1),
-                           self._norm_layer(x),
-                           self._nonlin_layer()]
+                layers += [
+                    self._conv_layer(in_channels, x, kernel_size=3, padding=1),
+                    self._norm_layer(x),
+                    self._nonlin_layer(),
+                ]
                 in_channels = x
         layers += [nn.AvgPool2d(kernel_size=1, stride=1)]
         return nn.Sequential(*layers)
@@ -92,7 +103,7 @@ class VGG(nn.Module):
     def _initialize_weights(self) -> None:
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.BatchNorm2d):
@@ -104,9 +115,10 @@ class VGG(nn.Module):
 
 
 def test():
-    net = VGG('VGG11')
+    net = VGG("VGG11")
     x = torch.randn(2, 3, 32, 32)
     y = net(x)
     print(y.size())
+
 
 # test()

@@ -5,6 +5,7 @@ import torch.nn.functional as F
 
 from .nearest_embed import NearestEmbed
 
+
 class AE(torch.nn.Module):
     """Basic deterministic auto-encoder."""
 
@@ -52,7 +53,7 @@ class VAE(torch.nn.Module):
         """Based on https://github.com/nadavbh12/VQ-VAE/blob/master/vq_vae/auto_encoder.py#L93.
         Compare BCE on unnormalized images."""
         B = x.shape[0]
-        bce = F.binary_cross_entropy(recon_x * data_std + data_mean, x * data_std + data_mean, reduction='sum')
+        bce = F.binary_cross_entropy(recon_x * data_std + data_mean, x * data_std + data_mean, reduction="sum")
 
         # see Appendix B from VAE paper:
         # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
@@ -86,7 +87,7 @@ class VQ_VAE(torch.nn.Module):
 
     def loss(self, x, recon_x, z_e, emb, data_mean=0.0, data_std=1.0):
         B = x.shape[0]
-        bce_loss = F.binary_cross_entropy(recon_x * data_std + data_mean, x * data_std + data_mean, reduction='sum')
+        bce_loss = F.binary_cross_entropy(recon_x * data_std + data_mean, x * data_std + data_mean, reduction="sum")
         vq_loss = F.mse_loss(emb, z_e.detach())
         mse_loss = F.mse_loss(z_e, emb.detach())
 
@@ -118,28 +119,28 @@ class VQ_CVAE(torch.nn.Module):
     def loss(self, x, recon_x, z_e, emb, argmin, data_mean=0.0, data_std=1.0):
         mse = F.mse_loss(recon_x + data_std, x * data_std)
 
-        vq_loss = torch.mean(torch.norm((emb - z_e.detach())**2, 2, 1))
-        commit_loss = torch.mean(torch.norm((emb.detach() - z_e)**2, 2, 1))
+        vq_loss = torch.mean(torch.norm((emb - z_e.detach()) ** 2, 2, 1))
+        commit_loss = torch.mean(torch.norm((emb.detach() - z_e) ** 2, 2, 1))
         return mse + self.vq_coef * vq_loss + self.commit_coef * commit_loss
 
 
-def train_encoder_decoder(encoder, decoder, dataloader, setup, arch='AE'):
+def train_encoder_decoder(encoder, decoder, dataloader, setup, arch="AE"):
     """Train a VAE."""
     epochs = 250
     lr = 1e-2
     data_mean = torch.as_tensor(dataloader.dataset.mean, **setup)[None, :, None, None]
     data_std = torch.as_tensor(dataloader.dataset.std, **setup)[None, :, None, None]
 
-    if arch == 'AE':
+    if arch == "AE":
         model = AE(encoder, decoder)
-    elif arch == 'VAE':
+    elif arch == "VAE":
         model = VAE(encoder, decoder, kl_coef=1.0)
-    elif arch == 'VQ_VAE':
+    elif arch == "VQ_VAE":
         model = VQ_VAE(encoder, decoder)
-    elif arch == 'VQ_CVAE':
+    elif arch == "VQ_CVAE":
         model = VQ_CVAE(encoder, decoder)
     else:
-        raise ValueError('Invalid model.')
+        raise ValueError("Invalid model.")
     model.to(**setup)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
@@ -161,17 +162,18 @@ def train_encoder_decoder(encoder, decoder, dataloader, setup, arch='AE'):
                 epoch_loss += loss.detach()
                 epoch_mse += F.mse_loss(data, reconstructed_data)
                 optimizer.step()
-        
-        print(f'Epoch {epoch}_{idx}: Avg. Loss: {epoch_loss / (idx + 1)}. Avg. MSE: {epoch_mse / (idx + 1)}')
+
+        print(f"Epoch {epoch}_{idx}: Avg. Loss: {epoch_loss / (idx + 1)}. Avg. MSE: {epoch_mse / (idx + 1)}")
         # print(f'Epoch {epoch}: Avg. Loss: {epoch_loss / (idx + 1)}. Avg. MSE: {epoch_mse / (idx + 1)}. Avg. Test: {epoch_test / (idx + 1)}')
     model.eval()
+
 
 def status_message(optimizer, stats, step):
     """A basic console printout."""
     current_lr = f'{optimizer.param_groups[0]["lr"]:.4f}'
 
     def _maybe_print(key):
-        return stats[key][-1] if len(stats[key]) > 0 else float('NaN')
+        return stats[key][-1] if len(stats[key]) > 0 else float("NaN")
 
     msg = f'Step: {step:<4}| lr: {current_lr} | Time: {stats["train_time"][-1]:4.2f}s |'
     msg += f'TRAIN loss {stats["train_loss"][-1]:7.4f} | TRAIN Acc: {stats["train_acc"][-1]:7.2%} |'

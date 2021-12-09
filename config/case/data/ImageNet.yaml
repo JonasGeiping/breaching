@@ -1,4 +1,3 @@
-
 name: ImageNet
 path: "~/data/imagenet"
 size: 1_281_167

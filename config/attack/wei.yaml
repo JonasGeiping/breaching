@@ -10,7 +10,6 @@ objective:
   scale: 1.0
   task_regularization: 1.0 # The original paper minimizes task loss in L² space. This is in CrossEntropy
 
-
 init: patterned-16
 
 optim:

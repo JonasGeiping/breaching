@@ -7,4 +7,4 @@ Usecases:
 
 from .VAE import train_encoder_decoder
 
-__all__ = ['train_encoder_decoder']
+__all__ = ["train_encoder_decoder"]

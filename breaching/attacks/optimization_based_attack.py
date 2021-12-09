@@ -75,7 +75,7 @@ class OptimizationBasedAttack(_BaseAttacker):
 
         # Initialize losses:
         for regularizer in self.regularizers:
-            regularizer.initialize(rec_model)
+            regularizer.initialize(rec_model, shared_data, labels)
         self.objective.initialize(self.loss_fn, self.cfg.impl, shared_data["local_hyperparams"])
 
         # Initialize candidate reconstruction data
@@ -139,7 +139,8 @@ class OptimizationBasedAttack(_BaseAttacker):
             if total_objective.requires_grad:
                 total_objective.backward(inputs=candidate, create_graph=False)
             if self.cfg.optim.langevin_noise > 0:
-                candidate.grad += self.cfg.optim.langevin_noise * torch.randn_like(candidate.grad)
+                step_size = optimizer.param_groups[0]["lr"]
+                candidate.grad += self.cfg.optim.langevin_noise * step_size * torch.randn_like(candidate.grad)
             if self.cfg.optim.signed:
                 candidate.grad.sign_()
             self.current_task_loss = total_task_loss  # Side-effect this because of L-BFGS closure limitations :<

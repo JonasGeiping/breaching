@@ -1,6 +1,7 @@
 """Model architectures that decode gradient information."""
 import torch
 
+
 class AmygdalaDecoder(torch.nn.Module):
     """Recover inputs with a learned decoder of gradient information.
 
@@ -24,7 +25,6 @@ class AmygdalaDecoder(torch.nn.Module):
         feature_shapes = self._introspect_model(model)
         return Amygdala(param_shapes, feature_shapes)
 
-
     def _introspect_model(self, model):
         """Compute model feature shapes."""
         feature_shapes = dict()
@@ -32,12 +32,22 @@ class AmygdalaDecoder(torch.nn.Module):
         def named_hook(name):
             def hook_fn(module, input, output):
                 feature_shapes[name] = dict(ref=module, shape=input[0].shape, info=str(module))
+
             return hook_fn
 
         hooks_list = []
         for name, module in model.named_modules():
-            if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear, torch.nn.BatchNorm2d, torch.nn.MaxPool2d, torch.nn.AvgPool2d,
-                                   torch.nn.Flatten)):
+            if isinstance(
+                module,
+                (
+                    torch.nn.Conv2d,
+                    torch.nn.Linear,
+                    torch.nn.BatchNorm2d,
+                    torch.nn.MaxPool2d,
+                    torch.nn.AvgPool2d,
+                    torch.nn.Flatten,
+                ),
+            ):
                 hooks_list.append(module.register_forward_hook(named_hook(name)))
 
         test_param = next(model.parameters())
@@ -52,10 +62,9 @@ class AmygdalaDecoder(torch.nn.Module):
         grads = torch.autograd.grad(default_loss, model.parameters(), create_graph=True)
 
         outputs = self.decoder(grads)
-        final_loss = (inputs[:self.target_shape[0]] - outputs).pow(2).mean()
+        final_loss = (inputs[: self.target_shape[0]] - outputs).pow(2).mean()
 
         return outputs, final_loss, default_loss
-
 
 
 class Amygdala(torch.nn.Module):
@@ -67,14 +76,9 @@ class Amygdala(torch.nn.Module):
         modules = []
         for key in reversed(feature_shapes):
             print(key, feature_shapes[key])
-            module = feature_shapes[key]['ref']
+            module = feature_shapes[key]["ref"]
             if isinstance(module, torch.nn.Linear):
-                print('yes')
-
-
-
-
-        breakpoint()
+                print("yes")
 
     def forward(self, grads):
         return None
@@ -88,7 +92,6 @@ class Linearizer(torch.nn.Module):
         self.layers = []
         for param in param_shape:
             self.layers += torch.nn.Linear(2 * param_shape, torch.as_tensor(input_shape).prod())
-
 
     def forward(self, parameters, grads):
         state = 0

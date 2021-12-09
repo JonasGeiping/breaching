@@ -6,7 +6,6 @@ defaults:
   - attack: invertinggradients
   - _self_
 
-
   - analysis: none
   - override hydra/job_logging: custom
 
@@ -18,7 +17,6 @@ hydra:
 
 seed: # Optional: Set initial seed
 name: default # A name for this run [will be used for the summary table]
-
 
 # debug implementation by running every loop just once.
 # This is even allowed on CPU.

@@ -12,7 +12,7 @@ local_diff_privacy:
   distribution: laplacian
   per_example_clipping: 0.0
 
-data_idx:  # Evaluate training data starting from this index. If no index is given, data is chosen at random.
+data_idx: # Evaluate training data starting from this index. If no index is given, data is chosen at random.
 data_with_labels: unique # unique/same/random can choose data with unique labels, or all from the same class or entirely at random
 
 # Specific to this user type:

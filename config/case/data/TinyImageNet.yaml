@@ -1,4 +1,3 @@
-
 name: TinyImageNet
 path: "~/data"
 size: 100_000

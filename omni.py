@@ -102,21 +102,23 @@ import warnings
 import getpass
 import random
 
-parser = argparse.ArgumentParser(description='Dispatch a list of python jobs from a given file to the CML cluster')
+parser = argparse.ArgumentParser(description="Dispatch a list of python jobs from a given file to the CML cluster")
 
 # Central:
-parser.add_argument('file')
+parser.add_argument("file")
 
-parser.add_argument('--conda', default='/home/jg371845/miniconda3/envs/dl', type=str, help='Path to conda env')
-parser.add_argument('--email', default='jonas.geiping@uni-siegen.de', type=str, help='Your email for status messages.')
+parser.add_argument("--conda", default="/home/jg371845/miniconda3/envs/dl", type=str, help="Path to conda env")
+parser.add_argument("--email", default="jonas.geiping@uni-siegen.de", type=str, help="Your email for status messages.")
 
-parser.add_argument('--name', default=None, type=str, help='Name that will be displayed in squeue. Default: file name')
-parser.add_argument('--gpus', default='1', type=int, help='Requested GPUs PER job')
-parser.add_argument('--nodes', default='1', type=int, help='Requested number of nodes.')
-parser.add_argument('--mem', default='60', type=int, help='Requested memory PER job')
-parser.add_argument('--timelimit', default=24, type=int, help='Requested hour limit PER job')
-parser.add_argument('--throttling', default=None, type=int, help='Launch only this many jobs concurrently')
-parser.add_argument('--exclude', default=None, type=str, help='Exclude malfunctioning nodes. Has to be a string like gpu-node009')
+parser.add_argument("--name", default=None, type=str, help="Name that will be displayed in squeue. Default: file name")
+parser.add_argument("--gpus", default="1", type=int, help="Requested GPUs PER job")
+parser.add_argument("--nodes", default="1", type=int, help="Requested number of nodes.")
+parser.add_argument("--mem", default="60", type=int, help="Requested memory PER job")
+parser.add_argument("--timelimit", default=24, type=int, help="Requested hour limit PER job")
+parser.add_argument("--throttling", default=None, type=int, help="Launch only this many jobs concurrently")
+parser.add_argument(
+    "--exclude", default=None, type=str, help="Exclude malfunctioning nodes. Has to be a string like gpu-node009"
+)
 
 
 args = parser.parse_args()
@@ -132,20 +134,21 @@ if args.name is None:
 else:
     dispatch_name = args.name
 
-args.conda = args.conda.rstrip('/')
+args.conda = args.conda.rstrip("/")
 
 # Usage warnings:
 if args.mem > 240:
-    raise ValueError('Maximal node memory exceeded.')
+    raise ValueError("Maximal node memory exceeded.")
 if args.gpus > 4:
-    raise ValueError('Maximal node GPU number exceeded.')
+    raise ValueError("Maximal node GPU number exceeded.")
 if args.nodes > 2:
-    raise ValueError('Maximal number of nodes exceeded.')
+    raise ValueError("Maximal number of nodes exceeded.")
 if args.mem / args.gpus > 60:
-    warnings.warn('You are oversubscribing to memory. '
-                  'This might leave some GPUs idle as total node memory is consumed.')
+    warnings.warn(
+        "You are oversubscribing to memory. " "This might leave some GPUs idle as total node memory is consumed."
+    )
 if args.timelimit > 24:
-    warnings.warn('GPU partition only allows for 24 hours. Timelimit request has been reduced to 24.')
+    warnings.warn("GPU partition only allows for 24 hours. Timelimit request has been reduced to 24.")
     args.timelimit = 24
 
 # 1) Strip the file_list of comments and blank lines
@@ -154,15 +157,15 @@ if job_list:
 else:
     content = args.file
 
-jobs = [c.strip().split('#', 1)[0] for c in content if 'python' in c and c[0] != '#']
-print(f'Detected {len(jobs)} jobs.')
+jobs = [c.strip().split("#", 1)[0] for c in content if "python" in c and c[0] != "#"]
+print(f"Detected {len(jobs)} jobs.")
 
 if len(jobs) < 1:
-    raise ValueError('No valid jobs detected.')
+    raise ValueError("No valid jobs detected.")
 
 if job_list:
     # Write the clean file list
-    authkey = random.randint(10**5, 10**6 - 1)
+    authkey = random.randint(10 ** 5, 10 ** 6 - 1)
     with open(f".cml_job_list_{authkey}.temp.sh", "w") as file:
         file.writelines(chr(10).join(job for job in jobs))
         file.write("\n")
@@ -170,13 +173,12 @@ if job_list:
 
 username = getpass.getuser()
 # 3) Prepare environment
-if not os.path.exists('log'):
-    os.makedirs('log')
+if not os.path.exists("log"):
+    os.makedirs("log")
 
 # 4) Construct the sbatch launch file
 
-SBATCH_PROTOTYPE = \
-    f"""#!/bin/bash
+SBATCH_PROTOTYPE = f"""#!/bin/bash
 
 # Lines that begin with #SBATCH specify commands to be used by SLURM for scheduling
 #SBATCH --job-name={''.join(e for e in dispatch_name if e.isalnum())}
@@ -215,13 +217,13 @@ with open(f".cml_launch_{authkey}.temp.sh", "w") as file:
 
 # 5) Print launch information
 
-print('Launch prototype is ...')
-print('---------------')
+print("Launch prototype is ...")
+print("---------------")
 print(SBATCH_PROTOTYPE)
-print('---------------')
-print(chr(10).join('srun ' + job for job in jobs))
-print(f'Preparing {len(jobs)} jobs as user {username} for launch in 10 seconds...')
-print('Terminate if necessary ...')
+print("---------------")
+print(chr(10).join("srun " + job for job in jobs))
+print(f"Preparing {len(jobs)} jobs as user {username} for launch in 10 seconds...")
+print("Terminate if necessary ...")
 for _ in range(10):
     time.sleep(1)
 
@@ -229,6 +231,6 @@ for _ in range(10):
 
 # Execute file with sbatch
 subprocess.run(["sbatch", f".cml_launch_{authkey}.temp.sh"])
-print('Subprocess launched ...')
+print("Subprocess launched ...")
 time.sleep(3)
 subprocess.run("squeue")

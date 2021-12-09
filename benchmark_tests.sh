@@ -14,7 +14,7 @@ python benchmark_breaches.py name=invertinggradients_double_opp case=2_single_im
 
 python benchmark_breaches.py name=modern_signed case=2_single_imagenet attack=modern attack.optim.signed=True
 
-python benchmark_breaches.py name=invertinggradients_angular case=2_single_imagenet attack=invertinggradients attack.objective=angular
-python benchmark_breaches.py name=invertinggradients_l1 case=2_single_imagenet attack=invertinggradients attack.objective=l1
-python benchmark_breaches.py name=invertinggradients_masked case=2_single_imagenet attack=invertinggradients attack.objective=masked-cosine-similarity
-python benchmark_breaches.py name=invertinggradients_fast case=2_single_imagenet attack=invertinggradients attack.objective=fast-cosine-similarity
+python benchmark_breaches.py name=invertinggradients_angular case=2_single_imagenet attack=invertinggradients attack.objective.type=angular
+python benchmark_breaches.py name=invertinggradients_l1 case=2_single_imagenet attack=invertinggradients attack.objective.type=l1
+python benchmark_breaches.py name=invertinggradients_masked case=2_single_imagenet attack=invertinggradients attack.objective.type=masked-cosine-similarity
+python benchmark_breaches.py name=invertinggradients_fast case=2_single_imagenet attack=invertinggradients attack.objective.type=fast-cosine-similarity

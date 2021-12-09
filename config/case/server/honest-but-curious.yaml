@@ -1,4 +1,3 @@
-
 name: honest_but_curious
 model_state: trained
 provide_public_buffers: True # Send public buffers to users (this is batch norm specific)

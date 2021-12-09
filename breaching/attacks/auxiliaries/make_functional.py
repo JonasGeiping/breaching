@@ -54,6 +54,7 @@ def _del_nested_attr(obj: nn.Module, names: List[str]) -> None:
     else:
         _del_nested_attr(getattr(obj, names[0]), names[1:])
 
+
 def _set_nested_attr(obj: nn.Module, names: List[str], value: Tensor) -> None:
     """
     Set the attribute specified by the given list of names to value.
@@ -64,6 +65,7 @@ def _set_nested_attr(obj: nn.Module, names: List[str], value: Tensor) -> None:
         setattr(obj, names[0], value)
     else:
         _set_nested_attr(getattr(obj, names[0]), names[1:], value)
+
 
 def extract_weights(mod: nn.Module) -> Tuple[Tuple[Tensor, ...], List[str]]:
     """
@@ -78,13 +80,14 @@ def extract_weights(mod: nn.Module) -> Tuple[Tuple[Tensor, ...], List[str]]:
     # Remove all the parameters in the model
     names = []
     for name, p in list(mod.named_parameters()):
-        replacement = nn.Parameter(torch.empty_like(p, device='meta'))
+        replacement = nn.Parameter(torch.empty_like(p, device="meta"))
         _set_nested_attr(mod, name.split("."), replacement)
         names.append(name)
 
     # Make params regular Tensors instead of nn.Parameter
     params = tuple(p for p in orig_params)
     return params, names
+
 
 def load_weights(mod: nn.Module, names: List[str], params: Tuple[Tensor, ...], as_params=False) -> None:
     """
@@ -98,12 +101,13 @@ def load_weights(mod: nn.Module, names: List[str], params: Tuple[Tensor, ...], a
         _del_nested_attr(mod, name.split("."))
         _set_nested_attr(mod, name.split("."), p)
 
+
 def extract_buffers(mod: nn.Module) -> Tuple[Tuple[Tensor, ...], List[str]]:
     orig_params = tuple(mod.buffers())
     # Remove all the parameters in the model
     names = []
     for name, p in list(mod.named_buffers()):
-        replacement = torch.empty_like(p, device='meta')
+        replacement = torch.empty_like(p, device="meta")
         _set_nested_attr(mod, name.split("."), replacement)
         names.append(name)
 
@@ -117,10 +121,7 @@ def load_buffers(mod: nn.Module, names: List[str], buffers: Tuple[Tensor, ...], 
         _set_nested_attr(mod, name.split("."), p)
 
 
-def load_state(
-        model: nn.Module,
-        weights: List[Tensor], weight_names: List[str],
-        buffers=(), buffer_names=()):
+def load_state(model: nn.Module, weights: List[Tensor], weight_names: List[str], buffers=(), buffer_names=()):
     """load_state(model, weights, weight_names, buffers=(), buffer_names=()) -> model
 
     load_state takes `weights` and `buffers` and assigns them to the model.
@@ -162,8 +163,10 @@ def make_functional_deprecated_v1(model: nn.Module):
     """
     buffers = list(model.buffers())
     if len(buffers) > 0:
-        raise RuntimeError('make_functional_deprecated_v1(model): `model` has buffers. Please use '
-                           'make_functional_with_buffers_deprecated_v1(model) instead.')
+        raise RuntimeError(
+            "make_functional_deprecated_v1(model): `model` has buffers. Please use "
+            "make_functional_with_buffers_deprecated_v1(model) instead."
+        )
     weights, descriptors = extract_weights(model)
 
     def fun(weights, data):
@@ -304,8 +307,9 @@ def make_functional(model: nn.Module):
     """
     buffers = list(model.buffers())
     if len(buffers) > 0:
-        raise RuntimeError('make_functional(model): `model` has buffers. Please use '
-                           'make_functional_with_buffers(model) instead.')
+        raise RuntimeError(
+            "make_functional(model): `model` has buffers. Please use " "make_functional_with_buffers(model) instead."
+        )
     return FunctionalModule._create_from(model)
 
 
@@ -368,8 +372,7 @@ def combine_state_for_ensemble(models):
     `func(params, buffers, *args, **kwargs)` directly, you probably want to
     use vmap(func, ...)(params, buffers, *args, **kwargs)
     """
-    funcs, params, buffers = zip(*[make_functional_with_buffers(model)
-                                   for model in models])
+    funcs, params, buffers = zip(*[make_functional_with_buffers(model) for model in models])
     params = transpose_stack(params)
     buffers = transpose_stack(buffers)
     return funcs[0], params, buffers
@@ -392,10 +395,10 @@ def combine_state_for_ensemble(models):
 #         return self._vmap_func(self.params, self.buffers, *args, **kwargs)
 
 
-def functional_init(model_class, ensemble_shape=(), device='cpu'):
+def functional_init(model_class, ensemble_shape=(), device="cpu"):
     def wrapped(*args, **kwargs):
         if len(ensemble_shape) >= 2:
-            raise ValueError('NYI: ensemble_shape with more than 1 element')
+            raise ValueError("NYI: ensemble_shape with more than 1 element")
         if len(ensemble_shape) == 0:
             model = model_class(*args, **kwargs).to(device)
             return make_functional_deprecated_v1(model)
@@ -403,20 +406,20 @@ def functional_init(model_class, ensemble_shape=(), device='cpu'):
         if num_models <= 0:
             raise ValueError(f"num_models {num_models} should be > 0")
         # NB: Not very efficient, more of a POC
-        models = tuple(model_class(*args, **kwargs).to(device)
-                       for _ in range(num_models))
+        models = tuple(model_class(*args, **kwargs).to(device) for _ in range(num_models))
         _, fn, names = make_functional_deprecated_v1(model_class(*args, **kwargs))
         weights = tuple(make_functional_deprecated_v1(model)[0] for model in models)
         weights = tuple(zip(*weights))
         weights = tuple(torch.stack(shards).detach() for shards in weights)
         return weights, fn, names
+
     return wrapped
 
 
-def functional_init_with_buffers(model_class, ensemble_shape=(), device='cpu'):
+def functional_init_with_buffers(model_class, ensemble_shape=(), device="cpu"):
     def wrapped(*args, **kwargs):
         if len(ensemble_shape) >= 2:
-            raise ValueError('NYI: ensemble_shape with more than 1 element')
+            raise ValueError("NYI: ensemble_shape with more than 1 element")
         if len(ensemble_shape) == 0:
             model = model_class(*args, **kwargs).to(device)
             return make_functional_deprecated_v1(model)
@@ -424,15 +427,13 @@ def functional_init_with_buffers(model_class, ensemble_shape=(), device='cpu'):
         if num_models <= 0:
             raise ValueError(f"num_models {num_models} should be > 0")
         # NB: Not very efficient, more of a POC
-        models = tuple(model_class(*args, **kwargs).to(device)
-                       for _ in range(num_models))
-        _, _, fn, weight_names, buffer_names = \
-            make_functional_with_buffers_deprecated_v1(model_class(*args, **kwargs))
-        weights, buffers = zip(*tuple(make_functional_with_buffers_deprecated_v1(model)[:2]
-                                      for model in models))
+        models = tuple(model_class(*args, **kwargs).to(device) for _ in range(num_models))
+        _, _, fn, weight_names, buffer_names = make_functional_with_buffers_deprecated_v1(model_class(*args, **kwargs))
+        weights, buffers = zip(*tuple(make_functional_with_buffers_deprecated_v1(model)[:2] for model in models))
         weights = tuple(zip(*weights))
         weights = tuple(torch.stack(shards).detach() for shards in weights)
         buffers = tuple(zip(*buffers))
         buffers = tuple(torch.stack(shards).detach() for shards in buffers)
         return weights, buffers, fn, weight_names, buffer_names
+
     return wrapped

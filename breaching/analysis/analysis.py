@@ -96,12 +96,10 @@ def report(
                     buffer.copy_(user_state.to(**setup))
 
             # Compute the forward passes
-            feat_mse += (
-                (model(reconstructed_user_data["data"].to(**setup)) - model(true_user_data["data"].to(**setup)))
-                .pow(2)
-                .mean()
-                .item()
-            )
+            feats_rec = model(reconstructed_user_data["data"].to(**setup))
+            feats_true = model(true_user_data["data"].to(**setup))
+            relevant_features = true_user_data["labels"]
+            feat_mse += (feats_rec - feats_true)[range(len(relevant_features)), relevant_features].pow(2).mean().item()
 
     # Record model parameters:
     parameters = sum([p.numel() for p in model.parameters()])

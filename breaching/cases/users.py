@@ -18,7 +18,7 @@ class UserSingleStep(torch.nn.Module):
         self.provide_buffers = cfg_user.provide_buffers
 
         if cfg_user.data_idx is None:
-            self.data_idx = torch.randint(0, len(dataloader.dataset), (1,))
+            self.data_idx = torch.randint(0, len(dataloader.dataset), (1,)).item()
         else:
             self.data_idx = cfg_user.data_idx
         self.data_with_labels = cfg_user.data_with_labels

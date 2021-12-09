@@ -130,7 +130,7 @@ class _BaseAttacker:
             if "light" in init_type:
                 candidate = torch.ones(data_shape, **self.setup)
             else:
-                nonzero_channel = 0 if "red" in init_type else 1 if "yellow" in init_type else 2
+                nonzero_channel = 0 if "red" in init_type else 1 if "green" in init_type else 2
                 candidate[:, nonzero_channel, :, :] = 1
             if "-true" in init_type:
                 # Shift to be truly RGB, not just normalized RGB

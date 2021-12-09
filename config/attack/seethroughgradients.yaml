@@ -9,7 +9,7 @@ objective:
 
 restarts:
   num_trials: 1
-  scoring: euclidean #'registered-mean' # todo: implement this option
+  scoring: euclidean #'registered-group-regularization' # todo: implement this option
 
 optim:
   optimizer: adam
@@ -18,7 +18,7 @@ optim:
   boxed: True
   max_iterations: 20_000
   step_size_decay: cosine-decay
-  langevin_noise: 4e-6 # the paper has 0.2 but I have no idea how to scale this in a way that makes sense
+  langevin_noise: 0.2 # the paper has 0.2 but the value does feel relatively large in my experiments
   warmup: 50
 
   callback: 1000 # Print objective value every callback many iterations

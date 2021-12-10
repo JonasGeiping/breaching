@@ -302,7 +302,6 @@ class PearlmutterEuclidean(torch.nn.Module):
         with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
             offset_task_loss = self.loss_fn(model(candidate), labels)
         dLv_dx, = torch.autograd.grad(offset_task_loss, (candidate,), create_graph=False)
-
         # Compute finite difference approximation
         candidate.grad += (dLv_dx - dLdx) / eps_n * self.scale
         # Add task loss
@@ -396,15 +395,14 @@ class PearlmutterEuclidean(torch.nn.Module):
         Dm = (dLdx - dLvm_dx) / eps_n
         # Upwind based on dLdx
         # Compute finite difference approximation
-        candidate.grad += (torch.max(dLdx, 0) * Dm + torch.min(dLdx, 0) * Dp) * self.scale
+        candidate.grad += (torch.max(dLdx, 0)[0] * Dm + torch.min(dLdx, 0)[0] * Dp) * self.scale
         # Add task loss
         candidate.grad += self.task_regularization * dLdx
 
         return objective_value, task_loss
 
     def _compute_objective_and_first_order(self, candidate, gradients, gradient_data):
-        torch._foreach_sub_(gradients, gradient_data)  # Save one copy of the gradient list here
-        residuals = gradients
+        residuals = torch._foreach_sub(gradients, gradient_data)  # Save one copy of the gradient list here ?
         # Gradients have already been populated. Make sure not to kill them later on.
         with torch.no_grad():
             with torch.autocast(candidate.device.type, enabled=self.cfg_impl.mixed_precision):
@@ -419,8 +417,8 @@ class PearlmutterCosine(PearlmutterEuclidean):
         with torch.no_grad():
             scalar_product, grad_norm, data_norm = self._cosine_sim_components(gradients, gradient_data)
 
-        first_order_cosine = torch._foreach_div(gradient_data, grad_norm * data_norm)
-        torch._foreach_sub_(first_order_cosine, gradients, alpha=scalar_product / (grad_norm.pow(3) * data_norm))
+        first_order_cosine = torch._foreach_div(gradient_data, -grad_norm * data_norm)
+        torch._foreach_sub_(first_order_cosine, gradients, alpha=-scalar_product / (grad_norm.pow(3) * data_norm))
 
         objective_value = self.scale * (1 - scalar_product / (grad_norm * data_norm))
         return objective_value, first_order_cosine

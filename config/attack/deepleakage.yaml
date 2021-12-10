@@ -3,11 +3,10 @@ defaults:
   - _default_optimization_attack
 type: deep-leakage
 
-
 optim:
   optimizer: L-BFGS
   step_size: 1.0
   boxed: False
   max_iterations: 400
 
-  callback: 100  # Print objective value every callback many iterations
+  callback: 100 # Print objective value every callback many iterations

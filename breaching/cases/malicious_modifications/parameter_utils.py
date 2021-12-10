@@ -11,6 +11,7 @@ def introspect_model(model, input_data_shape):
     def named_hook(name):
         def hook_fn(module, input, output):
             feature_shapes[name] = dict(shape=input[0].shape, info=str(module))
+
         return hook_fn
 
     hooks_list = []
@@ -30,13 +31,15 @@ def replace_module_by_instance(model, old_module, replacement):
                 setattr(model, child_name, replacement)
             else:
                 replace(child)
+
     replace(model)
 
 
 def rgetattr(obj, attr, *args):
     def _getattr(obj, attr):
         return getattr(obj, attr, *args)
-    return functools.reduce(_getattr, [obj] + attr.split('.'))
+
+    return functools.reduce(_getattr, [obj] + attr.split("."))
 
 
 def _set_layer(weight, num_paths):
@@ -52,7 +55,7 @@ def _set_layer(weight, num_paths):
             temp_weight = torch.zeros_like(weight.data[i])
             block = (i % in_planes) // per_path
             start = block * per_path
-            temp_weight[start:start + per_path] = weight.data[i % per_path][0:per_path]
+            temp_weight[start : start + per_path] = weight.data[i % per_path][0:per_path]
             weight.data[i] = temp_weight
     if ratio > 1:
         weight.data = _zipper(weight.data, ratio)
@@ -72,7 +75,7 @@ def _set_pathmod_layer(weight, num_paths):
             temp_weight = torch.zeros_like(weight.data[i])
             block = i
             start = block * per_path
-            temp_weight[start:start + per_path] = weight.data[i % per_path][0:per_path]
+            temp_weight[start : start + per_path] = weight.data[i % per_path][0:per_path]
             weight.data[i] = temp_weight
     if ratio > 1:
         weight.data = _zipper(weight.data, ratio)
@@ -107,8 +110,9 @@ def _make_average_layer(weight, num_paths):
     new_weight = torch.zeros_like(weight.data)
     per_block = weight.data.shape[-1] // num_paths
     for i in range(num_paths):
-        new_weight[i][i * per_block:i * per_block + per_block] = 1 / per_block * \
-            torch.ones_like(new_weight[i][i * per_block:i * per_block + per_block])
+        new_weight[i][i * per_block : i * per_block + per_block] = (
+            1 / per_block * torch.ones_like(new_weight[i][i * per_block : i * per_block + per_block])
+        )
 
 
 def _make_linear_biases(bias, bins):

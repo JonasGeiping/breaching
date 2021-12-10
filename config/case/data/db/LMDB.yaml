@@ -1,4 +1,3 @@
-
 name: LMDB
 path: "~/data/lmdb"
 
@@ -15,4 +14,3 @@ meminit: True
 max_spare_txns: 128
 
 access: get # cursor or get
-

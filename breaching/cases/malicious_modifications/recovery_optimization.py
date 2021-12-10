@@ -10,7 +10,8 @@ from .objectives import DeepLayerRatioMatching, PixelMatching
 from .gradient_decoders import AmygdalaDecoder
 from ...analysis.metrics import psnr_compute
 
-class RecoveryOptimizer():
+
+class RecoveryOptimizer:
     """Implemented Objectives:
         *  deep-layer-ratio-matching
 
@@ -25,8 +26,17 @@ class RecoveryOptimizer():
         * filter-based recovery addon [recovery from dct coefficients?]
         * Fake synthetic data
     """
-    def __init__(self, model, loss, cfg_data, cfg_impl, cfg_optim,
-                 setup=dict(dtype=torch.float, device=torch.device('cpu')), external_data=None):
+
+    def __init__(
+        self,
+        model,
+        loss,
+        cfg_data,
+        cfg_impl,
+        cfg_optim,
+        setup=dict(dtype=torch.float, device=torch.device("cpu")),
+        external_data=None,
+    ):
         """Initialize with info from the server. Data could be optional in the future."""
         self.model = model.to(**setup)
 
@@ -44,14 +54,14 @@ class RecoveryOptimizer():
         self.dataloader = external_data
         self.feature_shapes = self._introspect_model()
 
-        if self.cfg_optim.objective == 'deep-layer-ratio-matching':
+        if self.cfg_optim.objective == "deep-layer-ratio-matching":
             self.objective = DeepLayerRatioMatching(model, loss, cfg_optim.target_shape, cfg_optim.layers)
-        elif self.cfg_optim.objective == 'pixel-matching':
+        elif self.cfg_optim.objective == "pixel-matching":
             self.objective = PixelMatching(model, loss, cfg_optim.target_shape)
-        elif self.cfg_optim.objective == 'amygdala':
+        elif self.cfg_optim.objective == "amygdala":
             self.objective = AmygdalaDecoder(model, loss, cfg_optim.target_shape)
         else:
-            raise ValueError(f'Invalid objective {self.cfg_optim.objective} given.')
+            raise ValueError(f"Invalid objective {self.cfg_optim.objective} given.")
         self.objective.to(**setup)
         self.effective_batch_size = self.objective.target_shape[0]
 
@@ -62,6 +72,7 @@ class RecoveryOptimizer():
         def named_hook(name):
             def hook_fn(module, input, output):
                 feature_shapes[name] = dict(shape=input[0].shape, info=str(module))
+
             return hook_fn
 
         hooks_list = []
@@ -75,12 +86,12 @@ class RecoveryOptimizer():
         [h.remove() for h in hooks_list]
         return feature_shapes
 
-
-
     def optimize_recovery(self):
         """Run an optimization-based algorithm to minimize the target objective over the given real or synth. data."""
 
-        optimizer, scheduler = optimizer_lookup([*self.model.parameters(), *self.objective.parameters()], **self.cfg_optim.optim)
+        optimizer, scheduler = optimizer_lookup(
+            [*self.model.parameters(), *self.objective.parameters()], **self.cfg_optim.optim
+        )
         num_blocks = len(self.dataloader)
         for iteration in range(self.cfg_optim.optim.max_iterations):
             step_final_loss, step_default_loss, step_psnr = 0, 0, 0
@@ -90,7 +101,9 @@ class RecoveryOptimizer():
                 chunks_in_block = max(labels.shape[0] // self.effective_batch_size, 1)
 
                 inputs = inputs.to(**self.setup, non_blocking=self.cfg_impl.non_blocking)
-                labels = labels.to(dtype=torch.long, device=self.setup['device'], non_blocking=self.cfg_impl.non_blocking)
+                labels = labels.to(
+                    dtype=torch.long, device=self.setup["device"], non_blocking=self.cfg_impl.non_blocking
+                )
 
                 input_chunks = torch.split(inputs, self.effective_batch_size, dim=0)[:chunks_in_block]
                 label_chunks = torch.split(labels, self.effective_batch_size, dim=0)[:chunks_in_block]
@@ -111,12 +124,16 @@ class RecoveryOptimizer():
                         step_default_loss += default_loss.detach()
 
                         if not final_loss.isfinite():
-                            raise ValueError('Nonfinite values introduced in param optimization!')
+                            raise ValueError("Nonfinite values introduced in param optimization!")
                 [p.grad.div_(chunks_in_block) for p in self.model.parameters()]
                 optimizer.step()
-                print(f'Block: {block} | Time: {time.time() - time_stamp:4.2f}|Obj:{final_loss.item():7.4f}|PSNR:{psnr:4.2f}')
-            print(f'|Iteration {iteration:<4} | Time: {time.time() - time_stamp:4.2f}s | '
-                  f'Objective: {step_final_loss / num_blocks / chunks_in_block:7.4f} | '
-                  f'Data Loss: {step_default_loss / num_blocks / chunks_in_block:7.4f} | '
-                  f'PSNR: {step_psnr / num_blocks / chunks_in_block:4.2f} |')
+                print(
+                    f"Block: {block} | Time: {time.time() - time_stamp:4.2f}|Obj:{final_loss.item():7.4f}|PSNR:{psnr:4.2f}"
+                )
+            print(
+                f"|Iteration {iteration:<4} | Time: {time.time() - time_stamp:4.2f}s | "
+                f"Objective: {step_final_loss / num_blocks / chunks_in_block:7.4f} | "
+                f"Data Loss: {step_default_loss / num_blocks / chunks_in_block:7.4f} | "
+                f"PSNR: {step_psnr / num_blocks / chunks_in_block:4.2f} |"
+            )
             scheduler.step()

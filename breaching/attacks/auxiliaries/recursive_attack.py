@@ -7,9 +7,8 @@ import numpy as np
 from .conv2circulant import generate_coordinates, circulant_w, aggregate_g
 
 
-
 def inverse_udldu(udldu, setup, step_size=0.01, steps=30_000):
-    '''derive u from udldu using gradient descend based method'''
+    """derive u from udldu using gradient descend based method"""
     u = torch.tensor(0).to(**setup).requires_grad_(True)
     udldu = torch.tensor(udldu).to(**setup)
     optimizer = torch.optim.Adam([u], lr=step_size)
@@ -65,8 +64,10 @@ def cnn_reconstruction(in_shape, k, g, out, kernel, stride, padding):
         a = np.concatenate((K, W), axis=0)
         b = np.concatenate((g.reshape(-1), out), axis=0)
     result = np.linalg.lstsq(a, b, rcond=None)
-    print(f'lstsq residual: {result[1]}, rank: {result[2]} -> {W.shape[-1]}, '
-          f'max/min singular value: {result[3].max():.2e}/{result[3].min():.2e}')
+    print(
+        f"lstsq residual: {result[1]}, rank: {result[2]} -> {W.shape[-1]}, "
+        f"max/min singular value: {result[3].max():.2e}/{result[3].min():.2e}"
+    )
     x = result[0]
     return x[peeling(in_shape=in_shape, padding=padding)], W
 
@@ -91,19 +92,19 @@ def r_gap(out, k, g, x_shape, weight, module):
 
 
 def inverse_leakyrelu(x, slope):
-    return np.array([a / slope if a < 0 else a for a in x]).astype('float32')
+    return np.array([a / slope if a < 0 else a for a in x]).astype("float32")
 
 
 def derive_leakyrelu(x, slope):
-    return np.array([slope if a < 0 else 1 for a in x]).reshape(1, -1).astype('float32')
+    return np.array([slope if a < 0 else 1 for a in x]).reshape(1, -1).astype("float32")
 
 
 def inverse_sigmoid(x):
-    return np.array([-np.log(1 / a - 1) for a in x]).astype('float32')
+    return np.array([-np.log(1 / a - 1) for a in x]).astype("float32")
 
 
 def derive_sigmoid(x):
-    return np.array([a * (1 - a) for a in x]).reshape(1, -1).astype('float32')
+    return np.array([a * (1 - a) for a in x]).reshape(1, -1).astype("float32")
 
 
 def inverse_identity(x):
@@ -111,4 +112,4 @@ def inverse_identity(x):
 
 
 def derive_identity(x):
-    return np.ones(x.shape).reshape(1, -1).astype('float32')
+    return np.ones(x.shape).reshape(1, -1).astype("float32")

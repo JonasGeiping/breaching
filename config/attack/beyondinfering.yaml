@@ -6,7 +6,6 @@ defaults:
   - _default_optimization_attack
 type: beyond-infering
 
-
 optim:
   optimizer: L-BFGS
   step_size: 1.0
@@ -15,6 +14,6 @@ optim:
 
 regularization:
   total_variation:
-    scale: 0.2352  # This is 0.00015 from the original work multiplied by 28^2*2 (the number of MNIST pixels and filters)
+    scale: 0.2352 # This is 0.00015 from the original work multiplied by 28^2*2 (the number of MNIST pixels and filters)
     inner_exp: 2
     outer_exp: 1.25

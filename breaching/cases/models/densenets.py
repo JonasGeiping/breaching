@@ -31,6 +31,7 @@ def densenet_depths_to_config(depth):
         num_init_features = 64
     return growth_rate, block_config, num_init_features
 
+
 class DenseNet(torch.nn.Module):
     r"""Densenet-BC model class, based on
     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`_.
@@ -58,10 +59,10 @@ class DenseNet(torch.nn.Module):
         num_classes: int = 1000,
         channels: int = 3,
         memory_efficient: bool = False,
-        norm: str = 'BatchNorm2d',
-        nonlin: str = 'ReLU',
-        stem: str = 'CIFAR',
-        convolution_type: str = 'standard'
+        norm: str = "BatchNorm2d",
+        nonlin: str = "ReLU",
+        stem: str = "CIFAR",
+        convolution_type: str = "standard",
     ) -> None:
 
         super().__init__()
@@ -69,36 +70,64 @@ class DenseNet(torch.nn.Module):
         self._conv_layer, self._norm_layer, self._nonlin_layer = get_layer_functions(convolution_type, norm, nonlin)
 
         # First convolution in different variations
-        if stem in ['imagenet', 'standard']:
-            self.features = torch.nn.Sequential(OrderedDict([
-                ('conv0', self._conv_layer(channels, num_init_features, kernel_size=7, stride=2,
-                                           padding=3, bias=False)),
-                ('norm0', self._norm_layer(num_init_features)),
-                ('relu0', self._nonlin_layer()),
-                ('pool0', torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
-            ]))
-        elif stem == 'CIFAR':
-            self.features = torch.nn.Sequential(OrderedDict([
-                ('conv0', self._conv_layer(channels, num_init_features, kernel_size=3, stride=1,
-                                           padding=1, bias=False)),
-            ]))
-        elif stem == 'efficient':
+        if stem in ["imagenet", "standard"]:
+            self.features = torch.nn.Sequential(
+                OrderedDict(
+                    [
+                        (
+                            "conv0",
+                            self._conv_layer(
+                                channels, num_init_features, kernel_size=7, stride=2, padding=3, bias=False
+                            ),
+                        ),
+                        ("norm0", self._norm_layer(num_init_features)),
+                        ("relu0", self._nonlin_layer()),
+                        ("pool0", torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
+                    ]
+                )
+            )
+        elif stem == "CIFAR":
+            self.features = torch.nn.Sequential(
+                OrderedDict(
+                    [
+                        (
+                            "conv0",
+                            self._conv_layer(
+                                channels, num_init_features, kernel_size=3, stride=1, padding=1, bias=False
+                            ),
+                        ),
+                    ]
+                )
+            )
+        elif stem == "efficient":
             stem_width = num_init_features // 2
-            self.features = torch.nn.Sequential(OrderedDict([
-                ('conv0', self._conv_layer(channels, stem_width, kernel_size=3, stride=2,
-                                           padding=1, bias=False)),
-                ('norm0', self._norm_layer(stem_width)),
-                ('relu0', self._nonlin_layer()),
-                ('conv1', self._conv_layer(stem_width, stem_width, kernel_size=3, stride=1,
-                                           padding=1, bias=False)),
-                ('norm1', self._norm_layer(stem_width)),
-                ('relu1', self._nonlin_layer()),
-                ('conv2', self._conv_layer(stem_width, num_init_features, kernel_size=3, stride=1,
-                                           padding=1, bias=False)),
-                ('norm2', self._norm_layer(num_init_features)),
-                ('relu2', self._nonlin_layer()),
-                ('pool0', torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
-            ]))
+            self.features = torch.nn.Sequential(
+                OrderedDict(
+                    [
+                        (
+                            "conv0",
+                            self._conv_layer(channels, stem_width, kernel_size=3, stride=2, padding=1, bias=False),
+                        ),
+                        ("norm0", self._norm_layer(stem_width)),
+                        ("relu0", self._nonlin_layer()),
+                        (
+                            "conv1",
+                            self._conv_layer(stem_width, stem_width, kernel_size=3, stride=1, padding=1, bias=False),
+                        ),
+                        ("norm1", self._norm_layer(stem_width)),
+                        ("relu1", self._nonlin_layer()),
+                        (
+                            "conv2",
+                            self._conv_layer(
+                                stem_width, num_init_features, kernel_size=3, stride=1, padding=1, bias=False
+                            ),
+                        ),
+                        ("norm2", self._norm_layer(num_init_features)),
+                        ("relu2", self._nonlin_layer()),
+                        ("pool0", torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
+                    ]
+                )
+            )
 
         # Normal DenseNet from here: #
 
@@ -114,21 +143,23 @@ class DenseNet(torch.nn.Module):
                 memory_efficient=memory_efficient,
                 norm=self._norm_layer,
                 nonlin=self._nonlin_layer,
-                convolution=self._conv_layer
+                convolution=self._conv_layer,
             )
-            self.features.add_module('denseblock%d' % (i + 1), block)
+            self.features.add_module("denseblock%d" % (i + 1), block)
             num_features = num_features + num_layers * growth_rate
             if i != len(block_config) - 1:
-                trans = _Transition(num_input_features=num_features,
-                                    num_output_features=num_features // 2,
-                                    norm=self._norm_layer,
-                                    nonlin=self._nonlin_layer,
-                                    convolution=self._conv_layer)
-                self.features.add_module('transition%d' % (i + 1), trans)
+                trans = _Transition(
+                    num_input_features=num_features,
+                    num_output_features=num_features // 2,
+                    norm=self._norm_layer,
+                    nonlin=self._nonlin_layer,
+                    convolution=self._conv_layer,
+                )
+                self.features.add_module("transition%d" % (i + 1), trans)
                 num_features = num_features // 2
 
         # Final batch norm
-        self.features.add_module('norm5', self._norm_layer(num_features))
+        self.features.add_module("norm5", self._norm_layer(num_features))
         self.nonlin = self._nonlin_layer()
         # Linear layer
         self.classifier = torch.nn.Linear(num_features, num_classes)
@@ -162,25 +193,25 @@ class _DenseLayer(torchvision.models.densenet._DenseLayer):
         memory_efficient: bool = False,
         norm=torch.nn.BatchNorm2d,
         nonlin=torch.nn.ReLU,
-        convolution=torch.nn.Conv2d
+        convolution=torch.nn.Conv2d,
     ) -> None:
         torch.nn.Module.__init__(self)
         self.norm1: norm
-        self.add_module('norm1', norm(num_input_features))
+        self.add_module("norm1", norm(num_input_features))
         self.relu1: nonlin
-        self.add_module('relu1', nonlin())
+        self.add_module("relu1", nonlin())
         self.conv1: convolution
-        self.add_module('conv1', convolution(num_input_features, bn_size *
-                                             growth_rate, kernel_size=1, stride=1,
-                                             bias=False))
+        self.add_module(
+            "conv1", convolution(num_input_features, bn_size * growth_rate, kernel_size=1, stride=1, bias=False)
+        )
         self.norm2: norm
-        self.add_module('norm2', norm(bn_size * growth_rate))
+        self.add_module("norm2", norm(bn_size * growth_rate))
         self.relu2: nonlin
-        self.add_module('relu2', nonlin())
+        self.add_module("relu2", nonlin())
         self.conv2: convolution
-        self.add_module('conv2', convolution(bn_size * growth_rate, growth_rate,
-                                             kernel_size=3, stride=1, padding=1,
-                                             bias=False))
+        self.add_module(
+            "conv2", convolution(bn_size * growth_rate, growth_rate, kernel_size=3, stride=1, padding=1, bias=False)
+        )
         self.drop_rate = float(drop_rate)
         self.memory_efficient = memory_efficient
 
@@ -198,7 +229,7 @@ class _DenseBlock(torch.nn.ModuleDict):
         memory_efficient: bool = False,
         norm=torch.nn.BatchNorm2d,
         nonlin=torch.nn.ReLU,
-        convolution=torch.nn.Conv2d
+        convolution=torch.nn.Conv2d,
     ) -> None:
         super(_DenseBlock, self).__init__()
         for i in range(num_layers):
@@ -210,9 +241,9 @@ class _DenseBlock(torch.nn.ModuleDict):
                 memory_efficient=memory_efficient,
                 norm=norm,
                 nonlin=nonlin,
-                convolution=convolution
+                convolution=convolution,
             )
-            self.add_module('denselayer%d' % (i + 1), layer)
+            self.add_module("denselayer%d" % (i + 1), layer)
 
     def forward(self, init_features: Tensor) -> Tensor:
         features = [init_features]
@@ -223,11 +254,18 @@ class _DenseBlock(torch.nn.ModuleDict):
 
 
 class _Transition(torch.nn.Sequential):
-    def __init__(self, num_input_features: int, num_output_features: int,
-                 norm=torch.nn.BatchNorm2d, nonlin=torch.nn.ReLU, convolution=torch.nn.Conv2d) -> None:
+    def __init__(
+        self,
+        num_input_features: int,
+        num_output_features: int,
+        norm=torch.nn.BatchNorm2d,
+        nonlin=torch.nn.ReLU,
+        convolution=torch.nn.Conv2d,
+    ) -> None:
         super(_Transition, self).__init__()
-        self.add_module('norm', norm(num_input_features))
-        self.add_module('relu', nonlin(inplace=True))
-        self.add_module('conv', convolution(num_input_features, num_output_features,
-                                            kernel_size=1, stride=1, bias=False))
-        self.add_module('pool', torch.nn.AvgPool2d(kernel_size=2, stride=2))
+        self.add_module("norm", norm(num_input_features))
+        self.add_module("relu", nonlin(inplace=True))
+        self.add_module(
+            "conv", convolution(num_input_features, num_output_features, kernel_size=1, stride=1, bias=False)
+        )
+        self.add_module("pool", torch.nn.AvgPool2d(kernel_size=2, stride=2))

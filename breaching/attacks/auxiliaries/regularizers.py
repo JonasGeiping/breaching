@@ -13,7 +13,6 @@ class _LinearFeatureHook:
         self.hook = module.register_forward_hook(self.hook_fn)
 
     def hook_fn(self, module, input, output):
-        # hook co compute deepinversion's feature distribution regularization
         input_features = input[0]
         self.features = input_features
 

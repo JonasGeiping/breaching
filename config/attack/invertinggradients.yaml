@@ -12,7 +12,7 @@ restarts:
 
 optim:
   optimizer: adam
-  signed: True
+  signed: "hard"
   step_size: 0.1
   boxed: True
   max_iterations: 24_000

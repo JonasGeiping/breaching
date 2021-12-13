@@ -18,7 +18,7 @@ normalize_gradients: False
 
 optim:
   optimizer: Adam
-  signed: False
+  signed:
   step_size: 1.0
   boxed: False
   max_iterations: 400
@@ -27,6 +27,11 @@ optim:
   warmup: 0
 
   callback: 100 # Print objective value every callback many iterations
+
+augmentations:
+
+differentiable_augmentations: False
+update_augmentations: 500 # Update augmentation parameters every update_augmentations-many iterations
 
 regularization:
 

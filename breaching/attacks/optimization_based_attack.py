@@ -14,7 +14,7 @@ import time
 from .base_attack import _BaseAttacker
 from .auxiliaries.regularizers import regularizer_lookup, TotalVariation
 from .auxiliaries.objectives import Euclidean, CosineSimilarity, objective_lookup
-
+from .auxiliaries.augmentations import augmentation_lookup
 
 import logging
 
@@ -39,6 +39,14 @@ class OptimizationBasedAttack(_BaseAttacker):
         except AttributeError:
             pass  # No regularizers selected.
 
+        try:
+            self.augmentations = []
+            for key in self.cfg.augmentations.keys():
+                self.augmentations += [augmentation_lookup[key](**self.cfg.augmentations[key])]
+            self.augmentations = torch.nn.Sequential(*self.augmentations).to(**setup)
+        except AttributeError:
+            self.augmentations = None  # No augmentations selected.
+
     def __repr__(self):
         n = "\n"
         return f"""Attacker (of type {self.__class__.__name__}) with settings:
@@ -46,6 +54,7 @@ class OptimizationBasedAttack(_BaseAttacker):
 
     Objective: {repr(self.objective)}
     Regularizers: {(n + ' '*18).join([repr(r) for r in self.regularizers])}
+    Augmentations: {(n + ' '*18).join([repr(r) for r in self.augmentations])}
 
     Optimization Setup:
         {(n + ' ' * 8).join([f'{key}: {val}' for key, val in self.cfg.optim.items()])}
@@ -89,7 +98,7 @@ class OptimizationBasedAttack(_BaseAttacker):
         current_wallclock = time.time()
         try:
             for iteration in range(self.cfg.optim.max_iterations):
-                closure = self._compute_objective(candidate, labels, rec_model, optimizer, shared_data)
+                closure = self._compute_objective(candidate, labels, rec_model, optimizer, shared_data, iteration)
                 objective_value, task_loss = optimizer.step(closure), self.current_task_loss
                 scheduler.step()
 
@@ -113,6 +122,15 @@ class OptimizationBasedAttack(_BaseAttacker):
                     log.info(f"Recovery loss is non-finite in iteration {iteration}. Cancelling reconstruction!")
                     break
 
+                # Some augmentations can change their behavior/strength during optimization:
+                if self.augmentations is not None and iteration % self.cfg.update_augmentations == 0:
+                    for augmentation in self.augmentations:
+                        augmentation.update(
+                            iteration,
+                            self.cfg.optim.max_iterations,
+                            data_shape=[shared_data["num_data_points"], *self.data_shape],
+                        )
+
                 stats[f"Trial_{trial}_Val"].append(objective_value.item())
 
                 if dryrun:
@@ -123,26 +141,36 @@ class OptimizationBasedAttack(_BaseAttacker):
 
         return best_candidate.detach()
 
-    def _compute_objective(self, candidate, labels, rec_model, optimizer, shared_data):
+    def _compute_objective(self, candidate, labels, rec_model, optimizer, shared_data, iteration):
         def closure():
             optimizer.zero_grad()
+
+            with torch.set_grad_enabled(self.cfg.differentiable_augmentations):
+                candidate_augmented = self.augmentations(candidate) if self.augmentations is not None else candidate
 
             total_objective = 0
             total_task_loss = 0
             for model, shared_grad in zip(rec_model, shared_data["gradients"]):
-                objective, task_loss = self.objective(model, shared_grad, candidate, labels)
+                objective, task_loss = self.objective(model, shared_grad, candidate_augmented, labels)
                 total_objective += objective
                 total_task_loss += task_loss
             for regularizer in self.regularizers:
-                total_objective += regularizer(candidate)
+                total_objective += regularizer(candidate_augmented)
 
             if total_objective.requires_grad:
                 total_objective.backward(inputs=candidate, create_graph=False)
             if self.cfg.optim.langevin_noise > 0:
                 step_size = optimizer.param_groups[0]["lr"]
                 candidate.grad += self.cfg.optim.langevin_noise * step_size * torch.randn_like(candidate.grad)
-            if self.cfg.optim.signed:
-                candidate.grad.sign_()
+            if self.cfg.optim.signed is not None:
+                if self.cfg.optim.signed == "soft":
+                    scaling_factor = 1 - iteration / self.cfg.max_iterations  # just a simple linear rule for now
+                    candidate.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
+                elif self.cfg.optim.signed == "hard":
+                    candidate.grad.sign_()
+                else:
+                    pass
+
             self.current_task_loss = total_task_loss  # Side-effect this because of L-BFGS closure limitations :<
             return total_objective
 

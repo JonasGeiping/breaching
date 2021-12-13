@@ -54,7 +54,7 @@ class OptimizationBasedAttack(_BaseAttacker):
 
     Objective: {repr(self.objective)}
     Regularizers: {(n + ' '*18).join([repr(r) for r in self.regularizers])}
-    Augmentations: {(n + ' '*18).join([repr(r) for r in self.augmentations])}
+    Augmentations: {f"{(n + ' '*18).join([repr(r) for r in self.augmentations])}" if self.augmentations else "-"}
 
     Optimization Setup:
         {(n + ' ' * 8).join([f'{key}: {val}' for key, val in self.cfg.optim.items()])}

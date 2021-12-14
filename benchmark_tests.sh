@@ -53,8 +53,8 @@ python benchmark_breaches.py name=invertinggradients_soft_sign case=2_single_ima
 python benchmark_breaches.py name=invertinggradients_double_opp_soft_sign case=2_single_imagenet attack=invertinggradients attack.optim.signed="soft" +attack.regularization.total_variation.double_opponents=True
 
 python benchmark_breaches.py name=modern2_freg01 case=2_single_imagenet attack=modern2
-python benchmark_breaches.py name=modern2_freg001 case=2_single_imagenet attack=modern2 +attack.regularization.features.scale=0.01
-python benchmark_breaches.py name=modern2_freg1 case=2_single_imagenet attack=modern2 +attack.regularization.features.scale=1.0
+python benchmark_breaches.py name=modern2_freg001 case=2_single_imagenet attack=modern2 attack.regularization.features.scale=0.01
+python benchmark_breaches.py name=modern2_freg1 case=2_single_imagenet attack=modern2 attack.regularization.features.scale=1.0
 
 python benchmark_breaches.py name=modern2_l1tv case=2_single_imagenet attack=modern2 attack.regularization.total_variation.inner_exp=1 attack.regularization.total_variation.outer_exp=1
 
@@ -64,7 +64,7 @@ python benchmark_breaches.py name=invertinggradients_shift01 case=2_single_image
 python benchmark_breaches.py name=invertinggradients_shift05 case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=0.5
 python benchmark_breaches.py name=invertinggradients_shift2 case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=2.0
 python benchmark_breaches.py name=invertinggradients_shift10 case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=10
-python benchmark_breaches.py name=invertinggradients_shift50 case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=50 attack.augmentations.continuous_shift.padding=circular
+python benchmark_breaches.py name=invertinggradients_shift50 case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=50 +attack.augmentations.continuous_shift.padding=circular
 
 python benchmark_breaches.py name=invertinggradients_colorjitter case=2_single_imagenet attack=invertinggradients +attack.augmentations.colorjitter={}
 

@@ -157,7 +157,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
                 candidate_variable.grad += self.cfg.optim.langevin_noise * step_size * noise_map
             if self.cfg.optim.signed is not None:
                 if self.cfg.optim.signed == "soft":
-                    scaling_factor = 1 - iteration / self.cfg.max_iterations  # just a simple linear rule for now
+                    scaling_factor = 1 - iteration / self.cfg.optim.max_iterations  # just a simple linear rule for now
                     candidate_variable.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
                 elif self.cfg.optim.signed == "hard":
                     candidate_variable.grad.sign_()

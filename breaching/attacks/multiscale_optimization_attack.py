@@ -39,8 +39,7 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
 
     def _run_trial(self, rec_model, shared_data, labels, stats, trial, dryrun=False):
         """Run a single reconstruction trial."""
-        self.current_wallclock = time.time()
-
+        self.exitsignal = False  # Only used for early exit from KeyboardInterrupt
         # Initialize losses:
         for regularizer in self.regularizers:
             regularizer.initialize(rec_model, shared_data, labels)
@@ -65,34 +64,30 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
         best_candidate = self._initialize_data([shared_data["num_data_points"], *self.data_shape])
         scale_params = dict(mode="bilinear", align_corners=False)
 
-        try:
-            for stage, scale in enumerate(scale_pyramid):
-                log.info(f"| Now solving stage {stage + 1}/{self.cfg.num_stages} with scale {scale}:")
-                # Upsample base to new resolution
-                if self.cfg.resize == "focus":
-                    p = torch.div(scale, 2, rounding_mode="floor")
-                    background = self._initialize_data([shared_data["num_data_points"], C, scale, scale]).detach()
-                    scaled_var = F.interpolate(candidate_variable, size=p, **scale_params)
-                    cx = torch.div(scale - p, 2, rounding_mode="floor")
-                    background[:, :, cx : cx + p, cx : cx + p] = scaled_var
-                    candidate_variable = background
-                else:
-                    candidate_variable = F.interpolate(candidate_variable, size=scale, **scale_params)
-                candidate_variable = candidate_variable.detach().requires_grad_()
-                # Increase image resolution if in sampling:
-                if self.cfg.scale_space == "sampling":
-                    candidate = F.interpolate(candidate_variable, size=self.data_shape[2], **scale_params)
-                else:
-                    candidate = candidate_variable.clone()
-                # Run stage:
-                best_candidate = self._run_stage(
-                    candidate_variable, candidate, rec_model, shared_data, labels, stats, trial, stage, dryrun
-                )
-                # if dryrun:
-                #     break
-        except KeyboardInterrupt:
-            print(f"Recovery interrupted manually in stage {stage}!")
-            pass
+        for stage, scale in enumerate(scale_pyramid):
+            log.info(f"| Now solving stage {stage + 1}/{self.cfg.num_stages} with scale {scale}:")
+            # Upsample base to new resolution
+            if self.cfg.resize == "focus":
+                p = torch.div(scale, 2, rounding_mode="floor")
+                background = self._initialize_data([shared_data["num_data_points"], C, scale, scale]).detach()
+                scaled_var = F.interpolate(candidate_variable, size=p, **scale_params)
+                cx = torch.div(scale - p, 2, rounding_mode="floor")
+                background[:, :, cx : cx + p, cx : cx + p] = scaled_var
+                candidate_variable = background
+            else:
+                candidate_variable = F.interpolate(candidate_variable, size=scale, **scale_params)
+            candidate_variable = candidate_variable.detach().requires_grad_()
+            # Increase image resolution if in sampling:
+            if self.cfg.scale_space == "sampling":
+                candidate = F.interpolate(candidate_variable, size=self.data_shape[2], **scale_params)
+            else:
+                candidate = candidate_variable.clone()
+            # Run stage:
+            best_candidate = self._run_stage(
+                candidate_variable, candidate, rec_model, shared_data, labels, stats, trial, stage, dryrun
+            )
+            if dryrun or self.exitsignal:
+                break
 
         return best_candidate
 
@@ -105,7 +100,7 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
 
         # Initialize optimizers
         optimizer, scheduler = self._init_optimizer(candidate_variable)
-
+        current_wallclock = time.time()
         try:
             for iteration in range(self.cfg.optim.max_iterations):
                 closure = self._compute_objective(
@@ -128,7 +123,7 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
                     timestamp = time.time()
                     log.info(
                         f"| S: {stage} - It: {iteration + 1} | Rec. loss: {objective_value.item():2.4f} | "
-                        f" Task loss: {task_loss.item():2.4f} | T: {timestamp - self.current_wallclock:4.2f}s"
+                        f" Task loss: {task_loss.item():2.4f} | T: {timestamp - current_wallclock:4.2f}s"
                     )
                     current_wallclock = timestamp
 
@@ -141,5 +136,5 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
                     break
         except KeyboardInterrupt:
             print(f"Recovery interrupted manually in iteration {iteration} of stage {stage}!")
-            pass
+            self.exitsignal = True
         return best_candidate.detach()

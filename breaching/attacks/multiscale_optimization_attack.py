@@ -62,6 +62,7 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
         candidate_variable = self._initialize_data(
             [shared_data["num_data_points"], C, scale_pyramid[0], scale_pyramid[0]]
         )
+        best_candidate = self._initialize_data([shared_data["num_data_points"], *self.data_shape])
         scale_params = dict(mode="bilinear", align_corners=False)
 
         try:
@@ -90,7 +91,7 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
                 # if dryrun:
                 #     break
         except KeyboardInterrupt:
-            print(f"Recovery interrupted manually in iteration {iteration} of stage {stage}!")
+            print(f"Recovery interrupted manually in stage {stage}!")
             pass
 
         return best_candidate
@@ -105,36 +106,40 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
         # Initialize optimizers
         optimizer, scheduler = self._init_optimizer(candidate_variable)
 
-        for iteration in range(self.cfg.optim.max_iterations):
-            closure = self._compute_objective(
-                candidate_variable, candidate, labels, rec_model, optimizer, shared_data, iteration
-            )
-            objective_value, task_loss = optimizer.step(closure), self.current_task_loss
-            scheduler.step()
-
-            with torch.no_grad():
-                # Project into image space
-                if self.cfg.optim.boxed:
-                    candidate_variable.data = torch.max(
-                        torch.min(candidate_variable, (1 - self.dm) / self.ds), -self.dm / self.ds
-                    )
-                if objective_value < minimal_value_so_far:
-                    minimal_value_so_far = objective_value.detach()
-                    best_candidate = candidate.detach().clone()
-
-            if iteration + 1 == self.cfg.optim.max_iterations or iteration % self.cfg.optim.callback == 0:
-                timestamp = time.time()
-                log.info(
-                    f"| S: {stage} - It: {iteration + 1} | Rec. loss: {objective_value.item():2.4f} | "
-                    f" Task loss: {task_loss.item():2.4f} | T: {timestamp - self.current_wallclock:4.2f}s"
+        try:
+            for iteration in range(self.cfg.optim.max_iterations):
+                closure = self._compute_objective(
+                    candidate_variable, candidate, labels, rec_model, optimizer, shared_data, iteration
                 )
-                current_wallclock = timestamp
+                objective_value, task_loss = optimizer.step(closure), self.current_task_loss
+                scheduler.step()
 
-            if not torch.isfinite(objective_value):
-                log.info(f"Recovery loss is non-finite in iteration {iteration}. Cancelling reconstruction!")
-                break
+                with torch.no_grad():
+                    # Project into image space
+                    if self.cfg.optim.boxed:
+                        candidate_variable.data = torch.max(
+                            torch.min(candidate_variable, (1 - self.dm) / self.ds), -self.dm / self.ds
+                        )
+                    if objective_value < minimal_value_so_far:
+                        minimal_value_so_far = objective_value.detach()
+                        best_candidate = candidate.detach().clone()
 
-            stats[f"Trial_{trial}_Val"].append(objective_value.item())
-            if dryrun:
-                break
+                if iteration + 1 == self.cfg.optim.max_iterations or iteration % self.cfg.optim.callback == 0:
+                    timestamp = time.time()
+                    log.info(
+                        f"| S: {stage} - It: {iteration + 1} | Rec. loss: {objective_value.item():2.4f} | "
+                        f" Task loss: {task_loss.item():2.4f} | T: {timestamp - self.current_wallclock:4.2f}s"
+                    )
+                    current_wallclock = timestamp
+
+                if not torch.isfinite(objective_value):
+                    log.info(f"Recovery loss is non-finite in iteration {iteration}. Cancelling reconstruction!")
+                    break
+
+                stats[f"Trial_{trial}_Val"].append(objective_value.item())
+                if dryrun:
+                    break
+        except KeyboardInterrupt:
+            print(f"Recovery interrupted manually in iteration {iteration} of stage {stage}!")
+            pass
         return best_candidate.detach()

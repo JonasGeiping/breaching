@@ -35,7 +35,7 @@ class Focus(torch.nn.Module):
         num_stages = data_shape[2] // 32
         current_stage = torch.round(torch.as_tensor(iteration / max_iteration * num_stages)) + 1
         self.size = int(current_stage) * 32
-
+        print(f'now in stage {current_stage} with size {self.size}')
 
 class Zoom(torch.nn.Module):
     def __init__(self, out_size=224, **kwargs):
@@ -96,13 +96,17 @@ class MedianPool2d(torch.nn.Module):
     https://gist.github.com/rwightman/f2d3849281624be7c0f11c85c87c1598
     """
 
-    def __init__(self, kernel_size=3, stride=1, padding=0, same=True, **kwargs):
+    def __init__(self, kernel_size=3, stride=1, padding=0, same=True, only_periodically=False, **kwargs):
         """Initialize with kernel_size, stride, padding."""
         super().__init__()
         self.k = _pair(kernel_size)
         self.stride = _pair(stride)
         self.padding = _quadruple(padding)  # convert to l, r, t, b
         self.same = same
+
+        self.only_periodically = only_periodically
+        if only_periodically:
+            self.computed = False
 
     def _padding(self, x):
         if self.same:
@@ -125,6 +129,10 @@ class MedianPool2d(torch.nn.Module):
         return padding
 
     def forward(self, x):
+        if self.only_periodically and self.computed:
+            return x
+        else:
+            self.computed = True
         # using existing pytorch functions and tensor ops so that we get autograd,
         # would likely be more efficient to implement from scratch at C/Cuda level
         x = F.pad(x, self._padding(x), mode="reflect")
@@ -133,7 +141,7 @@ class MedianPool2d(torch.nn.Module):
         return x
 
     def update(self, *args, **kwargs):
-        pass
+        self.computed = False
 
 
 class RandomTransform(torch.nn.Module):
@@ -208,7 +216,7 @@ class AntiAlias(torch.nn.Module):
     def __init__(self, channels=3, width=5, stride=1, **kwargs):
         super().__init__()
         self.width = int(width)
-        self.padding = width // 2 + 1
+        self.padding = width // 2
         self.stride = stride
         self.channels = channels
 

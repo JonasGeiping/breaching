@@ -145,8 +145,11 @@ class OptimizationBasedAttack(_BaseAttacker):
         def closure():
             optimizer.zero_grad()
 
-            with torch.set_grad_enabled(self.cfg.differentiable_augmentations):
+            if self.cfg.differentiable_augmentations:
                 candidate_augmented = self.augmentations(candidate) if self.augmentations is not None else candidate
+            else:
+                candidate_augmented = candidate
+                candidate.data = self.augmentations(candidate.data) if self.augmentations is not None else candidate.data
 
             total_objective = 0
             total_task_loss = 0

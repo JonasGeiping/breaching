@@ -7,6 +7,8 @@ import torch
 def optimizer_lookup(params, optim_name, step_size, scheduler=None, warmup=0, max_iterations=10_000):
     if optim_name.lower() == "adam":
         optimizer = torch.optim.Adam(params, lr=step_size)
+    elif optim_name.lower() == "adam-safe":
+        optimizer = torch.optim.Adam(params, lr=step_size, betas=(0.5, 0.99), eps=1e-4)
     elif optim_name.lower() == "momgd":
         optimizer = torch.optim.SGD(params, lr=step_size, momentum=0.9, nesterov=True)
     elif optim_name.lower() == "gd":
@@ -17,7 +19,6 @@ def optimizer_lookup(params, optim_name, step_size, scheduler=None, warmup=0, ma
         raise ValueError(f"Invalid optimizer {optim_name} given.")
 
     if scheduler == "step-lr":
-
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer, milestones=[max_iterations // 2.667, max_iterations // 1.6, max_iterations // 1.142], gamma=0.1
         )

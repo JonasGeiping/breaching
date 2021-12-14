@@ -21,7 +21,7 @@ import logging
 log = logging.getLogger(__name__)
 
 
-class OptimizationBasedAttack(_BaseAttacker):
+class OptimizationBasedAttacker(_BaseAttacker):
     """Implements a wide spectrum of optimization-based attacks."""
 
     def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device("cpu"))):
@@ -98,7 +98,9 @@ class OptimizationBasedAttack(_BaseAttacker):
         current_wallclock = time.time()
         try:
             for iteration in range(self.cfg.optim.max_iterations):
-                closure = self._compute_objective(candidate, labels, rec_model, optimizer, shared_data, iteration)
+                closure = self._compute_objective(
+                    candidate, candidate, labels, rec_model, optimizer, shared_data, iteration
+                )
                 objective_value, task_loss = optimizer.step(closure), self.current_task_loss
                 scheduler.step()
 
@@ -141,7 +143,7 @@ class OptimizationBasedAttack(_BaseAttacker):
 
         return best_candidate.detach()
 
-    def _compute_objective(self, candidate, labels, rec_model, optimizer, shared_data, iteration):
+    def _compute_objective(self, candidate_variable, candidate, labels, rec_model, optimizer, shared_data, iteration):
         def closure():
             optimizer.zero_grad()
 
@@ -158,16 +160,17 @@ class OptimizationBasedAttack(_BaseAttacker):
                 total_objective += regularizer(candidate_augmented)
 
             if total_objective.requires_grad:
-                total_objective.backward(inputs=candidate, create_graph=False)
+                total_objective.backward(inputs=candidate_variable, create_graph=False)
             if self.cfg.optim.langevin_noise > 0:
                 step_size = optimizer.param_groups[0]["lr"]
-                candidate.grad += self.cfg.optim.langevin_noise * step_size * torch.randn_like(candidate.grad)
+                noise_map = torch.randn_like(candidate_variable.grad)
+                candidate_variable.grad += self.cfg.optim.langevin_noise * step_size * noise_map
             if self.cfg.optim.signed is not None:
                 if self.cfg.optim.signed == "soft":
                     scaling_factor = 1 - iteration / self.cfg.max_iterations  # just a simple linear rule for now
-                    candidate.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
+                    candidate_variable.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
                 elif self.cfg.optim.signed == "hard":
-                    candidate.grad.sign_()
+                    candidate_variable.grad.sign_()
                 else:
                     pass
 

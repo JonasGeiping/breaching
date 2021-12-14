@@ -14,9 +14,6 @@ class Jitter(torch.nn.Module):
         off2 = torch.randint(-self.lim, self.lim, (1,))
         return torch.roll(x, shifts=(off1, off2), dims=(2, 3))
 
-    def update(self, *args, **kwargs):
-        pass
-
 
 class Focus(torch.nn.Module):
     def __init__(self, size=224, std=1.0, **kwargs):
@@ -31,11 +28,6 @@ class Focus(torch.nn.Module):
         y = (pert[1] + h // 2 - self.size // 2).long().clamp(min=0, max=h - self.size)
         return img[:, :, x : x + self.size, y : y + self.size]
 
-    def update(self, iteration, max_iteration, *args, data_shape=(1, 3, 224, 224), **kwargs):
-        num_stages = data_shape[2] // 32
-        current_stage = torch.round(torch.as_tensor(iteration / max_iteration * num_stages)) + 1
-        self.size = int(current_stage) * 32
-
 
 class Zoom(torch.nn.Module):
     def __init__(self, out_size=224, **kwargs):
@@ -45,8 +37,20 @@ class Zoom(torch.nn.Module):
     def forward(self, img: torch.tensor) -> torch.tensor:
         return self.up(img)
 
-    def update(self, *args, **kwargs):
-        pass
+
+class CenterZoom(torch.nn.Module):
+    def __init__(self, initial_fov=32, out_size=224, **kwargs):
+        super().__init__()
+        self.fov = initial_fov
+        self.out_size = out_size
+
+    def forward(self, img: torch.tensor) -> torch.tensor:
+        """Cut out a part of size fov x fov from the center of the image and zoom it to max."""
+        w, h = img.shape[-2:]
+        wh, hh = self.fov, self.fov
+        w0, h0 = (w - wh) // 2, (h - hh) // 2
+        img = img[:, :, w0 : w0 + wh, h0 : h0 + hh]
+        return F.interpolate(img, size=self.out_size, mode="bilinear", align_corners=False)
 
 
 class Flip(torch.nn.Module):
@@ -79,9 +83,6 @@ class ColorJitter(torch.nn.Module):
     def forward(self, img):
         self.shuffle(batch_size=img.shape[0], dtype=img.dtype, device=img.device)
         return (img - self.mean) / self.std
-
-    def update(self, *args, **kwargs):
-        pass
 
 
 class MedianPool2d(torch.nn.Module):
@@ -132,9 +133,6 @@ class MedianPool2d(torch.nn.Module):
         x = x.contiguous().view(x.size()[:4] + (-1,)).median(dim=-1)[0]
         return x
 
-    def update(self, *args, **kwargs):
-        pass
-
 
 class RandomTransform(torch.nn.Module):
     """Crop the given batch of tensors at a random location.
@@ -142,13 +140,16 @@ class RandomTransform(torch.nn.Module):
     As discussed in https://discuss.pytorch.org/t/cropping-a-minibatch-of-images-each-image-a-bit-differently/12247/5
     """
 
-    def __init__(self, shift=8, fliplr=False, flipud=False, mode="bilinear", align=False, **kwargs):
+    def __init__(
+        self, shift=8, fliplr=False, flipud=False, mode="bilinear", padding="reflection", align=False, **kwargs
+    ):
         """Args: source and target size."""
         super().__init__()
         self.shift = shift
         self.fliplr = fliplr
         self.flipud = flipud
 
+        self.padding = padding
         self.mode = mode
         self.align = True
 
@@ -167,8 +168,8 @@ class RandomTransform(torch.nn.Module):
             randgen = torch.rand(x.shape[0], 4, device=x.device, dtype=x.dtype)
 
         # Add random shifts by x
-        delta = torch.linspace(0, 1, x.shape[2], device=x.device)[self.shift]
-        x_shift = (randgen[:, 0] - 0.5) * 2 * delta
+        delta = self.shift / (x.shape[2] - 1)  # Shifts are with a magnitude in [0, 1]
+        x_shift = (randgen[:, 0] - 0.5) * 2 * delta  # and shift within [-1, 1]
         grid[:, :, :, 0] = grid[:, :, :, 0] + x_shift[..., None, None].expand(-1, grid.shape[1], grid.shape[2])
         # Add random shifts by y
         y_shift = (randgen[:, 1] - 0.5) * 2 * delta
@@ -183,11 +184,13 @@ class RandomTransform(torch.nn.Module):
     def forward(self, x, randgen=None):
         # Make a random shift grid for each batch
         grid_shifted = self.random_crop_grid(x, randgen)
+        if self.padding == "circular":
+            grid_shifted = (grid_shifted + 1) % 1 - 1
+            padding = "zeros"
+        else:
+            padding = self.padding
         # Sample using grid sample
-        return F.grid_sample(x, grid_shifted, align_corners=self.align, mode=self.mode)
-
-    def update(self, *args, **kwargs):
-        pass
+        return F.grid_sample(x, grid_shifted, align_corners=self.align, mode=self.mode, padding_mode=padding)
 
 
 class AntiAlias(torch.nn.Module):
@@ -220,9 +223,6 @@ class AntiAlias(torch.nn.Module):
     def forward(self, inputs):
         return F.conv2d(inputs, self.antialias, padding=self.padding, stride=self.stride, groups=inputs.shape[1],)
 
-    def update(self, *args, **kwargs):
-        pass
-
 
 augmentation_lookup = dict(
     antialias=AntiAlias,
@@ -233,4 +233,5 @@ augmentation_lookup = dict(
     focus=Focus,
     discrete_shift=Jitter,
     median=MedianPool2d,
+    centerzoom=CenterZoom,
 )

@@ -18,7 +18,7 @@ optim:
   boxed: True
   max_iterations: 20_000
   step_size_decay: cosine-decay
-  langevin_noise: 0.2 # the paper has 0.2 but the value does feel relatively large in my experiments
+  langevin_noise: 0.01 # the original paper has 0.2 but the value does feel relatively large in my experiments
   warmup: 50
 
   callback: 1000 # Print objective value every callback many iterations

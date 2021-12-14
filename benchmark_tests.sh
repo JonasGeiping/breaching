@@ -79,3 +79,14 @@ python benchmark_breaches.py name=invertinggradients_median_nodiff case=2_single
 
 python benchmark_breaches.py name=invertinggradients_aa3 case=2_single_imagenet attack=invertinggradients +attack.augmentations.antialias.width=3
 python benchmark_breaches.py name=invertinggradients_aa3_nodiff case=2_single_imagenet attack=invertinggradients +attack.augmentations.antialias.width3 attack.differentiable_augmentations=False
+
+
+# Misc:
+python benchmark_breaches.py name=invertinggradients_adamsafe case=2_single_imagenet attack=invertinggradients attack.optim.optimizer=adam-safe
+
+python benchmark_breaches.py name=invertinggradients_angular_unsigned case=2_single_imagenet attack=invertinggradients attack.objective.type=angular attack.optim.signed=none
+python benchmark_breaches.py name=invertinggradients_angular_unsigned_lr001 case=2_single_imagenet attack=invertinggradients attack.objective.type=angular attack.optim.signed=none attack.optim.step_size=0.01
+python benchmark_breaches.py name=invertinggradients_angular_unsigned_lr1 case=2_single_imagenet attack=invertinggradients attack.objective.type=angular attack.optim.signed=none attack.optim.step_size=1.0
+
+python benchmark_breaches.py name=invertinggradients_angular_lr1 case=2_single_imagenet attack=invertinggradients attack.objective.type=angular attack.optim.step_size=0.01
+python benchmark_breaches.py name=invertinggradients_angular_lr001 case=2_single_imagenet attack=invertinggradients attack.objective.type=angular attack.optim.step_size=1.0

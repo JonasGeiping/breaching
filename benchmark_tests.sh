@@ -57,3 +57,25 @@ python benchmark_breaches.py name=modern2_freg001 case=2_single_imagenet attack=
 python benchmark_breaches.py name=modern2_freg1 case=2_single_imagenet attack=modern2 +attack.regularization.features.scale=1.0
 
 python benchmark_breaches.py name=modern2_l1tv case=2_single_imagenet attack=modern2 attack.regularization.total_variation.inner_exp=1 attack.regularization.total_variation.outer_exp=1
+
+# Benchmark some data augmentations:
+python benchmark_breaches.py name=invertinggradients_shift1 case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=1.0
+python benchmark_breaches.py name=invertinggradients_shift01 case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=0.1
+python benchmark_breaches.py name=invertinggradients_shift05 case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=0.5
+python benchmark_breaches.py name=invertinggradients_shift2 case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=2.0
+python benchmark_breaches.py name=invertinggradients_shift10 case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=10
+python benchmark_breaches.py name=invertinggradients_shift50 case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=50 attack.augmentations.continuous_shift.padding=circular
+
+python benchmark_breaches.py name=invertinggradients_colorjitter case=2_single_imagenet attack=invertinggradients +attack.augmentations.colorjitter={}
+
+python benchmark_breaches.py name=invertinggradients_shift1_nodiff case=2_single_imagenet attack=invertinggradients +attack.augmentations.continuous_shift.shift=1.0 attack.differentiable_augmentations=False
+python benchmark_breaches.py name=invertinggradients_flip case=2_single_imagenet attack=invertinggradients +attack.augmentations.flip={}
+python benchmark_breaches.py name=invertinggradients_flip_nodiff case=2_single_imagenet attack=invertinggradients +attack.augmentations.flip={} attack.differentiable_augmentations=False
+
+
+python benchmark_breaches.py name=invertinggradients_median case=2_single_imagenet attack=invertinggradients +attack.augmentations.median={}
+python benchmark_breaches.py name=invertinggradients_median_nodiff case=2_single_imagenet attack=invertinggradients +attack.augmentations.median={} attack.differentiable_augmentations=False
+
+
+python benchmark_breaches.py name=invertinggradients_aa3 case=2_single_imagenet attack=invertinggradients +attack.augmentations.antialias.width=3
+python benchmark_breaches.py name=invertinggradients_aa3_nodiff case=2_single_imagenet attack=invertinggradients +attack.augmentations.antialias.width3 attack.differentiable_augmentations=False

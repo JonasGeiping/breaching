@@ -94,7 +94,6 @@ class OptimizationBasedAttacker(_BaseAttacker):
 
         # Initialize optimizers
         optimizer, scheduler = self._init_optimizer(candidate)
-
         current_wallclock = time.time()
         try:
             for iteration in range(self.cfg.optim.max_iterations):
@@ -123,15 +122,6 @@ class OptimizationBasedAttacker(_BaseAttacker):
                 if not torch.isfinite(objective_value):
                     log.info(f"Recovery loss is non-finite in iteration {iteration}. Cancelling reconstruction!")
                     break
-
-                # Some augmentations can change their behavior/strength during optimization:
-                if self.augmentations is not None and iteration % self.cfg.update_augmentations == 0:
-                    for augmentation in self.augmentations:
-                        augmentation.update(
-                            iteration,
-                            self.cfg.optim.max_iterations,
-                            data_shape=[shared_data["num_data_points"], *self.data_shape],
-                        )
 
                 stats[f"Trial_{trial}_Val"].append(objective_value.item())
 

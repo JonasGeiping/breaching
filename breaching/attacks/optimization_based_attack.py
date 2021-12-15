@@ -45,7 +45,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
                 self.augmentations += [augmentation_lookup[key](**self.cfg.augmentations[key])]
             self.augmentations = torch.nn.Sequential(*self.augmentations).to(**setup)
         except AttributeError:
-            self.augmentations = None  # No augmentations selected.
+            self.augmentations = torch.nn.Sequential()  # No augmentations selected.
 
     def __repr__(self):
         n = "\n"
@@ -54,7 +54,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
 
     Objective: {repr(self.objective)}
     Regularizers: {(n + ' '*18).join([repr(r) for r in self.regularizers])}
-    Augmentations: {f"{(n + ' '*18).join([repr(r) for r in self.augmentations])}" if self.augmentations else "-"}
+    Augmentations: {(n + ' '*18).join([repr(r) for r in self.augmentations])}
 
     Optimization Setup:
         {(n + ' ' * 8).join([f'{key}: {val}' for key, val in self.cfg.optim.items()])}
@@ -97,9 +97,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
         current_wallclock = time.time()
         try:
             for iteration in range(self.cfg.optim.max_iterations):
-                closure = self._compute_objective(
-                    candidate, candidate, labels, rec_model, optimizer, shared_data, iteration
-                )
+                closure = self._compute_objective(candidate, labels, rec_model, optimizer, shared_data, iteration)
                 objective_value, task_loss = optimizer.step(closure), self.current_task_loss
                 scheduler.step()
 
@@ -133,15 +131,15 @@ class OptimizationBasedAttacker(_BaseAttacker):
 
         return best_candidate.detach()
 
-    def _compute_objective(self, candidate_variable, candidate, labels, rec_model, optimizer, shared_data, iteration):
+    def _compute_objective(self, candidate, labels, rec_model, optimizer, shared_data, iteration):
         def closure():
             optimizer.zero_grad()
 
             if self.cfg.differentiable_augmentations:
-                candidate_augmented = self.augmentations(candidate) if self.augmentations is not None else candidate
+                candidate_augmented = self.augmentations(candidate)
             else:
                 candidate_augmented = candidate
-                candidate.data = self.augmentations(candidate.data) if self.augmentations is not None else candidate.data
+                candidate_augmented.data = self.augmentations(candidate.data)
 
             total_objective = 0
             total_task_loss = 0
@@ -153,17 +151,17 @@ class OptimizationBasedAttacker(_BaseAttacker):
                 total_objective += regularizer(candidate_augmented)
 
             if total_objective.requires_grad:
-                total_objective.backward(inputs=candidate_variable, create_graph=False)
+                total_objective.backward(inputs=candidate, create_graph=False)
             if self.cfg.optim.langevin_noise > 0:
                 step_size = optimizer.param_groups[0]["lr"]
-                noise_map = torch.randn_like(candidate_variable.grad)
-                candidate_variable.grad += self.cfg.optim.langevin_noise * step_size * noise_map
+                noise_map = torch.randn_like(candidate.grad)
+                candidate.grad += self.cfg.optim.langevin_noise * step_size * noise_map
             if self.cfg.optim.signed is not None:
                 if self.cfg.optim.signed == "soft":
                     scaling_factor = 1 - iteration / self.cfg.optim.max_iterations  # just a simple linear rule for now
-                    candidate_variable.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
+                    candidate.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
                 elif self.cfg.optim.signed == "hard":
-                    candidate_variable.grad.sign_()
+                    candidate.grad.sign_()
                 else:
                     pass
 

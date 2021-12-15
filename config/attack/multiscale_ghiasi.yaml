@@ -10,8 +10,9 @@ augmentations:
     padding: circular
   colorjitter:
     none:
+  zoom:
+    out_size: 224
 
-scale_space: size # size/sampling [i.e. whether the image is fed into the network at a smaller scale or just with lower freq]
 resize: focus # focus/upsampling
 scale_pyramid: linear # log/linear
 

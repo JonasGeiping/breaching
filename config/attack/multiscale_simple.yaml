@@ -7,8 +7,9 @@ num_stages: 7
 augmentations:
   continuous_shift:
     shift: 4
+  zoom:
+    out_size: 224
 
-scale_space: sampling # size/sampling [i.e. whether the image is fed into the network at a smaller scale or just with lower freq]
 resize: upsampling # focus/upsampling
 scale_pyramid: log # log/linear
 

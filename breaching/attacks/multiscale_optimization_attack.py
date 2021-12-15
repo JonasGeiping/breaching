@@ -18,25 +18,6 @@ log = logging.getLogger(__name__)
 class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
     """Implements a wide spectrum of optimization-based attacks."""
 
-    def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
-        # Initialize stats module for later usage:
-        rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)
-
-        # Main reconstruction loop starts here:
-        scores = torch.zeros(self.cfg.restarts.num_trials)
-        candidate_solutions = []
-        try:
-            for trial in range(self.cfg.restarts.num_trials):
-                candidate_solutions += [self._run_trial(rec_models, shared_data, labels, stats, trial, dryrun)]
-                scores[trial] = self._score_trial(candidate_solutions[trial], labels, rec_models, shared_data)
-        except KeyboardInterrupt:
-            print("Trial procedure manually interruped.")
-            pass
-        optimal_solution = self._select_optimal_reconstruction(candidate_solutions, scores, stats)
-        reconstructed_data = dict(data=optimal_solution, labels=labels)
-
-        return reconstructed_data, stats
-
     def _run_trial(self, rec_model, shared_data, labels, stats, trial, dryrun=False):
         """Run a single reconstruction trial."""
         self.exitsignal = False  # Only used for early exit from KeyboardInterrupt
@@ -53,15 +34,16 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
             scale_pyramid = torch.arange(increment, self.data_shape[2] + 1, increment)
         elif self.cfg.scale_pyramid == "log":
             scales = torch.as_tensor([self.data_shape[2] / (2 ** i) for i in range(self.cfg.num_stages, -1, -1)])
-            scale_pyramid = scales[scales > 0].round().int()
+            scale_pyramid = scales.round().int()
+        elif self.cfg.scale_pyramid == "trivial":
+            scale_pyramid = [self.data_shape[2] for _ in range(self.cfg.num_stages)]
         else:
             raise ValueError(f"Invalid scale pyramid {cfg.scale_pyramid}.")
 
         # Initialize candidate reconstruction data on lowest scale:
-        candidate_variable = self._initialize_data(
-            [shared_data["num_data_points"], C, scale_pyramid[0], scale_pyramid[0]]
-        )
-        best_candidate = self._initialize_data([shared_data["num_data_points"], *self.data_shape])
+        scale = scale_pyramid[0]
+        candidate = self._initialize_data([shared_data["num_data_points"], C, scale, scale]).detach()
+        best_candidate = self._initialize_data([shared_data["num_data_points"], *self.data_shape]).detach()
         scale_params = dict(mode="bilinear", align_corners=False)
 
         for stage, scale in enumerate(scale_pyramid):
@@ -70,51 +52,39 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
             if self.cfg.resize == "focus":
                 p = torch.div(scale, 2, rounding_mode="floor")
                 background = self._initialize_data([shared_data["num_data_points"], C, scale, scale]).detach()
-                scaled_var = F.interpolate(candidate_variable, size=p, **scale_params)
+                scaled_var = F.interpolate(candidate, size=p, **scale_params)
                 cx = torch.div(scale - p, 2, rounding_mode="floor")
                 background[:, :, cx : cx + p, cx : cx + p] = scaled_var
-                candidate_variable = background
+                candidate = background
             else:
-                candidate_variable = F.interpolate(candidate_variable, size=scale, **scale_params)
-            candidate_variable = candidate_variable.detach().requires_grad_()
-            # Increase image resolution if in sampling:
-            if self.cfg.scale_space == "sampling":
-                candidate = F.interpolate(candidate_variable, size=self.data_shape[2], **scale_params)
-            else:
-                candidate = candidate_variable.clone()
+                candidate = F.interpolate(candidate, size=scale, **scale_params)
+            candidate = candidate.detach().requires_grad_()
             # Run stage:
-            best_candidate = self._run_stage(
-                candidate_variable, candidate, rec_model, shared_data, labels, stats, trial, stage, dryrun
-            )
+            stage_candidate = self._run_stage(candidate, rec_model, shared_data, labels, stats, trial, stage, dryrun)
+            best_candidate = F.interpolate(stage_candidate, size=self.data_shape[2], **scale_params)
             if dryrun or self.exitsignal:
                 break
 
         return best_candidate
 
-    def _run_stage(
-        self, candidate_variable, candidate, rec_model, shared_data, labels, stats, trial, stage, dryrun=False
-    ):
+    def _run_stage(self, candidate, rec_model, shared_data, labels, stats, trial, stage, dryrun=False):
         """Optimization with respect to base_candidate."""
         best_candidate = candidate.detach().clone()
         minimal_value_so_far = torch.as_tensor(float("inf"), **self.setup)
 
         # Initialize optimizers
-        optimizer, scheduler = self._init_optimizer(candidate_variable)
+        optimizer, scheduler = self._init_optimizer(candidate)
         current_wallclock = time.time()
         try:
             for iteration in range(self.cfg.optim.max_iterations):
-                closure = self._compute_objective(
-                    candidate_variable, candidate, labels, rec_model, optimizer, shared_data, iteration
-                )
+                closure = self._compute_objective(candidate, labels, rec_model, optimizer, shared_data, iteration)
                 objective_value, task_loss = optimizer.step(closure), self.current_task_loss
                 scheduler.step()
 
                 with torch.no_grad():
                     # Project into image space
                     if self.cfg.optim.boxed:
-                        candidate_variable.data = torch.max(
-                            torch.min(candidate_variable, (1 - self.dm) / self.ds), -self.dm / self.ds
-                        )
+                        candidate.data = torch.max(torch.min(candidate, (1 - self.dm) / self.ds), -self.dm / self.ds)
                     if objective_value < minimal_value_so_far:
                         minimal_value_so_far = objective_value.detach()
                         best_candidate = candidate.detach().clone()

@@ -10,8 +10,6 @@ augmentations:
     padding: circular
   colorjitter:
     none:
-  zoom:
-    out_size: 224
 
 resize: focus # focus/upsampling
 scale_pyramid: linear # log/linear

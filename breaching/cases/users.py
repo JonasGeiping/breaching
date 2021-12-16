@@ -149,7 +149,7 @@ class UserSingleStep(torch.nn.Module):
             labels=labels.sort()[0] if self.provide_labels else None,
             local_hyperparams=None,
         )
-        true_user_data = dict(data=data, labels=labels.sort()[0], buffers=shared_buffers)
+        true_user_data = dict(data=data, labels=labels, buffers=shared_buffers)
 
         return shared_data, true_user_data
 
@@ -337,7 +337,7 @@ class UserMultiStep(UserSingleStep):
             if self.provide_local_hyperparams
             else None,
         )
-        true_user_data = dict(data=user_data, labels=user_labels.sort()[0], buffers=shared_buffers)
+        true_user_data = dict(data=user_data, labels=user_labels, buffers=shared_buffers)
 
         return shared_data, true_user_data
 

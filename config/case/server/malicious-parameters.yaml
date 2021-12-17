@@ -1,6 +1,7 @@
-
 name: malicious_parameters
-model_state: trained  # This is used as initial state, but can be changed by the server
+model_state: trained # This is used as initial state, but can be changed by the server
+provide_public_buffers: True # Send public buffers to users (this is batch norm specific)
+
 param_modification:
   optimization:
     objective: pixel-matching
@@ -10,8 +11,8 @@ param_modification:
       scheduler: cosine-decay
       warmup: 0
       max_iterations: 300
-    layers:  # Only used as target for ratio matching
-      - layers.1.0.conv1  #ImageNet, ResNet50: Try layer2.0.conv2
+    layers: # Only used as target for ratio matching
+      - layers.1.0.conv1 #ImageNet, ResNet50: Try layer2.0.conv2
       - layers.1.0.bn1
     target_shape:
       - 64

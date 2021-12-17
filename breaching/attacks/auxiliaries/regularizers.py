@@ -4,72 +4,111 @@ import torch
 
 from .deepinversion import DeepInversionFeatureHook
 
-class TotalVariationOld(torch.nn.Module):
-    """Computes the total variation value of an (image) tensor, based on its last two dimensions.
-       Optionally also Color TV based on its last three dimensions."""
 
-    def __init__(self, setup, scale=0.1, inner_exp=1, outer_exp=1, gamma=0.0):
-        """scale is the overall scaling. inner_exp and outer_exp control isotropy vs anisotropy.
-           gamma optionally also includes proper color TV via double opponents."""
+class _LinearFeatureHook:
+    """Hook to retrieve input to given module."""
+
+    def __init__(self, module):
+        self.features = None
+        self.hook = module.register_forward_hook(self.hook_fn)
+
+    def hook_fn(self, module, input, output):
+        input_features = input[0]
+        self.features = input_features
+
+    def close(self):
+        self.hook.remove()
+
+
+class FeatureRegularization(torch.nn.Module):
+    """Feature regularization implemented for the last linear layer at the end."""
+
+    def __init__(self, setup, scale=0.1):
         super().__init__()
         self.setup = setup
         self.scale = scale
-        self.inner_exp = inner_exp
-        self.outer_exp = outer_exp
-        self.gamma = gamma
-        if self.gamma > 0:
-            self.forward = self._forward_full
-        else:
-            if self.inner_exp == self.outer_exp == 1:
-                self.forward = self._forward_simplified
-            else:
-                self.forward = self._forward_variso
 
-    def initialize(self, model, **kwargs):
-        pass
+    def initialize(self, models, shared_data, labels, *args, **kwargs):
+        self.measured_features = []
+        for shared_grad in shared_data["gradients"]:
+            # Assume last two gradient vector entries are weight and bias:
+            weights = shared_grad[-2]
+            bias = shared_grad[-1]
+            grads_fc_debiased = weights / bias[:, None]
+            features_per_label = []
+            for label in labels:
+                if bias[label] != 0:
+                    features_per_label.append(grads_fc_debiased[label])
+                else:
+                    features_per_label.append(torch.zeros_like(grads_fc_debiased[0]))
+            self.measured_features.append(torch.stack(features_per_label))
 
-    def _forward_simplified(self, tensor, **kwargs):
-        """Anisotropic TV."""
-        dx = torch.mean(torch.abs(tensor[:, :, :, :-1] - tensor[:, :, :, 1:]))
-        dy = torch.mean(torch.abs(tensor[:, :, :-1, :] - tensor[:, :, 1:, :]))
-        return self.scale * (dx + dy)
+        self.refs = [None for model in models]
+        for idx, model in enumerate(models):
+            for module in model.modules():
+                # Keep only the last linear layer here:
+                if isinstance(module, torch.nn.Linear):
+                    self.refs[idx] = _LinearFeatureHook(module)
 
-    def _forward_variso(self, tensor, **kwargs):
-        """Anisotropic TV."""
-        dx = torch.abs(tensor[:, :, :, :-1] - tensor[:, :, :, 1:]).pow(self.inner_exp)
-        dy = torch.abs(tensor[:, :, :-1, :] - tensor[:, :, 1:, :]).pow(self.inner_exp)
-        return self.scale * (dx + dy).pow(self.outer_exp).mean()
+    def forward(self, tensor, *args, **kwargs):
+        regularization_value = 0
+        for ref, measured_val in zip(self.refs, self.measured_features):
+            regularization_value += (ref.features - measured_val).pow(2).mean()
+        return regularization_value * self.scale
 
-    def _forward_full(self, tensor, **kwargs):
-        """Double opponent TV as in Aström and Schnörr "Double-Opponent Vectorial Total Variation".
+    def __repr__(self):
+        return f"Feature space regularization, scale={self.scale}"
 
-        TODO: Extract and move this mess into a proper Conv2d operation for efficiency reasons...
-        """
-        q, p = self.inner_exp, self.outer_exp
 
-        dxdy = ((tensor[:, :, :, :-1] - tensor[:, :, :, 1:]).pow(q) +
-                (tensor[:, :, :-1, :] - tensor[:, :, 1:, :]).pow(q)).pow(p)
+class LinearLayerRegularization(torch.nn.Module):
+    """Linear layer regularization implemented for arbitrary linear layers. WIP Example."""
 
-        rg = tensor[:, 0, :, :] - tensor[:, 1, :, :]
-        rb = tensor[:, 0, :, :] - tensor[:, 2, :, :]
-        gb = tensor[:, 1, :, :] - tensor[:, 2, :, :]
+    def __init__(self, setup, scale=0.1):
+        super().__init__()
+        self.setup = setup
+        self.scale = scale
 
-        rg_dxdy = ((rg[:, :, :-1] - rg[:, :, 1:]).pow(q) + (rg[:, :-1, :] - rg[:, 1:, :]).pow(q)).pow(p)
-        rb_dxdy = ((rb[:, :, :-1] - rb[:, :, 1:]).pow(q) + (rb[:, :-1, :] - rb[:, 1:, :]).pow(q)).pow(p)
-        gb_dxdy = ((gb[:, :, :-1] - gb[:, :, 1:]).pow(q) + (gb[:, :-1, :] - gb[:, 1:, :]).pow(q)).pow(p)
+    def initialize(self, models, gradient_data, *args, **kwargs):
+        self.measured_features = []
+        self.refs = [list() for model in models]
 
-        return self.scale * (dxdy.mean() + self.gamma * (rg_dxdy.mean() + rb_dxdy.mean() + gb_dxdy.mean()))
+        for idx, (model, shared_grad) in enumerate(zip(models, gradient_data)):
+            # 1) Find linear layers:
+            linear_layers = []
+            for name, module in model.named_modules():
+                if isinstance(module, torch.nn.Linear):
+                    linear_layers.append(name)
+                    self.refs[idx].append(_LinearFeatureHook(module))
+            named_grads = {name: g for (g, (name, param)) in zip(shared_grad, model.named_parameters())}
+
+            # 2) Check features
+            features = []
+            for linear_layer in linear_layers:
+                weights = named_grads[linear_layer + ".weight"]
+                bias = named_grads[linear_layer + ".bias"]
+                grads_fc_debiased = (weights / bias[:, None]).mean(dim=0)  # At some point todo: Make this smarter
+                features.append(grads_fc_debiased)
+            self.measured_features.append(features)
+
+    def forward(self, tensor, *args, **kwargs):
+        regularization_value = 0
+        for model_ref, data_ref in zip(self.refs, self.measured_features):
+            for linear_layer, data in zip(model_ref, data_ref):
+                regularization_value += (linear_layer.features.mean(dim=0) - data).pow(2).sum()
+
+    def __repr__(self):
+        return f"Feature space regularization, scale={self.scale}"
 
 
 class TotalVariation(torch.nn.Module):
     """Computes the total variation value of an (image) tensor, based on its last two dimensions.
-       Optionally also Color TV based on its last three dimensions.
+    Optionally also Color TV based on its last three dimensions.
 
-       The value of this regularization is scaled by 1/sqrt(M*N) times the given scale."""
+    The value of this regularization is scaled by 1/sqrt(M*N) times the given scale."""
 
     def __init__(self, setup, scale=0.1, inner_exp=1, outer_exp=1, double_opponents=False, eps=1e-8):
         """scale is the overall scaling. inner_exp and outer_exp control isotropy vs anisotropy.
-           Optionally also includes proper color TV via double opponents."""
+        Optionally also includes proper color TV via double opponents."""
         super().__init__()
         self.setup = setup
         self.scale = scale
@@ -78,32 +117,40 @@ class TotalVariation(torch.nn.Module):
         self.eps = eps
         self.double_opponents = double_opponents
 
-        grad_weight = torch.tensor([[0, 0, 0],
-                                    [0, -1, 1],
-                                    [0, 0, 0]], **setup).unsqueeze(0).unsqueeze(1)
+        grad_weight = torch.tensor([[0, 0, 0], [0, -1, 1], [0, 0, 0]], **setup).unsqueeze(0).unsqueeze(1)
         grad_weight = torch.cat((torch.transpose(grad_weight, 2, 3), grad_weight), 0)
-        if self.double_opponents:
-            self.groups = 6
-        else:
-            self.groups = 3
+        self.groups = 6 if self.double_opponents else 3
         grad_weight = torch.cat([grad_weight] * self.groups, 0)
-        self.register_buffer('weight', grad_weight)
 
-    def initialize(self, models, **kwargs):
+        self.register_buffer("weight", grad_weight)
+
+    def initialize(self, models, *args, **kwargs):
         pass
 
-    def forward(self, tensor, **kwargs):
+    def forward(self, tensor, *args, **kwargs):
         """Use a convolution-based approach."""
         if self.double_opponents:
-            tensor = torch.cat([tensor,
-                                tensor[:, 0:1, :, :] - tensor[:, 1:2, :, :],
-                                tensor[:, 0:1, :, :] - tensor[:, 2:3, :, :],
-                                tensor[:, 1:2, :, :] - tensor[:, 2:3, :, :]], dim=1)
-        diffs = torch.nn.functional.conv2d(tensor, self.weight, None, stride=1,
-                                           padding=1, dilation=1, groups=self.groups)
+            tensor = torch.cat(
+                [
+                    tensor,
+                    tensor[:, 0:1, :, :] - tensor[:, 1:2, :, :],
+                    tensor[:, 0:1, :, :] - tensor[:, 2:3, :, :],
+                    tensor[:, 1:2, :, :] - tensor[:, 2:3, :, :],
+                ],
+                dim=1,
+            )
+        diffs = torch.nn.functional.conv2d(
+            tensor, self.weight, None, stride=1, padding=1, dilation=1, groups=self.groups
+        )
         squares = (diffs.abs() + self.eps).pow(self.inner_exp)
         squared_sums = (squares[:, 0::2] + squares[:, 1::2]).pow(self.outer_exp)
         return squared_sums.mean() * self.scale
+
+    def __repr__(self):
+        return (
+            f"Total Variation, scale={self.scale}. p={self.inner_exp} q={self.outer_exp}. "
+            f"{'Color TV: double oppponents (double opp.)' if self.double_opponents else ''}"
+        )
 
 
 class OrthogonalityRegularization(torch.nn.Module):
@@ -117,10 +164,10 @@ class OrthogonalityRegularization(torch.nn.Module):
         self.setup = setup
         self.scale = scale
 
-    def initialize(self, models, **kwargs):
+    def initialize(self, models, *args, **kwargs):
         pass
 
-    def forward(self, tensor, **kwargs):
+    def forward(self, tensor, *args, **kwargs):
         if tensor.shape[0] == 1:
             return 0
         else:
@@ -129,6 +176,9 @@ class OrthogonalityRegularization(torch.nn.Module):
             idx = torch.arange(0, B, out=torch.LongTensor())
             full_products[idx, idx] = 0
             return full_products.sum()
+
+    def __repr__(self):
+        return f"Input Orthogonality, scale={self.scale}"
 
 
 class NormRegularization(torch.nn.Module):
@@ -140,16 +190,19 @@ class NormRegularization(torch.nn.Module):
         self.scale = scale
         self.pnorm = pnorm
 
-    def initialize(self, models, **kwargs):
+    def initialize(self, models, *args, **kwargs):
         pass
 
-    def forward(self, tensor, **kwargs):
+    def forward(self, tensor, *args, **kwargs):
         return 1 / self.pnorm * tensor.pow(self.pnorm).mean() * self.scale
+
+    def __repr__(self):
+        return f"Input L^p norm regularization, scale={self.scale}, p={self.pnorm}"
 
 
 class DeepInversion(torch.nn.Module):
     """Implement a DeepInversion based regularization as proposed in DeepInversion as used for reconstruction in
-       Yin et al, "See through Gradients: Image Batch Recovery via GradInversion".
+    Yin et al, "See through Gradients: Image Batch Recovery via GradInversion".
     """
 
     def __init__(self, setup, scale=0.1, first_bn_multiplier=10):
@@ -158,7 +211,7 @@ class DeepInversion(torch.nn.Module):
         self.scale = scale
         self.first_bn_multiplier = first_bn_multiplier
 
-    def initialize(self, models, **kwargs):
+    def initialize(self, models, *args, **kwargs):
         """Initialize forward hooks."""
         self.losses = [list() for model in models]
         for idx, model in enumerate(models):
@@ -166,12 +219,15 @@ class DeepInversion(torch.nn.Module):
                 if isinstance(module, torch.nn.BatchNorm2d):
                     self.losses[idx].append(DeepInversionFeatureHook(module))
 
-    def forward(self, tensor, **kwargs):
-        rescale = [self.first_bn_multiplier] + [1. for _ in range(len(self.losses[0]) - 1)]
+    def forward(self, tensor, *args, **kwargs):
+        rescale = [self.first_bn_multiplier] + [1.0 for _ in range(len(self.losses[0]) - 1)]
         feature_reg = 0
         for loss in self.losses:
             feature_reg += sum([mod.r_feature * rescale[idx] for (idx, mod) in enumerate(loss)])
         return self.scale * feature_reg
+
+    def __repr__(self):
+        return f"Deep Inversion Regularization (matching batch norms), scale={self.scale}, first-bn-mult={self.first_bn_multiplier}"
 
 
 regularizer_lookup = dict(
@@ -179,4 +235,5 @@ regularizer_lookup = dict(
     orthogonality=OrthogonalityRegularization,
     norm=NormRegularization,
     deep_inversion=DeepInversion,
+    features=FeatureRegularization,
 )

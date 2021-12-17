@@ -1,42 +1,35 @@
-
+defaults:
+  - _default_optimization_attack
 type: invertinggradients
-
-attack_type: optimization   # analytic, equation solver
 
 objective:
   type: cosine-similarity
   scale: 1.0
 
 restarts:
-  num_trials: 8
+  num_trials: 1
   scoring: cosine-similarity
-
-init: randn
 
 optim:
   optimizer: adam
-  signed: False
+  signed: "hard"
   step_size: 0.1
   boxed: True
   max_iterations: 24_000
   step_size_decay: cosine-decay
-  langevin_noise: 1e-3
+  langevin_noise: 1e-5
   warmup: 50
 
-  callback: 1000  # Print objective value every callback many iterations
+  callback: 1000 # Print objective value every callback many iterations
 
 regularization:
   total_variation:
-    scale: 0.2
+    scale: 0.1
     inner_exp: 2
     outer_exp: 0.5
     double_opponents: True
-  orthogonality:
-    scale: 0.0
   norm:
     scale: 1e-6
     pnorm: 2
-  deep_inversion:  # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
+  deep_inversion: # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
     scale: 0.001
-  # group_regularization: # Not implemented. Unclear how this was done without accesss to the source code
-  #  scale: 0.01

@@ -6,7 +6,15 @@ import torch
 import numpy as np
 
 from .base_attack import _BaseAttacker
-from .auxiliaries.recursive_attack import r_gap, peeling, fcn_reconstruction, inverse_udldu, derive_leakyrelu, inverse_leakyrelu
+from .auxiliaries.recursive_attack import (
+    r_gap,
+    peeling,
+    fcn_reconstruction,
+    inverse_udldu,
+    derive_leakyrelu,
+    inverse_leakyrelu,
+)
+
 
 class RecursiveAttacker(_BaseAttacker):
     """Implements a thin wrapper around the original R-GAP code.
@@ -16,8 +24,15 @@ class RecursiveAttacker(_BaseAttacker):
     python breach.py case=0_sanity_check attack=rgap case.model=cnn6 case/data=CIFAR10
     """
 
-    def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device('cpu'))):
+    def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device("cpu"))):
         super().__init__(model, loss_fn, cfg_attack, setup)
+
+    def __repr__(self):
+        return f"""Attacker (of type {self.__class__.__name__}) with settings:
+               inversion:
+                - step size: {self.cfg.step_size}
+                - steps    : {self.cfg.step_size}
+                """
 
     def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
         # Initialize stats module for later usage:
@@ -28,7 +43,7 @@ class RecursiveAttacker(_BaseAttacker):
 
         # Main reconstruction: loop starts here:
         inputs_from_queries = []
-        for model, user_gradient in zip(rec_models, shared_data['gradients']):
+        for model, user_gradient in zip(rec_models, shared_data["gradients"]):
             inputs = self._rgap(list(user_gradient), labels, model, feature_shapes)
             inputs_from_queries += [torch.as_tensor(inputs, **self.setup)]
 
@@ -59,13 +74,12 @@ class RecursiveAttacker(_BaseAttacker):
             g = original_dy_dx[grad_idx].numpy()
             grad_idx -= 1
             udldu = np.dot(g.reshape(-1), w.reshape(-1))
-            u = inverse_udldu(udldu, self.setup, step_size=self.cfg.inversion.step_size,
-                              steps=self.cfg.inversion.steps)
+            u = inverse_udldu(udldu, self.setup, step_size=self.cfg.inversion.step_size, steps=self.cfg.inversion.steps)
 
             # For simplicity assume y as known here. For details please refer to the paper.
             y = 0.1  # this is a simplification the orignal paper's code only works for binary class.
 
-            print(f'pred_: {u/y:.1e}, udldu: {udldu:.1e}, udldu_:{-u/(1+np.exp(u)):.1e}')
+            print(f"pred_: {u/y:.1e}, udldu: {udldu:.1e}, udldu_:{-u/(1+np.exp(u)):.1e}")
             k = -y / (1 + np.exp(u))
             k = k.reshape(1, -1).astype(np.float32)
             x_, last_weight = fcn_reconstruction(k=k, gradient=g), w
@@ -92,7 +106,7 @@ class RecursiveAttacker(_BaseAttacker):
                 elif isinstance(module, torch.nn.Identity):
                     da = derive_identity(x_)
                 else:
-                    ValueError(f'Please implement the derivative function of {module}')
+                    ValueError(f"Please implement the derivative function of {module}")
 
                 # back out neuron output
                 if isinstance(module, torch.nn.LeakyReLU):
@@ -100,8 +114,8 @@ class RecursiveAttacker(_BaseAttacker):
                 elif isinstance(module, torch.nn.Identity):
                     out = inverse_identity(x_)
                 else:
-                    ValueError(f'Please implement the inverse function of {module}')
-                if hasattr(all_modules[idx], 'padding'):
+                    ValueError(f"Please implement the inverse function of {module}")
+                if hasattr(all_modules[idx], "padding"):
                     padding = all_modules[idx].padding[0]  # JG: lets hope that the padding is symmetric
                 else:
                     padding = 0
@@ -123,10 +137,8 @@ class RecursiveAttacker(_BaseAttacker):
                     # In consideration of computational efficiency, for FCN only takes gradient constraints into account.
                     x_, last_weight = fcn_reconstruction(k=k, gradient=g), w
 
-
         inputs = x_.reshape([1, *self.data_shape])
         return inputs
-
 
     def _retrieve_feature_shapes(self, model, shared_data):
         """Retrieve x_shape by hooking into the model and recording it.
@@ -144,7 +156,7 @@ class RecursiveAttacker(_BaseAttacker):
 
         # Run the model with random data to query it
         # This requires the model to be in eval mode!
-        model(torch.randn([shared_data['num_data_points'], *self.data_shape], **self.setup))
+        model(torch.randn([shared_data["num_data_points"], *self.data_shape], **self.setup))
         for hook in hooks_list:
             hook.remove()
 

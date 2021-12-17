@@ -1,4 +1,3 @@
-
 name: single_image_small
 
 defaults:
@@ -8,6 +7,9 @@ defaults:
   - user: local_gradient
 loss: CrossEntropy
 model: ConvNet
+
+user:
+  provide_labels: True
 
 # Server and user:
 num_queries: 1

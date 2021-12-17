@@ -2,4 +2,4 @@
 
 from .data_preparation import construct_dataloader
 
-__all__ = ['construct_dataloader']
+__all__ = ["construct_dataloader"]

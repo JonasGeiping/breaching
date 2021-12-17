@@ -1,4 +1,3 @@
-
 name: sanity_check
 
 defaults:
@@ -8,6 +7,9 @@ defaults:
   - user: local_gradient
 loss: CrossEntropy
 model: linear
+
+user:
+  provide_labels: True
 
 # Server and user:
 num_queries: 1

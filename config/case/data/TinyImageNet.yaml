@@ -1,4 +1,3 @@
-
 name: TinyImageNet
 path: "~/data"
 size: 100_000
@@ -30,4 +29,5 @@ augmentations_val:
   CenterCrop: 64
 caching: # dataset is alreay cached in RAM
 # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB
-db: none
+defaults:
+  - db: none

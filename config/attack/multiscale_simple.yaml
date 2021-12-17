@@ -1,0 +1,21 @@
+defaults:
+  - invertinggradients
+attack_type: multiscale
+type: multiscale-invertinggradients
+
+num_stages: 7
+augmentations:
+  continuous_shift:
+    shift: 4
+  zoom:
+    out_size: 224
+
+resize: upsampling # focus/upsampling
+scale_pyramid: log # log/linear
+
+optim:
+  optimizer: adam
+  max_iterations: 2000 # per stage
+
+differentiable_augmentations: True
+update_augmentations: None # This now happens in stages

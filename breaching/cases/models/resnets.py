@@ -8,6 +8,7 @@ for torchvision version 0.8.2
 import torch
 from .utils import get_layer_functions
 
+
 def resnet_depths_to_config(depth):
     if depth == 20:
         block = BasicBlock
@@ -40,56 +41,83 @@ def resnet_depths_to_config(depth):
 
 
 class ResNet(torch.nn.Module):
-
-    def __init__(self, block, layers, channels, classes, zero_init_residual=False, strides=[1, 2, 2, 2],
-                 groups=1, width_per_group=64, replace_stride_with_dilation=[False, False, False, False],
-                 norm='BatchNorm2d', nonlin='ReLU', stem='CIFAR', downsample='B', convolution_type='Standard'):
+    def __init__(
+        self,
+        block,
+        layers,
+        channels,
+        classes,
+        zero_init_residual=False,
+        strides=[1, 2, 2, 2],
+        groups=1,
+        width_per_group=64,
+        replace_stride_with_dilation=[False, False, False, False],
+        norm="BatchNorm2d",
+        nonlin="ReLU",
+        stem="CIFAR",
+        downsample="B",
+        convolution_type="Standard",
+    ):
         super(ResNet, self).__init__()
         self._conv_layer, self._norm_layer, self._nonlin_layer = get_layer_functions(convolution_type, norm, nonlin)
         self.use_bias = False
         self.inplanes = width_per_group if block is BasicBlock else 64
         self.dilation = 1
         if len(replace_stride_with_dilation) != 4:
-            raise ValueError("replace_stride_with_dilation should be None "
-                             "or a 4-element tuple, got {}".format(replace_stride_with_dilation))
+            raise ValueError(
+                "replace_stride_with_dilation should be None "
+                "or a 4-element tuple, got {}".format(replace_stride_with_dilation)
+            )
         self.groups = groups
         self.base_width = width_per_group if block is Bottleneck else 64
 
-        if stem == 'CIFAR':
-            conv1 = self._conv_layer(channels, self.inplanes, kernel_size=3, stride=1,
-                                     padding=1, groups=1, bias=self.use_bias, dilation=1)
+        if stem == "CIFAR":
+            conv1 = self._conv_layer(
+                channels, self.inplanes, kernel_size=3, stride=1, padding=1, groups=1, bias=self.use_bias, dilation=1
+            )
             bn1 = self._norm_layer(self.inplanes)
             nonlin = self._nonlin_layer()
             self.stem = torch.nn.Sequential(conv1, bn1, nonlin)
-        elif stem == 'standard':
+        elif stem == "standard":
             conv1 = self._conv_layer(channels, self.inplanes, kernel_size=7, stride=2, padding=3, bias=self.use_bias)
             bn1 = self._norm_layer(self.inplanes)
             nonlin = self._nonlin_layer()
             maxpool = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
             self.stem = torch.nn.Sequential(conv1, bn1, nonlin, maxpool)
-        elif stem == 'efficient':
+        elif stem == "efficient":
             stem_width = self.inplanes // 2
-            conv1 = self._conv_layer(channels, stem_width, kernel_size=3, stride=2,
-                                     padding=1, groups=1, bias=self.use_bias, dilation=1)
+            conv1 = self._conv_layer(
+                channels, stem_width, kernel_size=3, stride=2, padding=1, groups=1, bias=self.use_bias, dilation=1
+            )
             bn1 = self._norm_layer(stem_width)
-            conv2 = self._conv_layer(stem_width, stem_width, kernel_size=3, stride=1,
-                                     padding=1, groups=1, bias=self.use_bias, dilation=1)
+            conv2 = self._conv_layer(
+                stem_width, stem_width, kernel_size=3, stride=1, padding=1, groups=1, bias=self.use_bias, dilation=1
+            )
             bn2 = self._norm_layer(stem_width)
-            conv3 = self._conv_layer(stem_width, self.inplanes, kernel_size=3, stride=1,
-                                     padding=1, groups=1, bias=self.use_bias, dilation=1)
+            conv3 = self._conv_layer(
+                stem_width, self.inplanes, kernel_size=3, stride=1, padding=1, groups=1, bias=self.use_bias, dilation=1
+            )
             bn3 = self._norm_layer(self.inplanes)
 
             nonlin = self._nonlin_layer()
             maxpool = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
             self.stem = torch.nn.Sequential(conv1, bn1, nonlin, conv2, bn2, nonlin, conv3, bn3, nonlin, maxpool)
         else:
-            raise ValueError(f'Invalid stem designation {stem}.')
+            raise ValueError(f"Invalid stem designation {stem}.")
 
         layer_list = []
         width = self.inplanes
         for idx, layer in enumerate(layers):
-            layer_list.append(self._make_layer(block, width, layer, stride=strides[idx],
-                                               dilate=replace_stride_with_dilation[idx], downsample=downsample))
+            layer_list.append(
+                self._make_layer(
+                    block,
+                    width,
+                    layer,
+                    stride=strides[idx],
+                    dilate=replace_stride_with_dilation[idx],
+                    downsample=downsample,
+                )
+            )
             width *= 2
         self.layers = torch.nn.Sequential(*layer_list)
 
@@ -98,7 +126,7 @@ class ResNet(torch.nn.Module):
 
         for m in self.modules():
             if isinstance(m, torch.nn.Conv2d):
-                torch.nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                torch.nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
             elif isinstance(m, (torch.nn.BatchNorm2d, torch.nn.GroupNorm)):
                 torch.nn.init.constant_(m.weight, 1)
                 torch.nn.init.constant_(m.bias, 0)
@@ -109,13 +137,13 @@ class ResNet(torch.nn.Module):
         if zero_init_residual:
             for m in self.modules():
                 if isinstance(m, Bottleneck):
-                    if hasattr(m.bn3, 'weight'):
+                    if hasattr(m.bn3, "weight"):
                         torch.nn.init.constant_(m.bn3.weight, 0)
                 elif isinstance(m, BasicBlock):
-                    if hasattr(m.bn2, 'weight'):
+                    if hasattr(m.bn2, "weight"):
                         torch.nn.init.constant_(m.bn2.weight, 0)
 
-    def _make_layer(self, block, planes, blocks, stride=1, dilate=False, downsample='B'):
+    def _make_layer(self, block, planes, blocks, stride=1, dilate=False, downsample="B"):
         conv_layer = self._conv_layer
         norm_layer = self._norm_layer
         nonlin_layer = self._nonlin_layer
@@ -125,44 +153,71 @@ class ResNet(torch.nn.Module):
             self.dilation *= stride
             stride = 1
         if stride != 1 or self.inplanes != planes * block.expansion:
-            if downsample == 'A':
+            if downsample == "A":
                 downsample_op = torch.nn.Sequential(
-                    conv_layer(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=self.use_bias),
+                    conv_layer(
+                        self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=self.use_bias
+                    ),
                 )
-            elif downsample == 'B':
+            elif downsample == "B":
                 downsample_op = torch.nn.Sequential(
-                    conv_layer(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=self.use_bias),
+                    conv_layer(
+                        self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=self.use_bias
+                    ),
                     norm_layer(planes * block.expansion),
                 )
-            elif downsample == 'C':
+            elif downsample == "C":
                 downsample_op = torch.nn.Sequential(
                     torch.nn.AvgPool2d(kernel_size=stride, stride=stride),
                     conv_layer(self.inplanes, planes * block.expansion, kernel_size=1, stride=1, bias=self.use_bias),
                     norm_layer(planes * block.expansion),
                 )
-            elif downsample == 'preact-B':
+            elif downsample == "preact-B":
                 downsample_op = torch.nn.Sequential(
                     nonlin_layer(),
-                    conv_layer(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=self.use_bias)
+                    conv_layer(
+                        self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=self.use_bias
+                    ),
                 )
-            elif downsample == 'preact-C':
+            elif downsample == "preact-C":
                 downsample_op = torch.nn.Sequential(
                     nonlin_layer(),
                     torch.nn.AvgPool2d(kernel_size=stride, stride=stride),
                     conv_layer(self.inplanes, planes * block.expansion, kernel_size=1, stride=1, bias=self.use_bias),
                 )
             else:
-                raise ValueError('Invalid downsample block specification.')
+                raise ValueError("Invalid downsample block specification.")
 
         layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample_op, self.groups,
-                            self.base_width, previous_dilation, conv=conv_layer, nonlin=nonlin_layer, norm_layer=norm_layer,
-                            bias=self.use_bias))
+        layers.append(
+            block(
+                self.inplanes,
+                planes,
+                stride,
+                downsample_op,
+                self.groups,
+                self.base_width,
+                previous_dilation,
+                conv=conv_layer,
+                nonlin=nonlin_layer,
+                norm_layer=norm_layer,
+                bias=self.use_bias,
+            )
+        )
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
-            layers.append(block(self.inplanes, planes, groups=self.groups,
-                                base_width=self.base_width, dilation=self.dilation,
-                                norm_layer=norm_layer, nonlin=nonlin_layer, bias=self.use_bias))
+            layers.append(
+                block(
+                    self.inplanes,
+                    planes,
+                    groups=self.groups,
+                    base_width=self.base_width,
+                    dilation=self.dilation,
+                    norm_layer=norm_layer,
+                    nonlin=nonlin_layer,
+                    bias=self.use_bias,
+                )
+            )
 
         return torch.nn.Sequential(*layers)
 
@@ -185,8 +240,20 @@ class ResNet(torch.nn.Module):
 class BasicBlock(torch.nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1, base_width=64, dilation=1,
-                 conv=torch.nn.Conv2d, nonlin=torch.nn.ReLU, norm_layer=torch.nn.BatchNorm2d, bias=False):
+    def __init__(
+        self,
+        inplanes,
+        planes,
+        stride=1,
+        downsample=None,
+        groups=1,
+        base_width=64,
+        dilation=1,
+        conv=torch.nn.Conv2d,
+        nonlin=torch.nn.ReLU,
+        norm_layer=torch.nn.BatchNorm2d,
+        bias=False,
+    ):
         super().__init__()
         # if groups != 1 or base_width != 64:
         #     raise ValueError('BasicBlock only supports groups=1 and base_width=64')
@@ -229,15 +296,28 @@ class Bottleneck(torch.nn.Module):
 
     expansion = 4
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1, base_width=64, dilation=1,
-                 conv=torch.nn.Conv2d, nonlin=torch.nn.ReLU, norm_layer=torch.nn.BatchNorm2d, bias=False):
+    def __init__(
+        self,
+        inplanes,
+        planes,
+        stride=1,
+        downsample=None,
+        groups=1,
+        base_width=64,
+        dilation=1,
+        conv=torch.nn.Conv2d,
+        nonlin=torch.nn.ReLU,
+        norm_layer=torch.nn.BatchNorm2d,
+        bias=False,
+    ):
         super(Bottleneck, self).__init__()
-        width = int(planes * (base_width / 64.)) * groups
+        width = int(planes * (base_width / 64.0)) * groups
         # Both self.conv2 and self.downsample layers downsample the input when stride != 1
         self.conv1 = conv(inplanes, width, kernel_size=1, stride=1, bias=bias)
         self.bn1 = norm_layer(width)
-        self.conv2 = conv(width, width, kernel_size=3, stride=stride, padding=dilation,
-                          groups=groups, bias=bias, dilation=dilation)
+        self.conv2 = conv(
+            width, width, kernel_size=3, stride=stride, padding=dilation, groups=groups, bias=bias, dilation=dilation
+        )
         self.bn2 = norm_layer(width)
         self.conv3 = conv(width, planes * self.expansion, kernel_size=1, stride=1, bias=bias)
         self.bn3 = norm_layer(planes * self.expansion)

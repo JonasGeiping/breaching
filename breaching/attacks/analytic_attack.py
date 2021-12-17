@@ -72,6 +72,13 @@ class ImprintAttacker(AnalyticAttacker):
 
         bias_grad = shared_data["gradients"][0][bias_idx].clone()
         weight_grad = shared_data["gradients"][0][weight_idx].clone()
+
+        if self.cfg.sort_by_bias:
+            # This variant can recover from shuffled rows under the assumption that biases would be ordered
+            _, order = server_payload["queries"][0]["parameters"][1].sort(descending=True)
+            bias_grad = bias_grad[order]
+            weight_grad = weight_grad[order]
+
         if server_secrets["ImprintBlock"]["structure"] == "cumulative":
             for i in reversed(list(range(1, weight_grad.shape[0]))):
                 weight_grad[i] -= weight_grad[i - 1]

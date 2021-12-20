@@ -1,4 +1,7 @@
 name: CIFAR10
+modality: vision
+task: classification
+
 path: "~/data"
 size: 50_000
 classes: 10
@@ -7,6 +10,7 @@ shape:
   - 32
   - 32
 
+# Preprocessing
 normalize: True
 mean:
   - 0.4914672374725342
@@ -16,10 +20,7 @@ std:
   - 0.24703224003314972
   - 0.24348513782024384
   - 0.26158785820007324
-
-# Data-specific implementation constants:
-batch_size: 128 # this is the maximum batchsize that fits onto the GPU for gradient accumulation
-
+# Data Augmentations
 augmentations_train:
   RandomCrop:
     - 32
@@ -27,7 +28,13 @@ augmentations_train:
   RandomHorizontalFlip: 0.5
 augmentations_val:
 
-caching: # dataset is alreay cached in RAM
-# Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB
+# Federated Learning specifics:
+default_clients: 10
+partition: balanced # used for synthetic splits. Current options for synthetic split: balanced / unique-class
+examples_from_split: validation
+
+# Data-specific implementation constants:
+batch_size: 128
+caching: False
 defaults:
-  - db: none
+  - db: none # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

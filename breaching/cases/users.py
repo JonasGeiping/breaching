@@ -3,26 +3,38 @@
 import torch
 import copy
 
+from .data import construct_dataloader
+
+
+def construct_user(model, loss_fn, cfg_case, setup):
+    """Interface function."""
+    if cfg_case.user.user_type == "local_gradient":
+        dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=cfg.case.user.user_idx)
+        # The user will deepcopy this model template to have their own
+        user = UserSingleStep(model, loss, dataloader, setup, cfg_case.user)
+    elif cfg_case.user.user_type == "local_update":
+        dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=cfg.case.user.user_idx)
+        user = UserMultiStep(model, loss, dataloader, setup, cfg_case.user)
+    elif cfg_case.user.user_type == "multiuser_aggregate":
+        dataloaders = []
+        for idx in range(*cfg.case.user.user_range):
+            dataloaders += [construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=idx)]
+        user = MultiUserAggregate(model, loss, dataloaders, setup, cfg_case.user)
+
 
 class UserSingleStep(torch.nn.Module):
     """A user who computes a single local update step."""
 
-    def __init__(self, model, loss, dataloader, setup, cfg_user, num_queries=1):
+    def __init__(self, model, loss, dataloader, setup, cfg_user):
         """Initialize from cfg_user dict which contains atleast all keys in the matching .yaml :>"""
         super().__init__()
         self.num_data_points = cfg_user.num_data_points
-        self.num_user_queries = num_queries
 
         self.provide_labels = cfg_user.provide_labels
         self.provide_num_data_points = cfg_user.provide_num_data_points
         self.provide_buffers = cfg_user.provide_buffers
 
-        if cfg_user.data_idx is None:
-            self.data_idx = torch.randint(0, len(dataloader.dataset), (1,)).item()
-        else:
-            self.data_idx = cfg_user.data_idx
-        self.data_with_labels = cfg_user.data_with_labels
-
+        self.user_idx = cfg_user.user_idx
         self.setup = setup
 
         self.model = copy.deepcopy(model)
@@ -38,7 +50,6 @@ class UserSingleStep(torch.nn.Module):
         n = "\n"
         return f"""User (of type {self.__class__.__name__}) with settings:
     Number of data points: {self.num_data_points}
-    Number of user queries: {self.num_user_queries}
 
     Threat model:
     User provides labels: {self.provide_labels}
@@ -47,7 +58,7 @@ class UserSingleStep(torch.nn.Module):
 
     Data:
     Dataset: {self.dataloader.dataset.__class__.__name__}
-    idx: {self.data_idx.item() if isinstance(self.data_idx, torch.Tensor) else self.data_idx}:{self.data_with_labels}
+    user: {self.user_idx}
     {n.join(self.defense_repr)}
         """
 
@@ -166,34 +177,21 @@ class UserSingleStep(torch.nn.Module):
                 grad += self.generator.sample(grad.shape)
 
     def _generate_example_data(self):
-        """Can also utilize a list given in self.data_idx"""
+        """Generate data from dataloader, truncated by self.num_data_points"""
         # Select data
-        data = []
-        labels = []
-        try:
-            for data_point in self.data_idx:
-                datum, label = self.dataloader.dataset[data_point]
-                data += [datum]
-                labels += [torch.as_tensor(label)]
-        except TypeError:
-            pointer = self.data_idx
-            for data_point in range(self.num_data_points):
-                datum, label = self.dataloader.dataset[pointer]
-                data += [datum]
-                labels += [torch.as_tensor(label)]
-                if self.data_with_labels == "unique":
-                    pointer += len(self.dataloader.dataset) // len(self.dataloader.dataset.classes)
-                elif self.data_with_labels == "same":
-                    pointer += 1
-                elif self.data_with_labels == "random-animals":  # only makes sense on ImageNet, disregard otherwise
-                    last_animal_class_idx = 397
-                    per_class = len(self.dataloader.dataset) // len(self.dataloader.dataset.classes)
-                    pointer = torch.randint(0, per_class * last_animal_class_idx, (1,))
-                else:
-                    pointer = torch.randint(0, len(self.dataloader.dataset), (1,))
-                pointer = pointer % len(self.dataloader.dataset)  # Make sure not to leave the dataset range
-        data = torch.stack(data).to(**self.setup)
-        labels = torch.stack(labels).to(device=self.setup["device"])
+        data_blocks = []
+        label_blocks = []
+        num_samples = 0
+
+        for idx, (data, labels) in enumerate(self.dataloader):
+            data_blocks += [data]
+            label_blocks += [labels]
+            num_samples += labels.shape[0]
+            if num_samples > self.num_data_points:
+                break
+
+        data = torch.cat(data_blocks, dim=0)[: self.num_data_points].to(**self.setup)
+        labels = torch.cat(label_blocks, dim=0)[: self.num_data_points].to(device=self.setup["device"])
         return data, labels
 
     def plot(self, user_data, scale=False, print_labels=False):
@@ -375,6 +373,7 @@ class MultiUserAggregate(UserMultiStep):
     def _generate_example_data(self, user_idx=0):
         """Take care to partition data among users on the fly."""
 
+        raise NotImplementedError("Todo: Update this to the new and sane setup.")
         data_per_user = len(self.dataloader.dataset) // self.num_users
         user_data_subset = torch.utils.data.Subset(
             self.dataloader.dataset, list(range(data_per_user * user_idx, (user_idx + 1) * data_per_user))

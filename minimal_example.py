@@ -50,17 +50,20 @@ def main(cfg_attack):
 
     # ## Simulate an attacked FL protocol
     # Server-side computation:
-    queries = [dict(parameters=[p for p in model.parameters()], buffers=[b for b in model.buffers()])]
-    server_payload = dict(queries=queries, data=data_cfg_default)
+    server_payload = [
+        dict(
+            parameters=[p for p in model.parameters()], buffers=[b for b in model.buffers()], metadata=data_cfg_default
+        )
+    ]
     # User-side computation:
     loss = loss_fn(model(datapoint[None, ...]), labels)
-    shared_data = dict(
-        gradients=[torch.autograd.grad(loss, model.parameters())],
-        buffers=None,
-        num_data_points=1,
-        labels=labels,
-        local_hyperparams=None,
-    )
+    shared_data = [
+        dict(
+            gradients=torch.autograd.grad(loss, model.parameters()),
+            buffers=None,
+            metadata=dict(num_data_points=1, labels=labels, local_hyperparams=None,),
+        )
+    ]
 
     # Attack:
     reconstructed_user_data, stats = attacker.reconstruct(server_payload, shared_data, {}, dryrun=False)

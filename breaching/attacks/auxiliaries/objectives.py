@@ -89,9 +89,7 @@ class Euclidean(GradientLoss):
     @staticmethod
     @torch.jit.script
     def _euclidean(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        objective = gradient_rec[0].new_zeros(
-            1,
-        )
+        objective = gradient_rec[0].new_zeros(1,)
         for rec, data in zip(gradient_rec, gradient_data):
             objective += (rec - data).pow(2).sum()
         return 0.5 * objective
@@ -116,9 +114,7 @@ class L1Loss(GradientLoss):
     @staticmethod
     @torch.jit.script
     def _l1loss(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        objective = gradient_rec[0].new_zeros(
-            1,
-        )
+        objective = gradient_rec[0].new_zeros(1,)
         for rec, data in zip(gradient_rec, gradient_data):
             objective += (rec - data).abs().sum()
         return 0.5 * objective
@@ -143,15 +139,9 @@ class CosineSimilarity(GradientLoss):
     @staticmethod
     @torch.jit.script
     def _cosine_sim(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        scalar_product = gradient_rec[0].new_zeros(
-            1,
-        )
-        rec_norm = gradient_rec[0].new_zeros(
-            1,
-        )
-        data_norm = gradient_rec[0].new_zeros(
-            1,
-        )
+        scalar_product = gradient_rec[0].new_zeros(1,)
+        rec_norm = gradient_rec[0].new_zeros(1,)
+        data_norm = gradient_rec[0].new_zeros(1,)
 
         for rec, data in zip(gradient_rec, gradient_data):
             scalar_product += (rec * data).sum()
@@ -225,15 +215,9 @@ class FastCosineSimilarity(GradientLoss):
     @staticmethod
     @torch.jit.script
     def _cosine_sim(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        scalar_product = gradient_rec[0].new_zeros(
-            1,
-        )
-        rec_norm = gradient_rec[0].new_zeros(
-            1,
-        )
-        data_norm = gradient_rec[0].new_zeros(
-            1,
-        )
+        scalar_product = gradient_rec[0].new_zeros(1,)
+        rec_norm = gradient_rec[0].new_zeros(1,)
+        data_norm = gradient_rec[0].new_zeros(1,)
 
         for rec, data in zip(gradient_rec, gradient_data):
             scalar_product += (rec * data).sum()

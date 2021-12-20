@@ -85,10 +85,10 @@ class OptimizationBasedAttacker(_BaseAttacker):
         # Initialize losses:
         for regularizer in self.regularizers:
             regularizer.initialize(rec_model, shared_data, labels)
-        self.objective.initialize(self.loss_fn, self.cfg.impl, shared_data["local_hyperparams"])
+        self.objective.initialize(self.loss_fn, self.cfg.impl, shared_data["metadata"]["local_hyperparams"])
 
         # Initialize candidate reconstruction data
-        candidate = self._initialize_data([shared_data["num_data_points"], *self.data_shape])
+        candidate = self._initialize_data([shared_data["metadata"]["num_data_points"], *self.data_shape])
         best_candidate = candidate.detach().clone()
         minimal_value_so_far = torch.as_tensor(float("inf"), **self.setup)
 
@@ -143,8 +143,8 @@ class OptimizationBasedAttacker(_BaseAttacker):
 
             total_objective = 0
             total_task_loss = 0
-            for model, shared_grad in zip(rec_model, shared_data["gradients"]):
-                objective, task_loss = self.objective(model, shared_grad, candidate_augmented, labels)
+            for model, data in zip(rec_model, shared_data):
+                objective, task_loss = self.objective(model, data["gradients"], candidate_augmented, labels)
                 total_objective += objective
                 total_task_loss += task_loss
             for regularizer in self.regularizers:
@@ -177,8 +177,8 @@ class OptimizationBasedAttacker(_BaseAttacker):
             objective = Euclidean() if self.cfg.restarts.scoring == "euclidean" else CosineSimilarity()
             objective.initialize(self.loss_fn, self.cfg.impl, shared_data["local_hyperparams"])
             score = 0
-            for model, shared_grad in zip(rec_model, shared_data["gradients"]):
-                score += objective(model, shared_grad, candidate, labels)[0]
+            for model, data in zip(rec_model, shared_data):
+                score += objective(model, data["gradients"], candidate, labels)[0]
         elif self.cfg.restarts.scoring in ["TV", "total-variation"]:
             score = TotalVariation(scale=1.0)(candidate)
         else:

@@ -1,6 +1,9 @@
 name: malicious_model
-model_state: trained
+model_state: default
 provide_public_buffers: True # Send public buffers to users (this is batch norm specific)
+
+has_external_data: False
+num_queries: 1
 
 model_modification:
   type: ImprintBlock
@@ -16,4 +19,3 @@ model_modification:
 
 model_gain: 1.0 # multiply all non-malicious layers with this value to mess with parameter magnitudes
 normalize_rounds: 0
-has_external_data: False

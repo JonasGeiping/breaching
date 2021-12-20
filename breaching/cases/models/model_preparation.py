@@ -11,7 +11,7 @@ from .nfnets import NFNet
 from .vgg import VGG
 
 
-def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
+def construct_model(cfg_model, cfg_data, pretrained=True, **kwargs):
     """Construct the neural net that is used."""
     channels = cfg_data.shape[0]
     classes = cfg_data.classes
@@ -211,7 +211,14 @@ def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
 
     # Save nametag for printouts later:
     model.name = cfg_model
-    return model
+
+    # Choose loss function according to data and model:
+    if "classification" in cfg_data.task or "next-word" in cfg_data.task:
+        loss_fn = torch.nn.CrossEntropyLoss()
+    else:
+        raise ValueError(f"No loss function registered for task {cfg_data.task}.")
+
+    return model, loss_fn
 
 
 class ConvNetSmall(torch.nn.Module):

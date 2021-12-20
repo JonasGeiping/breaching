@@ -1,6 +1,9 @@
 name: malicious_parameters
-model_state: trained # This is used as initial state, but can be changed by the server
+model_state: default
 provide_public_buffers: True # Send public buffers to users (this is batch norm specific)
+
+has_external_data: True
+num_queries: 1
 
 param_modification:
   optimization:
@@ -19,4 +22,3 @@ param_modification:
       - 3
       - 32
       - 32
-has_external_data: True

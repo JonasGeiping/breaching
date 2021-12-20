@@ -12,7 +12,6 @@ import time
 import logging
 
 import breaching
-import random
 
 import os
 
@@ -46,39 +45,29 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     """This function controls the central routine."""
     local_time = time.time()
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
+    model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data)
 
-    user, server = breaching.cases.construct_case(cfg.case, setup)
-    attacker = breaching.attacks.prepare_attack(server.model, server.loss, cfg.attack, setup)
-    if user.data_idx is not None:
+    server = breaching.cases.construct_server(model, loss_fn, cfg.case, setup)
+    model = server.vet_model(model)
+    attacker = breaching.attacks.prepare_attack(model, loss_fn, cfg.attack, setup)
+    if cfg.case.user.user_idx is not None:
         print("The argument data_idx is disregarded during the benchmark. Data selection is fixed.")
 
-    batch_size = user.num_data_points
-    if batch_size == 1:
-        # Simply iterate through successive image classes without randomness. [Similar to the setup in InvertingGradients]
-        offset = len(user.dataloader.dataset) // len(user.dataloader.dataset.classes)
-        indices = [[idx * offset] for idx in range(num_trials)]
-    else:
-        # Benchmark: Default: all classes
-        subset = range(len(user.dataloader.dataset))
-        raw_indices = random.sample(subset, batch_size * num_trials)
-        indices = [raw_indices[idx * batch_size : (idx + 1) * batch_size] for idx in range(num_trials)]
-
+    cfg.case.user.user_idx = 0
     overall_metrics = []
     for run in range(num_trials):
         # Select data that has not been seen before:
-        user.data_idx = indices[run]
-        log.info(f"Now evaluating indices {user.data_idx} in trial {run}.")
+        cfg.case.user.user_idx += 1
+        user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
+        log.info(f"Now evaluating indices {user.user_idx} in trial {run}.")
         # Run exchange
-        server_payload = server.distribute_payload()
-        shared_data, true_user_data = user.compute_local_updates(server_payload)
+        shared_user_data, payloads, true_user_data = _run_fl_protocol(user, server)
         # Evaluate attack:
-        reconstructed_user_data, stats = attacker.reconstruct(
-            server_payload, shared_data, server.secrets, dryrun=cfg.dryrun
-        )
+        reconstruction, stats = attacker.reconstruct(payloads, shared_user_data, server.secrets, dryrun=cfg.dryrun)
 
         # Run the full set of metrics:
         metrics = breaching.analysis.report(
-            reconstructed_user_data,
+            reconstruction,
             true_user_data,
             server_payload,
             server.model,
@@ -103,6 +92,18 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     breaching.utils.save_summary(
         cfg, average_metrics, stats, time.time() - local_time, original_cwd=True, table_name="BENCHMARK_breach"
     )
+
+
+def _run_fl_protocol(user, server):
+    # Simulate a simple FL protocol
+    shared_user_data = []
+    payloads = []
+    for query_id in server.queries():
+        server_payload = server.distribute_payload(query_id)  # A malicious server can return something "fun" here
+        shared_data_per_round, true_user_data = user.compute_local_updates(server_payload)  # true_data is for analysis
+        payloads += [server_payload]
+        shared_user_data += [shared_data_per_round]
+    return shared_user_data, payloads, true_user_data
 
 
 if __name__ == "__main__":

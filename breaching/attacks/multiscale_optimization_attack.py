@@ -24,7 +24,7 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
         # Initialize losses:
         for regularizer in self.regularizers:
             regularizer.initialize(rec_model, shared_data, labels)
-        self.objective.initialize(self.loss_fn, self.cfg.impl, shared_data["local_hyperparams"])
+        self.objective.initialize(self.loss_fn, self.cfg.impl, shared_data["metadata"]["local_hyperparams"])
 
         assert self.data_shape[1] == self.data_shape[2]  # For simplicity for now
         C = self.data_shape[0]
@@ -42,8 +42,9 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
 
         # Initialize candidate reconstruction data on lowest scale:
         scale = scale_pyramid[0]
-        candidate = self._initialize_data([shared_data["num_data_points"], C, scale, scale]).detach()
-        best_candidate = self._initialize_data([shared_data["num_data_points"], *self.data_shape]).detach()
+        num_data_points = shared_data["metadata"]["num_data_points"]
+        candidate = self._initialize_data([num_data_points, C, scale, scale]).detach()
+        best_candidate = self._initialize_data([num_data_points, *self.data_shape]).detach()
         scale_params = dict(mode="bilinear", align_corners=False)
 
         for stage, scale in enumerate(scale_pyramid):
@@ -51,7 +52,7 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
             # Upsample base to new resolution
             if self.cfg.resize == "focus":
                 p = torch.div(scale, 2, rounding_mode="floor")
-                background = self._initialize_data([shared_data["num_data_points"], C, scale, scale]).detach()
+                background = self._initialize_data([num_data_points, C, scale, scale]).detach()
                 scaled_var = F.interpolate(candidate, size=p, **scale_params)
                 cx = torch.div(scale - p, 2, rounding_mode="floor")
                 background[:, :, cx : cx + p, cx : cx + p] = scaled_var

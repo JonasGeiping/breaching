@@ -30,10 +30,10 @@ class FeatureRegularization(torch.nn.Module):
 
     def initialize(self, models, shared_data, labels, *args, **kwargs):
         self.measured_features = []
-        for shared_grad in shared_data["gradients"]:
+        for user_data in shared_data:
             # Assume last two gradient vector entries are weight and bias:
-            weights = shared_grad[-2]
-            bias = shared_grad[-1]
+            weights = user_data["gradients"][-2]
+            bias = user_data["gradients"][-1]
             grads_fc_debiased = weights / bias[:, None]
             features_per_label = []
             for label in labels:
@@ -72,14 +72,14 @@ class LinearLayerRegularization(torch.nn.Module):
         self.measured_features = []
         self.refs = [list() for model in models]
 
-        for idx, (model, shared_grad) in enumerate(zip(models, gradient_data)):
+        for idx, (model, user_data) in enumerate(zip(models, shared_data)):
             # 1) Find linear layers:
             linear_layers = []
             for name, module in model.named_modules():
                 if isinstance(module, torch.nn.Linear):
                     linear_layers.append(name)
                     self.refs[idx].append(_LinearFeatureHook(module))
-            named_grads = {name: g for (g, (name, param)) in zip(shared_grad, model.named_parameters())}
+            named_grads = {name: g for (g, (name, param)) in zip(user_data["gradients"], model.named_parameters())}
 
             # 2) Check features
             features = []

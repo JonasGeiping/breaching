@@ -15,6 +15,19 @@ from .aux_training import train_encoder_decoder
 from .malicious_modifications.feat_decoders import generate_decoder
 
 
+def construct_server(model, loss_fn, cfg_case, setup):
+    """Interface function."""
+    if cfg_case.server.name == "honest_but_curious":
+        server = HonestServer(model, loss, cfg_case, setup, external_dataloader=None)
+    elif cfg_case.server.name == "malicious_model":
+        server = MaliciousModelServer(model, loss, cfg_case, setup, external_dataloader=None)
+    elif cfg_case.server.name == "malicious_parameters":
+        server = MaliciousParameterServer(model, loss, cfg_case, setup, external_dataloader=None)
+    else:
+        raise ValueError(f"Invalid server type {cfg_case.server} given.")
+    return server
+
+
 class HonestServer:
     """Implement an honest server protocol.
 
@@ -37,7 +50,7 @@ class HonestServer:
         self.loss = loss
         self.setup = setup
 
-        self.num_queries = cfg_case.num_queries
+        self.num_queries = cfg_case.server.num_queries
 
         self.cfg_data = (
             cfg_case.data
@@ -51,6 +64,7 @@ class HonestServer:
     def __repr__(self):
         return f"""Server (of type {self.__class__.__name__}) with settings:
     Threat model: {self.THREAT}
+    Number of planned queries: {self.num_queries}
     Has external/public data: {self.cfg_server.has_external_data}
 
     Model:
@@ -61,7 +75,7 @@ class HonestServer:
     Secrets: {self.secrets}
     """
 
-    def reconfigure_model(self, model_state):
+    def reconfigure_model(self, model_state, query_id=0):
         """Reinitialize, continue training or otherwise modify model parameters in a benign way."""
         for name, module in self.model.named_modules():
             if model_state == "untrained":
@@ -102,23 +116,23 @@ class HonestServer:
             except FileNotFoundError:
                 raise ValueError("No MoCo data found for this architecture.")
 
-    def distribute_payload(self):
+    def distribute_payload(self, query_id=0):
         """Server payload to send to users. These are only references to simplfiy the simulation."""
 
-        queries = []
-        for round in range(self.num_queries):
-            self.reconfigure_model(self.cfg_server.model_state)
-            honest_model_parameters = [p for p in self.model.parameters()]  # do not send only the generators
-            if self.cfg_server.provide_public_buffers:
-                honest_model_buffers = [b for b in self.model.buffers()]
-            else:
-                honest_model_buffers = None
-            queries.append(dict(parameters=honest_model_parameters, buffers=honest_model_buffers))
-        return dict(queries=queries, data=self.cfg_data)
+        self.reconfigure_model(self.cfg_server.model_state, query_id)
+        honest_model_parameters = [p for p in self.model.parameters()]  # do not send only the generators
+        if self.cfg_server.provide_public_buffers:
+            honest_model_buffers = [b for b in self.model.buffers()]
+        else:
+            honest_model_buffers = None
+        return dict(parameters=honest_model_parameters, buffers=honest_model_buffers, metadata=self.cfg_data)
 
-    def prepare_model(self):
+    def vet_model(self):
         """This server is honest."""
         return self.model
+
+    def queries(self):
+        return range(self.num_queries)
 
 
 class MaliciousModelServer(HonestServer):
@@ -139,7 +153,7 @@ class MaliciousModelServer(HonestServer):
         self.model_state = "custom"  # Do not mess with model parameters no matter what init is agreed upon
         self.secrets = dict()
 
-    def prepare_model(self):
+    def vet_model(self):
         """This server is not honest :>"""
 
         modified_model = self.model
@@ -354,238 +368,13 @@ class MaliciousParameterServer(HonestServer):
             )
             self.secrets["layers"] = cfg_case.server.param_modification.optimization.layers
 
-    def prepare_model(self):
+    def vet_model(self):
         """This server is not honest, but the model architecture stays normal."""
         return self.model
 
-    def reconfigure_model(self, model_state):
+    def reconfigure_model(self, model_state, query_id=0):
         """Reinitialize, continue training or otherwise modify model parameters."""
         super().reconfigure_model(model_state)  # Load the benign model state first
 
         # Then do fun things:
         self.parameter_algorithm.optimize_recovery()
-
-
-class PathParameterServer(HonestServer):
-    def __init__(
-        self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device("cpu")), external_dataloader=None
-    ):
-        """Inialize the server settings."""
-        super().__init__(model, loss, cfg_case, setup, external_dataloader)
-        self.secrets = dict()
-        self.num_bins = cfg_case.num_paths
-        self.alpha = self.cfg_server.alpha
-        self.num_paths = self.cfg_server.num_paths
-
-        self.bins, self.bin_val = self._get_bins()
-
-    def prepare_model(self):
-        """This server is not honest, we sneak in a hardtanh layer."""
-        """
-        self.model.avgpool = torch.nn.Sequential(torch.nn.AdaptiveAvgPool2d((1, 1)),
-                                                 torch.nn.Hardtanh(min_val=0, max_val=self.bin_val))
-        """
-        self.model.hardtan = torch.nn.Hardtanh(min_val=0, max_val=self.bin_val)
-        return self.model
-
-    def reconfigure_model(self, model_state):
-        """Reinitialize, continue training or otherwise modify model parameters."""
-        super().reconfigure_model(model_state)  # Load the benign model state first
-        self._path_parameters()
-        self.std, self.mu = self._feature_distribution()
-        self.bins = (torch.tensor(self.bins) - (self.mu / self.std)).tolist()
-        self._set_linear_layer(self.mu.item(), self.std.item())
-
-    def _path_parameters(self):
-        """Setting the paths in the network (feature extractor)
-        TODO: This shouldn't go just by names in the future
-        """
-        ratio = 1
-        for (name, _) in self.model.named_parameters():
-            if "shortcut" in name:
-                if "weight" in name:
-                    _eliminate_shortcut_weight(rgetattr(self.model, name))
-            elif "conv" in name:
-                ratio = _set_layer(rgetattr(self.model, name), self.num_paths)
-            elif "bias" in name:
-                ratio = 1
-
-    def _set_linear_layer(self, mu, sigma):
-        """Setting the linear layer of the network appropriately once mean, std of features have been figured out.
-        TODO: This shouldn't go just by names in the future
-        """
-        for (name, _) in self.model.named_parameters():
-            if "path_mod" in name:
-                if "weight" in name:
-                    rgetattr(self.model, name).data = (1 / self.std) * torch.ones_like(rgetattr(self.model, name).data)
-                    _set_pathmod_layer(rgetattr(self.model, name), self.num_paths)
-
-                elif "bias" in name:
-                    _make_linear_biases(rgetattr(self.model, name), self.bins)
-
-            if "linear" in name or "classifier" in name:
-                if "weight" in name:
-                    rgetattr(self.model, name).data = torch.ones_like(rgetattr(self.model, name).data)
-                elif "bias" in name:
-                    rgetattr(self.model, name).data = torch.zeros_like(rgetattr(self.model, name).data)
-
-    def _feature_distribution(self):
-        """Compute the mean and std of the feature layer of the given network."""
-        features = dict()
-
-        def named_hook(name):
-            def hook_fn(module, input, output):
-                features[name] = input[0]
-
-            return hook_fn
-
-        # for name, module in reversed(list(self.model.named_modules())):
-        for name, module in list(self.model.named_modules()):
-            # if isinstance(module, (torch.nn.Hardtanh)):
-            if isinstance(module, (torch.nn.Linear)):
-                hook = module.register_forward_hook(named_hook(name))
-                feature_layer_name = name
-                break
-        feats = []
-        self.model.train()
-        self.model.to(**self.setup)
-        print(f"Computing feature distribution before the {feature_layer_name} layer from external data.")
-        for i, (inputs, target) in enumerate(self.external_dataloader):
-            inputs = inputs.to(**self.setup)
-            self.model(inputs)
-        self.model.eval()
-        for i, (inputs, target) in enumerate(self.external_dataloader):
-            inputs = inputs.to(**self.setup)
-            self.model(inputs)
-            feats.append(features[feature_layer_name].detach().view(inputs.shape[0], -1).clone().cpu())
-        tot_sum = torch.sum(torch.cat(feats), dim=-1) / self.num_paths
-        std, mu = torch.std_mean(tot_sum)
-        print(f"Feature mean is {mu.item()}, feature std is {std.item()}.")
-        self.model.eval()
-        self.model.cpu()
-        hook.remove()
-
-        return std, mu
-
-    def _get_bins(self, mu=0, std=1):
-        import numpy as np
-
-        order_stats = [self._get_order_stats(r + 1, self.num_bins, mu, std) for r in range(self.num_bins)]
-        diffs = [order_stats[i] - order_stats[i + 1] for i in range(len(order_stats) - 1)]
-
-        bin_val = -np.median(diffs)
-        half_dist = (self.num_bins * bin_val) / 2
-        bins = (-np.linspace(mu - half_dist, mu + half_dist, self.num_bins, endpoint=False)).tolist()
-        return bins, bin_val
-
-    def _get_order_stats(self, r, n, mu=0, sigma=1):
-        r"""
-        r Order statistics can be computed as follows:
-        E(r:n) = \mu + \Phi^{-1}\left( \frac{r-a}{n-2a+1} \sigma \right)
-        where a = 0.375
-        """
-        from scipy.stats import norm
-
-        return mu + norm.ppf((r - self.alpha) / (n - 2 * self.alpha + 1)) * sigma
-
-
-class StackParameterServer(HonestServer):
-    def __init__(
-        self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device("cpu")), external_dataloader=None
-    ):
-        """Inialize the server settings."""
-        super().__init__(model, loss, cfg_case, setup, external_dataloader)
-        self.secrets = dict()
-        self.num_paths = cfg_case.num_paths
-        self.num_bins = cfg_case.num_paths
-        self.alpha = self.cfg_server.alpha
-        self.bins, self.bin_val = self._get_bins()
-
-    def prepare_model(self):
-        """This server is not honest, we sneak in a hardtanh layer."""
-        self.model.hardtan = torch.nn.Hardtanh(min_val=0, max_val=self.bin_val)
-        return self.model
-
-    def reconfigure_model(self, model_state):
-        """Reinitialize, continue training or otherwise modify model parameters."""
-        super().reconfigure_model(model_state)  # Load the benign model state first
-        self.std, self.mu = self._feature_distribution()
-        self.bins = (torch.tensor(self.bins) - (self.mu / self.std)).tolist()
-        self._set_linear_layer(self.mu.item(), self.std.item())
-
-    def _set_linear_layer(self, mu, sigma):
-        """Setting the linear layer of the network appropriately once mean, std of features have been figured out.
-        TODO: This shouldn't go just by names in the future
-        """
-        for (name, _) in self.model.named_parameters():
-            if "path_mod" in name:
-                if "weight" in name:
-                    rgetattr(self.model, name).data = (1 / self.std) * torch.ones_like(rgetattr(self.model, name).data)
-                    _set_pathmod_layer(rgetattr(self.model, name), self.num_paths)
-
-                elif "bias" in name:
-                    _make_linear_biases(rgetattr(self.model, name), self.bins)
-
-            if "linear" in name or "classifier" in name:
-                if "weight" in name:
-                    rgetattr(self.model, name).data = torch.ones_like(rgetattr(self.model, name).data)
-                elif "bias" in name:
-                    rgetattr(self.model, name).data = torch.zeros_like(rgetattr(self.model, name).data)
-
-    def _feature_distribution(self):
-        """Compute the mean and std of the feature layer of the given network."""
-        features = dict()
-
-        def named_hook(name):
-            def hook_fn(module, input, output):
-                features[name] = input[0]
-
-            return hook_fn
-
-        # for name, module in reversed(list(self.model.named_modules())):
-        for name, module in list(self.model.named_modules()):
-            # if isinstance(module, (torch.nn.Hardtanh)):
-            if isinstance(module, (torch.nn.Linear)):
-                hook = module.register_forward_hook(named_hook(name))
-                feature_layer_name = name
-                break
-        feats = []
-        self.model.train()
-        self.model.to(**self.setup)
-        print(f"Computing feature distribution before the {feature_layer_name} layer from external data.")
-        for i, (inputs, target) in enumerate(self.external_dataloader):
-            inputs = inputs.to(**self.setup)
-            self.model(inputs)
-        self.model.eval()
-        for i, (inputs, target) in enumerate(self.external_dataloader):
-            inputs = inputs.to(**self.setup)
-            self.model(inputs)
-            feats.append(features[feature_layer_name].detach().view(inputs.shape[0], -1).clone().cpu())
-        tot_sum = torch.sum(torch.cat(feats), dim=-1) / self.num_paths
-        std, mu = torch.std_mean(tot_sum)
-        print(f"Feature mean is {mu.item()}, feature std is {std.item()}.")
-        self.model.eval()
-        self.model.cpu()
-        hook.remove()
-
-        return std, mu
-
-    def _get_bins(self, mu=0, std=1):
-        import numpy as np
-
-        order_stats = [self._get_order_stats(r + 1, self.num_bins, mu, std) for r in range(self.num_bins)]
-        diffs = [order_stats[i] - order_stats[i + 1] for i in range(len(order_stats) - 1)]
-        bin_val = -np.median(diffs)
-        half_dist = (self.num_bins * bin_val) / 2
-        bins = (-np.linspace(mu - half_dist, mu + half_dist, self.num_bins, endpoint=False)).tolist()
-        return bins, bin_val
-
-    def _get_order_stats(self, r, n, mu=0, sigma=1):
-        r"""
-        r Order statistics can be computed as follows:
-        E(r:n) = \mu + \Phi^{-1}\left( \frac{r-a}{n-2a+1} \sigma \right)
-        where a = 0.375
-        """
-        from scipy.stats import norm
-
-        return mu + norm.ppf((r - self.alpha) / (n - 2 * self.alpha + 1)) * sigma

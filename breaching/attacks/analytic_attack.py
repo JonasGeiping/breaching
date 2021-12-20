@@ -22,12 +22,12 @@ class AnalyticAttacker(_BaseAttacker):
 
         # Main reconstruction: loop starts here:
         inputs_from_queries = []
-        for model, user_gradient in zip(rec_models, shared_data["gradients"]):
-            idx = len(user_gradient) - 1
+        for model, user_data in zip(rec_models, shared_data):
+            idx = len(user_data["gradients"]) - 1
             for layer in list(model)[::-1]:  # Only for torch.nn.Sequential
                 if isinstance(layer, torch.nn.Linear):
-                    bias_grad = user_gradient[idx]
-                    weight_grad = user_gradient[idx - 1]
+                    bias_grad = user_data["gradients"][idx]
+                    weight_grad = user_data["gradients"][idx - 1]
                     layer_inputs = self.invert_fc_layer(weight_grad, bias_grad, labels)
                     idx -= 2
                 elif isinstance(layer, torch.nn.Flatten):
@@ -70,12 +70,12 @@ class ImprintAttacker(AnalyticAttacker):
         else:
             raise ValueError(f"No imprint hidden in model {rec_models[0]} according to server.")
 
-        bias_grad = shared_data["gradients"][0][bias_idx].clone()
-        weight_grad = shared_data["gradients"][0][weight_idx].clone()
+        bias_grad = shared_data[0]["gradients"][bias_idx].clone()
+        weight_grad = shared_data[0]["gradients"][weight_idx].clone()
 
         if self.cfg.sort_by_bias:
             # This variant can recover from shuffled rows under the assumption that biases would be ordered
-            _, order = server_payload["queries"][0]["parameters"][1].sort(descending=True)
+            _, order = server_payload[0]["parameters"][1].sort(descending=True)
             bias_grad = bias_grad[order]
             weight_grad = weight_grad[order]
 

@@ -18,4 +18,4 @@ def construct_case(cfg_case, setup=dict(dtype=torch.float, device=torch.device("
     model = server.vet_model(model)
     # User:
     user = construct_user(model, loss_fn, cfg.case, setup)
-    return server, user, model
+    return server, user, model, loss_fn

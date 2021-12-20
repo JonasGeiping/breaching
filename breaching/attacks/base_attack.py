@@ -15,7 +15,10 @@ log = logging.getLogger(__name__)
 
 
 class _BaseAttacker:
-    """This is a template class for an attack."""
+    """This is a template class for an attack.
+
+    A basic assumption for this attacker is that user data is fixed over multiple queries.
+    """
 
     def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device("cpu"))):
         self.cfg = cfg_attack
@@ -42,19 +45,19 @@ class _BaseAttacker:
         stats = defaultdict(list)
 
         # Load preprocessing constants:
-        self.data_shape = server_payload["data"].shape
-        self.dm = torch.as_tensor(server_payload["data"].mean, **self.setup)[None, :, None, None]
-        self.ds = torch.as_tensor(server_payload["data"].std, **self.setup)[None, :, None, None]
+        self.data_shape = server_payload[0]["metadata"].shape
+        self.dm = torch.as_tensor(server_payload[0]["metadata"].mean, **self.setup)[None, :, None, None]
+        self.ds = torch.as_tensor(server_payload[0]["metadata"].std, **self.setup)[None, :, None, None]
 
         # Load server_payload into state:
         rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data["buffers"])
         shared_data = self._cast_shared_data(shared_data)
         self.rec_models = rec_models
         # Consider label information
-        if shared_data["labels"] is None:
+        if shared_data[0]["labels"] is None:
             labels = self._recover_label_information(shared_data, rec_models)
         else:
-            labels = shared_data["labels"].clone()
+            labels = shared_data[0]["labels"].clone()
 
         # Condition gradients?
         if self.cfg.normalize_gradients:
@@ -66,7 +69,7 @@ class _BaseAttacker:
 
         # Load states into multiple models if necessary
         models = []
-        for idx, payload in enumerate(server_payload["queries"]):
+        for idx, payload in enumerate(server_payload):
 
             new_model = copy.deepcopy(self.model_template)
             new_model.to(**self.setup, memory_format=self.memory_format)
@@ -108,10 +111,10 @@ class _BaseAttacker:
 
     def _cast_shared_data(self, shared_data):
         """Cast user data to reconstruction data type."""
-        cast_grad_list = []
-        for shared_grad in shared_data["gradients"]:
-            cast_grad_list += [[g.to(dtype=self.setup["dtype"]) for g in shared_grad]]
-        shared_data["gradients"] = cast_grad_list
+        for data in shared_data:
+            data["gradients"] = [g.to(dtype=self.setup["dtype"]) for g in data["gradients"]]
+            if data["buffers"] is not None:
+                data["buffers"] = [b.to(dtype=self.setup["dtype"]) for b in data["buffers"]]
         return shared_data
 
     def _initialize_data(self, data_shape):
@@ -173,9 +176,9 @@ class _BaseAttacker:
 
     def _normalize_gradients(self, shared_data, fudge_factor=1e-6):
         """Normalize gradients to have norm of 1. No guarantees that this would be a good idea for FL updates."""
-        for shared_grad in shared_data["gradients"]:
-            grad_norm = torch.stack([g.pow(2).sum() for g in shared_grad]).sum().sqrt()
-            torch._foreach_div_(shared_grad, max(grad_norm, fudge_factor))
+        for data in shared_data:
+            grad_norm = torch.stack([g.pow(2).sum() for g in data["gradients"]]).sum().sqrt()
+            torch._foreach_div_(data["gradients"], max(grad_norm, fudge_factor))
         return shared_data
 
     def _recover_label_information(self, user_data, rec_models):
@@ -187,24 +190,24 @@ class _BaseAttacker:
 
         The behavior with respect to multiple queries is work in progress and subject of debate.
         """
-        num_data_points = user_data["num_data_points"]
-        num_classes = user_data["gradients"][0][-1].shape[0]
-        num_queries = len(user_data["gradients"])
+        num_data_points = user_data[0]["metadata"]["num_data_points"]
+        num_classes = user_data[0]["gradients"][-1].shape[0]
+        num_queries = len(user_data)
 
         # In the simplest case, the label can just be inferred from the last layer
         if self.cfg.label_strategy == "iDLG":
             # This was popularized in "iDLG" by Zhao et al., 2020
             # assert num_data_points == 1
             label_list = []
-            for query_id, shared_grad in enumerate(user_data["gradients"]):
-                last_weight_min = torch.argmin(torch.sum(shared_grad[-2], dim=-1), dim=-1)
+            for query_id, shared_data in enumerate(user_data):
+                last_weight_min = torch.argmin(torch.sum(shared_data["gradients"][-2], dim=-1), dim=-1)
                 label_list += [last_weight_min.detach()]
             labels = torch.stack(label_list).unique()
         elif self.cfg.label_strategy == "analytic":
             # Analytic recovery simply works as long as all labels are unique.
             label_list = []
-            for query_id, shared_grad in enumerate(user_data["gradients"]):
-                valid_classes = (shared_grad[-1] < 0).nonzero()
+            for query_id, shared_data in enumerate(user_data):
+                valid_classes = (shared_data["gradients"][-1] < 0).nonzero()
                 label_list += [valid_classes]
             labels = torch.stack(label_list).unique()[:num_data_points]
         elif self.cfg.label_strategy == "yin":
@@ -214,8 +217,8 @@ class _BaseAttacker:
             # This scheme also works best if all labels are unique
             # Otherwise this is an extension of iDLG to multiple labels:
             total_min_vals = 0
-            for query_id, shared_grad in enumerate(user_data["gradients"]):
-                total_min_vals += shared_grad[-2].min(dim=-1)[0]
+            for query_id, shared_data in enumerate(user_data):
+                total_min_vals += shared_data["gradients"][-2].min(dim=-1)[0]
             labels = total_min_vals.argsort()[:num_data_points]
 
         elif "wainakh" in self.cfg.label_strategy:
@@ -223,8 +226,8 @@ class _BaseAttacker:
             if self.cfg.label_strategy == "wainakh-simple":
                 # As seen in Weinakh et al., "User Label Leakage from Gradients in Federated Learning"
                 m_impact = 0
-                for query_id, shared_grad in enumerate(user_data["gradients"]):
-                    g_i = shared_grad[-2].sum(dim=1)
+                for query_id, shared_data in enumerate(user_data):
+                    g_i = shared_data["gradients"][-2].sum(dim=1)
                     m_query = (
                         torch.where(g_i < 0, g_i, torch.zeros_like(g_i)).sum() * (1 + 1 / num_classes) / num_data_points
                     )
@@ -236,7 +239,7 @@ class _BaseAttacker:
                 s_offset = torch.zeros(num_classes, **self.setup)
 
                 print("Starting a white-box search for optimal labels. This will take some time.")
-                for query_id, (shared_grad, model) in enumerate(zip(user_data["gradients"], rec_models)):
+                for query_id, model in enumerate(rec_models):
                     # Estimate m:
                     weight_params = (list(rec_models[0].parameters())[-2],)
                     for class_idx in range(num_classes):
@@ -264,7 +267,7 @@ class _BaseAttacker:
 
             # After determining impact and offset, run the actual recovery algorithm
             label_list = []
-            g_per_query = [shared_grad[-2].sum(dim=1) for shared_grad in user_data["gradients"]]
+            g_per_query = [shared_data["gradients"][-2].sum(dim=1) for shared_data in user_data]
             g_i = torch.stack(g_per_query).mean(dim=0)
             # Stage 1:
             for idx in range(num_classes):
@@ -282,7 +285,7 @@ class _BaseAttacker:
 
         elif self.cfg.label_strategy == "bias-corrected":  # WIP
             # This is slightly modified analytic label recovery in the style of Wainakh
-            bias_per_query = [shared_grad[-1] for shared_grad in user_data["gradients"]]
+            bias_per_query = [shared_data["gradients"][-1] for shared_data in user_data]
             label_list = []
             # Stage 1
             average_bias = torch.stack(bias_per_query).mean(dim=0)

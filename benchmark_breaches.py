@@ -60,9 +60,6 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     else:
         # Benchmark: Default: all classes
         subset = range(len(user.dataloader.dataset))
-        # But the first 397 classes are all animals, which makes this reasonably safe to do on ImageNet
-        # if interested in visualization of results:
-        # safe_subset = torch.arange(0, 397 * 50)
         raw_indices = random.sample(subset, batch_size * num_trials)
         indices = [raw_indices[idx * batch_size : (idx + 1) * batch_size] for idx in range(num_trials)]
 

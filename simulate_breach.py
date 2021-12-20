@@ -46,28 +46,50 @@ def main_process(process_idx, local_group_size, cfg):
     local_time = time.time()
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
 
-    # Instantiate all parties
-    user, server = breaching.cases.construct_case(cfg.case, setup)
-    attacker = breaching.attacks.prepare_attack(server.model, server.loss, cfg.attack, setup)
+    # Propose a model architecture:
+    # (Replace this line with your own model if you want)
+    model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data)
 
+    # Instantiate server and vet model
+    # This is a no-op for an honest-but-curious server, but a malicious-model server can modify the model in this step.
+    server = breaching.cases.construct_server(model, loss_fn, cfg.case, setup)
+    model = server.vet_model(model)
+    num_params, num_buffers = sum([p.numel() for p in model.parameters()]), sum([b.numel() for b in model.buffers()])
+
+    # Instantiate user and attacker
+    user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
+    attacker = breaching.attacks.prepare_attack(model, loss_fn, cfg.attack, setup)
+
+    # Summarize startup:
+    target_information = cfg.case.user.num_data_points * torch.as_tensor(cfg.case.data.shape).prod()
+    print(f"Model architecture {cfg.case.model} loaded with {num_params:,} parameters and {num_buffers:,} buffers.")
+    print(
+        f"Overall this is a data ratio of {cfg.case.num_queries * num_params / target_information:7.0f}:1 "
+        f"for target shape {[cfg.case.user.num_data_points, *cfg.case.data.shape]} given that num_queries={cfg.server.num_queries}."
+    )
     print(user)
     print(server)
     print(attacker)
-    # Simulate an attacked FL protocol
-    server_payload = server.distribute_payload()
-    shared_data, true_user_data = user.compute_local_updates(
-        server_payload
-    )  # True user data is returned only for analysis
-    reconstructed_user_data, stats = attacker.reconstruct(
-        server_payload, shared_data, server.secrets, dryrun=cfg.dryrun
-    )
+
+    # Simulate a simple FL protocol
+    shared_user_data = []
+    payloads = []
+    for query_id in server.queries():
+        server_payload = server.distribute_payload(query_id)  # A malicious server can return something "fun" here
+        shared_data_per_round, true_user_data = user.compute_local_updates(server_payload)  # true_data is for analysis
+        payloads += [server_payload]
+        shared_user_data += [shared_data_per_round]
+
+    # Run an attack using only payload information and shared data
+    reconstructed_user_data, stats = attacker.reconstruct(payloads, shared_user_data, server.secrets, dryrun=cfg.dryrun)
 
     # How good is the reconstruction?
     metrics = breaching.analysis.report(
-        reconstructed_user_data, true_user_data, server_payload, server.model, user.dataloader, setup
+        reconstructed_user_data, true_user_data, payloads, model, user.dataloader, setup
     )
-    breaching.utils.save_summary(cfg, metrics, stats, time.time() - local_time)
 
+    # Save a summary
+    breaching.utils.save_summary(cfg, metrics, stats, time.time() - local_time)
     # breach.utils.save_image()
 
 

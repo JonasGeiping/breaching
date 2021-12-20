@@ -13,5 +13,3 @@ user:
 
 # Server and user:
 num_queries: 1
-
-examples_from_split: validation

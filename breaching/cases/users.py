@@ -176,6 +176,7 @@ class UserSingleStep(torch.nn.Module):
 
     def _load_data(self):
         """Generate data from dataloader, truncated by self.num_data_points"""
+
         # Select data
         data_blocks = []
         label_blocks = []
@@ -235,9 +236,9 @@ class UserSingleStep(torch.nn.Module):
 class UserMultiStep(UserSingleStep):
     """A user who computes multiple local update steps as in a FedAVG scenario."""
 
-    def __init__(self, model, loss, dataloader, setup, cfg_user, num_queries=1):
+    def __init__(self, model, loss, dataloader, setup, cfg_user):
         """Initialize but do not propagate the cfg_case.user dict further."""
-        super().__init__(model, loss, dataloader, setup, cfg_user, num_queries)
+        super().__init__(model, loss, dataloader, setup, cfg_user)
 
         self.num_local_updates = cfg_user.num_local_updates
         self.num_data_per_local_update_step = cfg_user.num_data_per_local_update_step

@@ -31,7 +31,7 @@ class AnalyticAttacker(_BaseAttacker):
                     layer_inputs = self.invert_fc_layer(weight_grad, bias_grad, labels)
                     idx -= 2
                 elif isinstance(layer, torch.nn.Flatten):
-                    inputs = layer_inputs.reshape(shared_data["num_data_points"], *self.data_shape)
+                    inputs = layer_inputs.reshape(user_data["metadata"]["num_data_points"], *self.data_shape)
                 else:
                     raise ValueError(f"Layer {layer} not supported for this sanity-check attack.")
             inputs_from_queries += [inputs]
@@ -62,6 +62,7 @@ class ImprintAttacker(AnalyticAttacker):
         """This is somewhat hard-coded for images, but that is not a necessity."""
         # Initialize stats module for later usage:
         rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)
+        len_data = shared_data[0]["metadata"]["num_data_points"]  # Not strictly needed for the attack, used to pad/trim
 
         if "ImprintBlock" in server_secrets.keys():
             weight_idx = server_secrets["ImprintBlock"]["weight_idx"]
@@ -97,18 +98,18 @@ class ImprintAttacker(AnalyticAttacker):
             )
         inputs = torch.max(torch.min(inputs, (1 - self.dm) / self.ds), -self.dm / self.ds)
 
-        if len(labels) >= inputs.shape[0]:
+        if len_data >= inputs.shape[0]:
             # Fill up with zero if not enough data can be found:
-            missing_entries = torch.zeros(len(labels) - inputs.shape[0], *self.data_shape, **self.setup)
+            missing_entries = torch.zeros(len_data - inputs.shape[0], *self.data_shape, **self.setup)
             inputs = torch.cat([inputs, missing_entries], dim=0)
         else:
             print(f"Initially produced {inputs.shape[0]} hits.")
             # Cut additional hits:
             # this rule is optimal for clean data with few bins:
-            # best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len(labels), largest=False)
+            # best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(),len_data, largest=False)
             # this rule is best when faced with differential privacy:
-            best_guesses = torch.topk(weight_grad.mean(dim=1)[bias_grad != 0].abs(), len(labels), largest=True)
-            print(f"Reduced to {len(labels)} hits.")
+            best_guesses = torch.topk(weight_grad.mean(dim=1)[bias_grad != 0].abs(), len_data, largest=True)
+            print(f"Reduced to {len_data} hits.")
             # print(best_guesses.indices.sort().values)
             inputs = inputs[best_guesses.indices]
 

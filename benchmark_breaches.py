@@ -51,7 +51,12 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     model = server.vet_model(model)
     attacker = breaching.attacks.prepare_attack(model, loss_fn, cfg.attack, setup)
     if cfg.case.user.user_idx is not None:
-        print("The argument data_idx is disregarded during the benchmark. Data selection is fixed.")
+        print("The argument user_idx is disregarded during the benchmark. Data selection is fixed.")
+
+    if cfg.case.user.num_data_points == 1:
+        cfg.case.data.partition == "unique-class"  # Different label per user
+    else:
+        cfg.case.data.partition == "balanced"  # Balanced partition of labels
 
     cfg.case.user.user_idx = 0
     overall_metrics = []
@@ -69,14 +74,14 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         metrics = breaching.analysis.report(
             reconstruction,
             true_user_data,
-            server_payload,
+            payloads,
             server.model,
-            user.dataloader,
-            setup,
             order_batch=True,
             compute_full_iip=True,
             compute_rpsnr=True,
             compute_ssim=True,
+            cfg_case=cfg.case,
+            setup=setup,
         )
 
         # Save local summary:

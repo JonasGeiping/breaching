@@ -194,8 +194,10 @@ class _BaseAttacker:
         num_classes = user_data[0]["gradients"][-1].shape[0]
         num_queries = len(user_data)
 
-        # In the simplest case, the label can just be inferred from the last layer
-        if self.cfg.label_strategy == "iDLG":
+        if self.cfg.label_strategy is None:
+            return None
+        elif self.cfg.label_strategy == "iDLG":
+            # In the simplest case, the label can just be inferred from the last layer
             # This was popularized in "iDLG" by Zhao et al., 2020
             # assert num_data_points == 1
             label_list = []

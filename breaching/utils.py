@@ -186,3 +186,19 @@ def avg_n_dicts(dicts):
                 means[key] = 0
             means[key] += dic[key] / len(dicts)
     return means
+
+
+def overview(server, user, attacker):
+    num_params, num_buffers = (
+        sum([p.numel() for p in user.model.parameters()]),
+        sum([b.numel() for b in user.model.buffers()]),
+    )
+    target_information = user.num_data_points * torch.as_tensor(server.cfg_data.shape).prod()
+    print(f"Model architecture {user.model.name} loaded with {num_params:,} parameters and {num_buffers:,} buffers.")
+    print(
+        f"Overall this is a data ratio of {server.num_queries * num_params / target_information:7.0f}:1 "
+        f"for target shape {[user.num_data_points, *server.cfg_data.shape]} given that num_queries={server.num_queries}."
+    )
+    print(user)
+    print(server)
+    print(attacker)

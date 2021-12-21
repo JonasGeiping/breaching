@@ -16,7 +16,7 @@ def construct_model(cfg_model, cfg_data, pretrained=True, **kwargs):
     channels = cfg_data.shape[0]
     classes = cfg_data.classes
 
-    if cfg_data.name == "ImageNet":
+    if "ImageNet" in cfg_data.name:
         try:
             model = getattr(torchvision.models, cfg_model.lower())(pretrained=pretrained)
         except AttributeError:

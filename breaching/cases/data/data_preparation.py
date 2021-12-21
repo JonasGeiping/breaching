@@ -16,33 +16,39 @@ import warnings
 warnings.filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
 
 
-def construct_dataloader(cfg_data, cfg_impl, user_idx=0):
-    """Return a dataloader with given dataset for the given user_idx."""
+def construct_dataloader(cfg_data, cfg_impl, user_idx=0, return_full_dataset=False):
+    """Return a dataloader with given dataset for the given user_idx.
+
+    Use return_full_dataset=True to return the full dataset instead (for example for analysis).
+    """
     dataset = _build_dataset(cfg_data, cfg_data.examples_from_split, can_download=True)
 
-    if user_idx is None:
-        user_idx = torch.randint(0, cfg_data.default_clients, (1,))
-    else:
-        if user_idx > cfg_data.default_clients:
-            raise ValueError("This user index exceeds the maximal number of clients.")
+    if not return_full_dataset:
+        if user_idx is None:
+            user_idx = torch.randint(0, cfg_data.default_clients, (1,))
+        else:
+            if user_idx > cfg_data.default_clients:
+                raise ValueError("This user index exceeds the maximal number of clients.")
 
-    # Create a synthetic split of the dataset over all possible users if no natural split is given
-    if cfg_data.partition == "balanced":
-        data_per_class_per_user = len(dataset) // len(dataset.classes) // cfg_data.default_clients
-        if data_per_class_per_user < 1:
-            raise ValueError("Too many clients for a balanced dataset.")
-        data_ids = []
-        for class_idx, _ in enumerate(dataset.classes):
-            data_with_class = [idx for (idx, label) in dataset.lookup.items() if label == class_idx]
-            data_ids += data_with_class[user_idx * data_per_class_per_user : data_per_class_per_user * (user_idx + 1)]
-        dataset = Subset(dataset, data_ids)
-    elif cfg_data.partition == "unique-class":
-        data_ids = [idx for (idx, label) in dataset.lookup.items() if label == user_idx]
-        dataset = Subset(dataset, data_ids)
-    elif cfg_data.partition == "given":
-        pass
-    else:
-        raise ValueError(f"Partition scheme {cfg_data.partition} not implemented.")
+        # Create a synthetic split of the dataset over all possible users if no natural split is given
+        if cfg_data.partition == "balanced":
+            data_per_class_per_user = len(dataset) // len(dataset.classes) // cfg_data.default_clients
+            if data_per_class_per_user < 1:
+                raise ValueError("Too many clients for a balanced dataset.")
+            data_ids = []
+            for class_idx, _ in enumerate(dataset.classes):
+                data_with_class = [idx for (idx, label) in dataset.lookup.items() if label == class_idx]
+                data_ids += data_with_class[
+                    user_idx * data_per_class_per_user : data_per_class_per_user * (user_idx + 1)
+                ]
+            dataset = Subset(dataset, data_ids)
+        elif cfg_data.partition == "unique-class":
+            data_ids = [idx for (idx, label) in dataset.lookup.items() if label == user_idx]
+            dataset = Subset(dataset, data_ids)
+        elif cfg_data.partition == "given":
+            pass
+        else:
+            raise ValueError(f"Partition scheme {cfg_data.partition} not implemented.")
 
     if cfg_data.db.name == "LMDB":
         from .lmdb_datasets import LMDBDataset  # this also depends on py-lmdb, that's why it's a lazy import
@@ -189,5 +195,4 @@ def _parse_data_augmentations(cfg_data, split, PIL_only=False):
         transforms.append(torchvision.transforms.ToTensor())
         if cfg_data.normalize:
             transforms.append(torchvision.transforms.Normalize(cfg_data.mean, cfg_data.std))
-
     return torchvision.transforms.Compose(transforms)

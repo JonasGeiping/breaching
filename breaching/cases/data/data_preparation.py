@@ -80,6 +80,8 @@ def construct_dataloader(cfg_data, cfg_impl, user_idx=0, return_full_dataset=Fal
         pin_memory=cfg_impl.pin_memory,
         persistent_workers=cfg_impl.persistent_workers if num_workers > 0 else False,
     )
+    # Save the name for later:
+    dataloader.name = cfg_data.name
 
     return dataloader
 

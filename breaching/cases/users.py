@@ -58,7 +58,7 @@ class UserSingleStep(torch.nn.Module):
     User provides number of data points: {self.provide_num_data_points}
 
     Data:
-    Dataset: {self.dataloader.dataset.__class__.__name__}
+    Dataset: {self.dataloader.name}
     user: {self.user_idx}
     {n.join(self.defense_repr)}
         """

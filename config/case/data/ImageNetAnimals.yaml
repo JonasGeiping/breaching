@@ -32,7 +32,7 @@ augmentations_val:
   CenterCrop: 224
 
 # Federated Learning specifics:
-default_clients: 397
+default_clients: 50
 partition: balanced # used for synthetic splits. Current options for synthetic split: balanced / unique-class
 examples_from_split: validation
 

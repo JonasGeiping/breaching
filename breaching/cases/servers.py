@@ -18,11 +18,11 @@ from .malicious_modifications.feat_decoders import generate_decoder
 def construct_server(model, loss_fn, cfg_case, setup):
     """Interface function."""
     if cfg_case.server.name == "honest_but_curious":
-        server = HonestServer(model, loss, cfg_case, setup, external_dataloader=None)
+        server = HonestServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
     elif cfg_case.server.name == "malicious_model":
-        server = MaliciousModelServer(model, loss, cfg_case, setup, external_dataloader=None)
+        server = MaliciousModelServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
     elif cfg_case.server.name == "malicious_parameters":
-        server = MaliciousParameterServer(model, loss, cfg_case, setup, external_dataloader=None)
+        server = MaliciousParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
     else:
         raise ValueError(f"Invalid server type {cfg_case.server} given.")
     return server
@@ -127,8 +127,9 @@ class HonestServer:
             honest_model_buffers = None
         return dict(parameters=honest_model_parameters, buffers=honest_model_buffers, metadata=self.cfg_data)
 
-    def vet_model(self):
+    def vet_model(self, model):
         """This server is honest."""
+        model = self.model  # Re-reference this everywhere
         return self.model
 
     def queries(self):
@@ -153,7 +154,7 @@ class MaliciousModelServer(HonestServer):
         self.model_state = "custom"  # Do not mess with model parameters no matter what init is agreed upon
         self.secrets = dict()
 
-    def vet_model(self):
+    def vet_model(self, model):
         """This server is not honest :>"""
 
         modified_model = self.model
@@ -190,6 +191,7 @@ class MaliciousModelServer(HonestServer):
             modified_model, gain=self.cfg_server.model_gain, trials=self.cfg_server.normalize_rounds
         )
         self.model = modified_model
+        model = modified_model
         return self.model
 
     def _place_malicious_block(
@@ -368,8 +370,9 @@ class MaliciousParameterServer(HonestServer):
             )
             self.secrets["layers"] = cfg_case.server.param_modification.optimization.layers
 
-    def vet_model(self):
+    def vet_model(self, model):
         """This server is not honest, but the model architecture stays normal."""
+        model = self.model  # Re-reference this everywhere
         return self.model
 
     def reconfigure_model(self, model_state, query_id=0):

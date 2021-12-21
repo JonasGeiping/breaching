@@ -9,17 +9,18 @@ from .data import construct_dataloader
 def construct_user(model, loss_fn, cfg_case, setup):
     """Interface function."""
     if cfg_case.user.user_type == "local_gradient":
-        dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=cfg.case.user.user_idx)
+        dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=cfg_case.user.user_idx)
         # The user will deepcopy this model template to have their own
-        user = UserSingleStep(model, loss, dataloader, setup, cfg_case.user)
+        user = UserSingleStep(model, loss_fn, dataloader, setup, cfg_case.user)
     elif cfg_case.user.user_type == "local_update":
-        dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=cfg.case.user.user_idx)
-        user = UserMultiStep(model, loss, dataloader, setup, cfg_case.user)
+        dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=cfg_case.user.user_idx)
+        user = UserMultiStep(model, loss_fn, dataloader, setup, cfg_case.user)
     elif cfg_case.user.user_type == "multiuser_aggregate":
         dataloaders = []
         for idx in range(*cfg.case.user.user_range):
             dataloaders += [construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=idx)]
-        user = MultiUserAggregate(model, loss, dataloaders, setup, cfg_case.user)
+        user = MultiUserAggregate(model, loss_fn, dataloaders, setup, cfg_case.user)
+    return user
 
 
 class UserSingleStep(torch.nn.Module):
@@ -110,9 +111,8 @@ class UserSingleStep(torch.nn.Module):
         shared_grads = []
         shared_buffers = []
 
-        payload = server_payload["queries"][query]
-        parameters = payload["parameters"]
-        buffers = payload["buffers"]
+        parameters = server_payload["parameters"]
+        buffers = server_payload["buffers"]
 
         with torch.no_grad():
             for param, server_state in zip(self.model.parameters(), parameters):
@@ -266,9 +266,8 @@ class UserMultiStep(UserSingleStep):
         user_data, user_labels = self._load_data()
 
         # Compute local updates
-        payload = server_payload["queries"][query]
-        parameters = payload["parameters"]
-        buffers = payload["buffers"]
+        parameters = server_payload["parameters"]
+        buffers = server_payload["buffers"]
 
         with torch.no_grad():
             for param, server_state in zip(self.model.parameters(), parameters):
@@ -339,9 +338,9 @@ class MultiUserAggregate(UserMultiStep):
     A simple aggregate over multiple users in the FedSGD setting can better be modelled by the single user model above.
     """
 
-    def __init__(self, model, loss, dataloader, setup, cfg_user, num_queries=1):
+    def __init__(self, model, loss, dataloader, setup, cfg_user):
         """Initialize but do not propagate the cfg_case.user dict further."""
-        super().__init__(model, loss, dataloader, setup, cfg_user, num_queries)
+        super().__init__(model, loss, dataloader, setup, cfg_user)
 
         self.num_users = cfg_user.num_users
 
@@ -393,87 +392,84 @@ class MultiUserAggregate(UserMultiStep):
     def compute_local_updates(self, server_payload):
         """Compute local updates to the given model based on server payload."""
         # Compute local updates
-        shared_grads = []
-        shared_buffers = []
-        for query in range(self.num_user_queries):
-            payload = server_payload["queries"][query]
-            server_parameters = payload["parameters"]
-            server_buffers = payload["buffers"]
 
-            aggregate_params = [torch.zeros_like(p) for p in self.model.parameters()]
-            aggregate_buffers = [torch.zeros_like(b, dtype=torch.float) for b in self.model.buffers()]
-            for user_idx in range(self.num_users):
-                # Compute single user update
-                user_data, user_labels = self._load_data(user_idx)
-                with torch.no_grad():
-                    for param, server_state in zip(self.model.parameters(), server_parameters):
-                        param.copy_(server_state.to(**self.setup))
-                    if server_buffers is not None:
-                        for buffer, server_state in zip(self.model.buffers(), server_buffers):
-                            buffer.copy_(server_state.to(**self.setup))
-                        self.model.eval()
-                    else:
-                        self.model.train()
+        server_parameters = server_payload["parameters"]
+        server_buffers = server_payload["buffers"]
 
-                optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
-                seen_data_idx = 0
-                label_list = []
-                for step in range(self.num_local_updates):
-                    data = user_data[seen_data_idx : seen_data_idx + self.num_data_per_local_update_step]
-                    labels = user_labels[seen_data_idx : seen_data_idx + self.num_data_per_local_update_step]
-                    seen_data_idx += self.num_data_per_local_update_step
-                    seen_data_idx = seen_data_idx % self.num_data_points
-                    label_list.append(labels)
+        aggregate_params = [torch.zeros_like(p) for p in self.model.parameters()]
+        aggregate_buffers = [torch.zeros_like(b, dtype=torch.float) for b in self.model.buffers()]
+        for user_idx in range(self.num_users):
+            # Compute single user update
+            user_data, user_labels = self._load_data(user_idx)
+            with torch.no_grad():
+                for param, server_state in zip(self.model.parameters(), server_parameters):
+                    param.copy_(server_state.to(**self.setup))
+                if server_buffers is not None:
+                    for buffer, server_state in zip(self.model.buffers(), server_buffers):
+                        buffer.copy_(server_state.to(**self.setup))
+                    self.model.eval()
+                else:
+                    self.model.train()
 
-                    optimizer.zero_grad()
-                    # Compute the forward pass
-                    data_input = (
-                        data + self.generator_input.sample(data.shape) if self.generator_input is not None else data
-                    )
-                    outputs = self.model(data_input)
-                    loss = self.loss(outputs, labels)
-                    loss.backward()
+            optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
+            seen_data_idx = 0
+            label_list = []
+            for step in range(self.num_local_updates):
+                data = user_data[seen_data_idx : seen_data_idx + self.num_data_per_local_update_step]
+                labels = user_labels[seen_data_idx : seen_data_idx + self.num_data_per_local_update_step]
+                seen_data_idx += self.num_data_per_local_update_step
+                seen_data_idx = seen_data_idx % self.num_data_points
+                label_list.append(labels)
 
-                    grads_ref = [p.grad for p in self.model.parameters()]
-                    if self.clip_value > 0:
-                        self._clip_list_of_grad_(grads_ref)
-                    self._apply_differential_noise(grads_ref)
-                    optimizer.step()
-                # Add to running aggregates:
-
-                # Share differential to server version:
-                # This is equivalent to sending the new stuff and letting the server do it, but in line
-                # with the gradients sent in UserSingleStep
-                param_difference_to_server = torch._foreach_sub(
-                    [p.cpu() for p in self.model.parameters()], server_parameters
+                optimizer.zero_grad()
+                # Compute the forward pass
+                data_input = (
+                    data + self.generator_input.sample(data.shape) if self.generator_input is not None else data
                 )
-                torch._foreach_sub_(param_difference_to_server, aggregate_params)
-                torch._foreach_add_(aggregate_params, param_difference_to_server, alpha=-1 / self.num_users)
+                outputs = self.model(data_input)
+                loss = self.loss(outputs, labels)
+                loss.backward()
 
-                if len(aggregate_buffers) > 0:
-                    buffer_to_server = [
-                        b.to(device=torch.device("cpu"), dtype=torch.float) for b in self.model.buffers()
-                    ]
-                    torch._foreach_sub_(buffer_to_server, aggregate_buffers)
-                    torch._foreach_add_(aggregate_buffers, buffer_to_server, alpha=1 / self.num_users)
+                grads_ref = [p.grad for p in self.model.parameters()]
+                if self.clip_value > 0:
+                    self._clip_list_of_grad_(grads_ref)
+                self._apply_differential_noise(grads_ref)
+                optimizer.step()
+            # Add to running aggregates:
 
-            shared_grads += [aggregate_params]
-            shared_buffers += [aggregate_buffers]
+            # Share differential to server version:
+            # This is equivalent to sending the new stuff and letting the server do it, but in line
+            # with the gradients sent in UserSingleStep
+            param_difference_to_server = torch._foreach_sub(
+                [p.cpu() for p in self.model.parameters()], server_parameters
+            )
+            torch._foreach_sub_(param_difference_to_server, aggregate_params)
+            torch._foreach_add_(aggregate_params, param_difference_to_server, alpha=-1 / self.num_users)
+
+            if len(aggregate_buffers) > 0:
+                buffer_to_server = [b.to(device=torch.device("cpu"), dtype=torch.float) for b in self.model.buffers()]
+                torch._foreach_sub_(buffer_to_server, aggregate_buffers)
+                torch._foreach_add_(aggregate_buffers, buffer_to_server, alpha=1 / self.num_users)
+
+        shared_grads = aggregate_params
+        shared_buffers = aggregate_buffers
 
         shared_data = dict(
             gradients=shared_grads,
             buffers=shared_buffers if self.provide_buffers else None,
-            num_data_points=self.num_data_points if self.provide_num_data_points else None,
-            labels=user_labels if self.provide_labels else None,
-            num_users=self.num_users,
-            local_hyperparams=dict(
-                lr=self.local_learning_rate,
-                steps=self.num_local_updates,
-                data_per_step=self.num_data_per_local_update_step,
-                labels=label_list,
-            )
-            if self.provide_local_hyperparams
-            else None,
+            metadata=dict(
+                num_data_points=self.num_data_points if self.provide_num_data_points else None,
+                labels=user_labels if self.provide_labels else None,
+                num_users=self.num_users,
+                local_hyperparams=dict(
+                    lr=self.local_learning_rate,
+                    steps=self.num_local_updates,
+                    data_per_step=self.num_data_per_local_update_step,
+                    labels=label_list,
+                )
+                if self.provide_local_hyperparams
+                else None,
+            ),
         )
 
         def generate_user_data():

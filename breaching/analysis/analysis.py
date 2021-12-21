@@ -26,8 +26,8 @@ def report(
 
     lpips_scorer = lpips.LPIPS(net="alex", verbose=False).to(**setup)
 
-    dm = torch.as_tensor(server_payload["data"].mean, **setup)[None, :, None, None]
-    ds = torch.as_tensor(server_payload["data"].std, **setup)[None, :, None, None]
+    dm = torch.as_tensor(server_payload[0]["metadata"].mean, **setup)[None, :, None, None]
+    ds = torch.as_tensor(server_payload[0]["metadata"].std, **setup)[None, :, None, None]
     model.to(**setup)
 
     rec_denormalized = torch.clamp(reconstructed_user_data["data"].to(**setup) * ds + dm, 0, 1)
@@ -81,7 +81,7 @@ def report(
         iip_scores = dict(none=float("NaN"))
 
     feat_mse = 0.0
-    for idx, payload in enumerate(server_payload["queries"]):
+    for idx, payload in enumerate(server_payload):
         parameters = payload["parameters"]
         buffers = payload["buffers"]
 

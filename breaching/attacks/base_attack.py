@@ -50,21 +50,21 @@ class _BaseAttacker:
         self.ds = torch.as_tensor(server_payload[0]["metadata"].std, **self.setup)[None, :, None, None]
 
         # Load server_payload into state:
-        rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data["buffers"])
+        rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data)
         shared_data = self._cast_shared_data(shared_data)
         self.rec_models = rec_models
         # Consider label information
-        if shared_data[0]["labels"] is None:
+        if shared_data[0]["metadata"]["labels"] is None:
             labels = self._recover_label_information(shared_data, rec_models)
         else:
-            labels = shared_data[0]["labels"].clone()
+            labels = shared_data[0]["metadata"]["labels"].clone()
 
         # Condition gradients?
         if self.cfg.normalize_gradients:
             shared_data = self._normalize_gradients(shared_data)
         return rec_models, labels, stats
 
-    def _construct_models_from_payload_and_buffers(self, server_payload, user_buffers):
+    def _construct_models_from_payload_and_buffers(self, server_payload, shared_data):
         """Construct the model (or multiple) that is sent by the server and include user buffers if any."""
 
         # Load states into multiple models if necessary
@@ -76,9 +76,9 @@ class _BaseAttacker:
 
             # Load parameters
             parameters = payload["parameters"]
-            if user_buffers is not None and idx < len(user_buffers):
+            if shared_data[idx]["buffers"] is not None:
                 # User sends buffers. These should be used!
-                buffers = user_buffers[idx]
+                buffers = shared_data[idx]["buffers"]
                 new_model.eval()
             elif payload["buffers"] is not None:
                 # The server has public buffers in any case

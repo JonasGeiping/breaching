@@ -85,10 +85,10 @@ class OptimizationBasedAttacker(_BaseAttacker):
         # Initialize losses:
         for regularizer in self.regularizers:
             regularizer.initialize(rec_model, shared_data, labels)
-        self.objective.initialize(self.loss_fn, self.cfg.impl, shared_data["metadata"]["local_hyperparams"])
+        self.objective.initialize(self.loss_fn, self.cfg.impl, shared_data[0]["metadata"]["local_hyperparams"])
 
         # Initialize candidate reconstruction data
-        candidate = self._initialize_data([shared_data["metadata"]["num_data_points"], *self.data_shape])
+        candidate = self._initialize_data([shared_data[0]["metadata"]["num_data_points"], *self.data_shape])
         best_candidate = candidate.detach().clone()
         minimal_value_so_far = torch.as_tensor(float("inf"), **self.setup)
 
@@ -175,7 +175,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
 
         if self.cfg.restarts.scoring in ["euclidean", "cosine-similarity"]:
             objective = Euclidean() if self.cfg.restarts.scoring == "euclidean" else CosineSimilarity()
-            objective.initialize(self.loss_fn, self.cfg.impl, shared_data["local_hyperparams"])
+            objective.initialize(self.loss_fn, self.cfg.impl, shared_data[0]["metadata"]["local_hyperparams"])
             score = 0
             for model, data in zip(rec_model, shared_data):
                 score += objective(model, data["gradients"], candidate, labels)[0]

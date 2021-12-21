@@ -31,6 +31,7 @@ class attack_cfg_default:
     attack_type = "imprint-readout"
     label_strategy = "random"  # Labels are not actually required for this attack
     normalize_gradients = False
+    sort_by_bias = False
     impl = namedtuple("impl", ["dtype", "mixed_precision", "JIT"])("float", False, "")
 
 
@@ -53,7 +54,7 @@ def main():
     loss_fn = torch.nn.CrossEntropyLoss()
     # It will be modified maliciously:
     input_dim = data_cfg_default.shape[0] * data_cfg_default.shape[1] * data_cfg_default.shape[2]
-    block = ImprintBlock(input_dim, num_bins=16)
+    block = ImprintBlock(input_dim, num_bins=4)
     model = torch.nn.Sequential(
         torch.nn.Flatten(), block, torch.nn.Unflatten(dim=1, unflattened_size=data_cfg_default.shape), model
     )

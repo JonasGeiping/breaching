@@ -36,7 +36,7 @@ def main(cfg_attack):
     setup = dict(device=torch.device("cpu"), dtype=torch.float)
 
     # This could be your model:
-    model = torchvision.models.resnet152()
+    model = torchvision.models.resnet152(pretrained=True)
     model.eval()
     loss_fn = torch.nn.CrossEntropyLoss()
 

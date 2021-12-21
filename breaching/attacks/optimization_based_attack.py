@@ -60,7 +60,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
         {(n + ' ' * 8).join([f'{key}: {val}' for key, val in self.cfg.optim.items()])}
         """
 
-    def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
+    def reconstruct(self, server_payload, shared_data, server_secrets=None, initial_data=None, dryrun=False):
         # Initialize stats module for later usage:
         rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)
 
@@ -69,7 +69,9 @@ class OptimizationBasedAttacker(_BaseAttacker):
         candidate_solutions = []
         try:
             for trial in range(self.cfg.restarts.num_trials):
-                candidate_solutions += [self._run_trial(rec_models, shared_data, labels, stats, trial, dryrun)]
+                candidate_solutions += [
+                    self._run_trial(rec_models, shared_data, labels, stats, trial, initial_data, dryrun)
+                ]
                 scores[trial] = self._score_trial(candidate_solutions[trial], labels, rec_models, shared_data)
         except KeyboardInterrupt:
             print("Trial procedure manually interruped.")
@@ -79,7 +81,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
 
         return reconstructed_data, stats
 
-    def _run_trial(self, rec_model, shared_data, labels, stats, trial, dryrun=False):
+    def _run_trial(self, rec_model, shared_data, labels, stats, trial, initial_data=None, dryrun=False):
         """Run a single reconstruction trial."""
 
         # Initialize losses:
@@ -89,6 +91,9 @@ class OptimizationBasedAttacker(_BaseAttacker):
 
         # Initialize candidate reconstruction data
         candidate = self._initialize_data([shared_data[0]["metadata"]["num_data_points"], *self.data_shape])
+        if initial_data is not None:
+            candidate.data = initial_data.data.to(**self.setup)
+
         best_candidate = candidate.detach().clone()
         minimal_value_so_far = torch.as_tensor(float("inf"), **self.setup)
 

@@ -54,7 +54,7 @@ class _BaseAttacker:
         if shared_data["labels"] is None:
             labels = self._recover_label_information(shared_data, rec_models)
         else:
-            labels = shared_data["labels"]
+            labels = shared_data["labels"].clone()
 
         # Condition gradients?
         if self.cfg.normalize_gradients:

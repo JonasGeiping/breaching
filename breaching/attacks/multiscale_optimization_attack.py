@@ -33,7 +33,7 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
             increment = self.data_shape[2] // self.cfg.num_stages
             scale_pyramid = torch.arange(increment, self.data_shape[2] + 1, increment)
         elif self.cfg.scale_pyramid == "log":
-            scales = torch.as_tensor([self.data_shape[2] / (2 ** i) for i in range(self.cfg.num_stages, -1, -1)])
+            scales = torch.as_tensor([self.data_shape[2] / (2 ** i) for i in range(self.cfg.num_stages - 1, -1, -1)])
             scale_pyramid = scales.round().int()
         elif self.cfg.scale_pyramid == "trivial":
             scale_pyramid = [self.data_shape[2] for _ in range(self.cfg.num_stages)]

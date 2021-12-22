@@ -1,6 +1,7 @@
 """Various metrics."""
 import torch
 from functools import partial
+import warnings
 
 
 def cw_ssim(img_batch, ref_batch, scales=5, skip_scales=None, K=1e-6):
@@ -16,9 +17,10 @@ def cw_ssim(img_batch, ref_batch, scales=5, skip_scales=None, K=1e-6):
     try:
         from pytorch_wavelets import DTCWTForward
     except ModuleNotFoundError:
-        raise ModuleNotFoundError(
+        warnings.warn(
             "To utilize wavelet SSIM, install pytorch wavelets from https://github.com/fbcotter/pytorch_wavelets."
         )
+        return torch.as_tensor(float("NaN"))
 
     # 1) Compute wavelets:
     setup = dict(device=img_batch.device, dtype=img_batch.dtype)
@@ -129,7 +131,11 @@ def registered_psnr_compute(img_batch, ref_batch, factor=1.0):
 
 def _registered_psnr_compute_kornia(img_batch, ref_batch, factor=1.0):
     """Kornia version. Todo: Use a smarter/deeper matching tool."""
-    from kornia.geometry import ImageRegistrator, HomographyWarper  # lazy import here as well
+    try:
+        from kornia.geometry import ImageRegistrator, HomographyWarper  # lazy import here as well
+    except ModuleNotFoundError:
+        warnings.warn("To utilize registered PSNR, install kornia.")
+        return torch.as_tensor(float("NaN"))
 
     B = img_batch.shape[0]
     default_psnrs = []
@@ -155,8 +161,12 @@ def _registered_psnr_compute_kornia(img_batch, ref_batch, factor=1.0):
 
 def _registered_psnr_compute_kornia_loftr(img_batch, ref_batch, factor=1.0):
     """Kornia version. WIP."""
-    from kornia.feature import LoFTR
-    from kornia.geometry.homography import find_homography_dlt
+    try:
+        from kornia.feature import LoFTR
+        from kornia.geometry.homography import find_homography_dlt
+    except ModuleNotFoundError:
+        warnings.warn("To utilize this registered PSNR implementation, install kornia.")
+        return torch.as_tensor(float("NaN"))
 
     B = img_batch.shape[0]
     mse_per_example = ((img_batch.detach() - ref_batch) ** 2).view(B, -1).mean(dim=1)
@@ -179,9 +189,13 @@ def _registered_psnr_compute_kornia_loftr(img_batch, ref_batch, factor=1.0):
 
 def _registered_psnr_compute_skimage(img_batch, ref_batch, factor=1.0):
     """Use ORB features to register images onto reference before computing PSNR scores."""
-    import skimage.feature  # Lazy metric stuff import
-    import skimage.measure
-    import skimage.transform
+    try:
+        import skimage.feature  # Lazy metric stuff import
+        import skimage.measure
+        import skimage.transform
+    except ModuleNotFoundError:
+        warnings.warn("To utilize this registered PSNR implementation, install scikit-image.")
+        return torch.as_tensor(float("NaN"))
 
     descriptor_extractor = skimage.feature.ORB(n_keypoints=800)
 
@@ -240,11 +254,10 @@ def image_identifiability_precision(
     # Compare the reconstructed images to each image in the dataloader with the appropriate label
     # This could be batched and partially cached to make it faster in the future ...
     identified_images = dict(zip(scores, [0 for entry in scores]))
-
     for batch_idx, reconstruction in enumerate(reconstructed_user_data["data"]):
         batch_label = true_user_data["labels"][batch_idx]
         label_subset = [idx for (idx, label) in dataloader.dataset.lookup.items() if label == batch_label]
-
+        # Find the closest match to the reconstruction in all of the validation data:
         distances = dict(zip(scores, [[] for entry in scores]))
         for idx in label_subset:
             comparable_data = dataloader.dataset[idx][0].to(device=reconstruction.device)
@@ -262,20 +275,12 @@ def image_identifiability_precision(
                 else:
                     distances[score] += [torch.norm(comparable_data.view(-1) - reconstruction.view(-1))]
 
+        # Verify that this match is actually close to the true user data:
         for score in scores:
             minimal_distance_data_idx = label_subset[torch.stack(distances[score]).argmin()]
             candidate_solution = dataloader.dataset[minimal_distance_data_idx][0].to(device=reconstruction.device)
             true_solution = true_user_data["data"][batch_idx]
-            if score == "lpips":
-                distance_to_true = lpips_scorer(candidate_solution, true_solution, normalize=False).mean()
-            elif score == "self" and model is not None:
-                features_rec = _return_model_features(model, candidate_solution)
-                features_comp = _return_model_features(model, true_solution)
-                distance_to_true = 1 - torch.nn.functional.cosine_similarity(
-                    features_rec.view(-1), features_comp.view(-1), dim=0
-                )
-            else:
-                distance_to_true = torch.norm(candidate_solution.view(-1) - true_solution.view(-1))
+            distance_to_true = torch.norm(candidate_solution.view(-1) - true_solution.view(-1))
 
             if distance_to_true < fudge:  # This should be tiny by all accounts
                 identified_images[score] += 1

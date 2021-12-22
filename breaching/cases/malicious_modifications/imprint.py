@@ -97,15 +97,19 @@ class SparseImprintBlock(ImprintBlock):
     """This block is sparse instead of cumulative which is more efficient in noise/param tradeoffs but requires
     two ReLUs that construct the hard-tanh nonlinearity."""
 
-    def _get_bins(self, mu=0, sigma=1, linfunc="avg"):
+    def __init__(self, data_size, num_bins, connection="linear", gain=1e-3, linfunc="fourier", mode=0):
+        super().__init__(data_size, num_bins, connection, gain, linfunc, mode)
+        self.nonlin = torch.nn.Hardtanh(min_val=0, max_val=gain)
+
+    def _get_bins(self, linfunc="avg"):
         bins = []
         mass = 0
         for path in range(self.num_bins + 1):
             mass += 1 / (self.num_bins + 2)
             if "fourier" in linfunc:
-                bins.append(laplace(loc=mu, scale=sigma / math.sqrt(2)).ppf(mass))
+                bins.append(laplace(loc=0, scale=1 / math.sqrt(2)).ppf(mass))
             else:
-                bins += [NormalDist(mu=mu, sigma=sigma).inv_cdf(mass)]
+                bins += [NormalDist(mu=0, sigma=1).inv_cdf(mass)]
         bin_sizes = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
         self.bin_sizes = bin_sizes
         return bins[1:]
@@ -114,7 +118,7 @@ class SparseImprintBlock(ImprintBlock):
     def _init_linear_function(self, linfunc="fourier", mode=0):
         weights = super()._init_linear_function(linfunc, mode)
         for i, row in enumerate(weights):
-            row /= torch.as_tensor(self.bin_sizes[i], device=new_data.device)
+            row /= torch.as_tensor(self.bin_sizes[i], device=weights.device)
         return weights
 
     def _make_biases(self):
@@ -152,12 +156,13 @@ class OneShotBlock(ImprintBlock):
 class OneShotBlockSparse(SparseImprintBlock):
     structure = "sparse"
 
-    def __init__(self, data_size, num_bins, connection="linear"):
+    def __init__(self, data_size, num_bins, connection="linear", gain=1e-3, linfunc="fourier", mode=0):
         """
         data_size is the size of the input images
         num_bins is how many "paths" to include in the model
+        target_val=0 in this variant.
         """
-        super().__init__(data_size, num_bins=1, connection=connection)
+        super().__init__(data_size, 1, connection, gain, linfunc, mode)
         self.data_size = data_size
         self.num_bins = num_bins
 

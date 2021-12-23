@@ -1,0 +1,149 @@
+"""Glue code to include text data seamlessly (or like more or less ;>)"""
+import torch
+import os
+
+from itertools import chain
+
+# All language modules are import lazily
+import logging
+
+log = logging.getLogger(__name__)
+
+
+def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_dataset=False):
+    # os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    from datasets import load_dataset
+
+    if user_idx is None:
+        user_idx = torch.randint(0, cfg_data.default_clients, (1,))
+    else:
+        if user_idx > cfg_data.default_clients:
+            raise ValueError("This user index exceeds the maximal number of clients.")
+    if split == "training":
+        split = "train"  # huggingface notation
+
+    cfg_data.path = os.path.expanduser(cfg_data.path)
+
+    if cfg_data.name == "wikitext":
+        raw_dataset = load_dataset("wikitext", "wikitext-103-v1", cache_dir=cfg_data.path, split=split)
+        raw_dataset = _split_wikipedia_into_articles(raw_dataset, user_idx, return_full_dataset, min_length=25)
+    else:
+        raise ValueError(f"Invalid text dataset {cfg_data.name} provided.")
+
+    columns = raw_dataset.column_names
+    tokenizer = _get_tokenizer(cfg_data.tokenizer)
+    tokenize, group_texts, collate_fn = _get_preprocessing(tokenizer, cfg_data)
+    tokenizer.model_max_length = 1e10  # Only for batched pre-processing
+
+    tokenized_dataset = raw_dataset.map(tokenize, batched=True, remove_columns=columns, load_from_cache_file=True)
+    tokenized_dataset = tokenized_dataset.map(group_texts, batched=True, load_from_cache_file=True)
+    tokenized_dataset = tokenized_dataset.rename_column("input_ids", "inputs")
+    tokenized_dataset.set_format("torch")
+    tokenized_dataset.tokenizer = tokenizer  # Stash here
+    # tokenizer.model_max_length = cfg_data.shape[0]
+
+    # Reduce train dataset according to cfg_data.size:
+    if cfg_data.size < len(tokenized_dataset):
+        tokenized_dataset = tokenized_dataset.select(range(0, cfg_data.size))
+
+    # Log a few random samples from the training set:
+    for index in torch.randint(len(tokenized_dataset), (3,)):
+        sample = tokenized_dataset[index.item()]
+        sentence = tokenizer.decode(sample["inputs"])
+        log.info(f"Sample {index} of the training set: {sample} is sentence: {sentence}.")
+
+    return tokenized_dataset, collate_fn
+
+
+def _get_preprocessing(tokenizer, cfg_data):
+    """
+    preprocessing inspired by https://github.com/huggingface/transformers/blob/master/examples/pytorch/language-modeling/run_mlm.py#L432
+    """
+    from transformers import default_data_collator, DataCollatorForLanguageModeling
+
+    def tokenize(examples):
+        return tokenizer(examples["text"], return_special_tokens_mask=cfg_data == "masked-lm")
+
+    if cfg_data.task in ["causal-lm", "masked-lm"]:
+        block_size = cfg_data.shape[0]
+
+        def group_texts(examples):
+            # Concatenate all texts.
+            concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+            total_length = len(concatenated_examples[list(examples.keys())[0]])
+            # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
+            # customize this part to your needs.
+            if total_length >= block_size:
+                total_length = (total_length // block_size) * block_size
+            # Split by chunks of max_len.
+            result = {
+                k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+                for k, t in concatenated_examples.items()
+            }
+            if cfg_data.task == "causal-lm":
+                result["labels"] = result["input_ids"].copy()
+            return result
+
+        if cfg_data.task == "causal-lm":
+            # This setting added "labels" during "group_texts"
+            collate_fn = default_data_collator
+        else:
+            # This collate_fn generates "labels" automatically after masking
+            collate_fn = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm_probability=cfg_data.mlm_probability)
+    else:
+        raise ValueError(f"Invalid task {cfg_data.task}")
+
+    return tokenize, group_texts, collate_fn
+
+
+def _get_tokenizer(tokenizer_name):
+    """Load tokenizer."""
+    from transformers import PreTrainedTokenizerFast, AutoTokenizer
+
+    if tokenizer_name == "word-level":
+        try:
+            tokenizer = PreTrainedTokenizerFast(tokenizer_file="word-tokenizer.json")
+        except FileNotFoundError:
+            from .wordlevel_tokenizer import generate_word_level_tokenizer
+
+            generate_word_level_tokenizer()
+            tokenizer = PreTrainedTokenizerFast(tokenizer_file="word-tokenizer.json")
+    elif tokenizer_name == "character":
+        tokenizer = CanineTokenizer.from_pretrained("google/canine-c")
+    elif tokenizer_name == "bert":
+        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    elif tokenizer_name == "GPT-2":
+        tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    elif tokenizer_name == "eleutherAI-GPT":
+        tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neo-2.7B")
+    else:
+        raise ValueError(f"Invalid tokenizer {tokenizer_name}.")
+    tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+    return tokenizer
+
+
+def _split_wikipedia_into_articles(dataset, user_idx=0, return_full_dataset=False, min_length=25):
+    """Split along headlines, discard minor headers and tiny lines."""
+    # annotate articles as separate users:
+    # num_articles_estimate = len(
+    #     [line for line in dataset["text"] if line.count("=") == 2 and len(line) < 100]
+    # )  # this is good enough
+    # print(f"Estimating {num_articles_estimate} articles in this wikipedia dump.")
+    if not return_full_dataset:
+        # Super-dirty selector:
+        clean_line_ids = []
+        article_counter = 0
+        for idx, line in enumerate(dataset["text"]):
+            if " = " in line:
+                if line.count("=") == 2 and len(line) < 100:
+                    article_counter += 1
+                    # print(f"Including article {article_counter}: {line}")
+            elif len(line) < min_length:
+                pass
+            else:
+                if user_idx + 1 == article_counter:
+                    clean_line_ids.append(idx)
+            if article_counter > user_idx + 1:
+                break
+        dataset = dataset.select(clean_line_ids)
+    return dataset

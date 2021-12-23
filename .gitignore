@@ -145,3 +145,5 @@ dmypy.json
 *.pth
 
 *.ods
+
+*.json

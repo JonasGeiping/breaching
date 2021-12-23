@@ -17,7 +17,7 @@ class RNNModel(nn.Module):
         self.drop = nn.Dropout(dropout)
         self.encoder = nn.Embedding(ntoken, ninp)
         if rnn_type in ["LSTM", "GRU"]:
-            self.rnn = getattr(nn, rnn_type)(ninp, nhid, nlayers, dropout=dropout)
+            self.rnn = getattr(nn, rnn_type)(ninp, nhid, nlayers, dropout=dropout, batch_first=True)
         else:
             try:
                 nonlinearity = {"RNN_TANH": "tanh", "RNN_RELU": "relu"}[rnn_type]
@@ -26,7 +26,7 @@ class RNNModel(nn.Module):
                     """An invalid option for `--model` was supplied,
                                  options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']"""
                 )
-            self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout)
+            self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout, batch_first=True)
         self.decoder = nn.Linear(nhid, ntoken)
 
         # Optionally tie weights as in:
@@ -64,9 +64,9 @@ class RNNModel(nn.Module):
     def init_hidden(self, bsz):
         weight = next(self.parameters())
         if self.rnn_type == "LSTM":
-            return (weight.new_zeros(self.nlayers, bsz, self.nhid), weight.new_zeros(self.nlayers, bsz, self.nhid))
+            return (weight.new_zeros(bsz, self.nlayers, self.nhid), weight.new_zeros(bsz, self.nlayers, self.nhid))
         else:
-            return weight.new_zeros(self.nlayers, bsz, self.nhid)
+            return weight.new_zeros(bsz, self.nlayers, self.nhid)
 
 
 # Temporarily leave PositionalEncoding module here. Will be moved somewhere else.
@@ -96,7 +96,8 @@ class PositionalEncoding(nn.Module):
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
+
+        pe = pe.unsqueeze(0)
         self.register_buffer("pe", pe)
 
     def forward(self, x):
@@ -104,13 +105,12 @@ class PositionalEncoding(nn.Module):
         Args:
             x: the sequence fed to the positional encoder model (required).
         Shape:
-            x: [sequence length, batch size, embed dim]
-            output: [sequence length, batch size, embed dim]
+            x: [batch size, sequence length, embed dim]
+            output: [batch size, sequence length, embed dim]
         Examples:
             >>> output = pos_encoder(x)
         """
-
-        x = x + self.pe[: x.size(0), :]
+        x = x + self.pe[:, : x.shape[1], :]
         return self.dropout(x)
 
 
@@ -122,7 +122,7 @@ class TransformerModel(nn.Module):
         self.model_type = "Transformer"
         self.src_mask = None
         self.pos_encoder = PositionalEncoding(ninp, dropout)
-        encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid, dropout)
+        encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid, dropout, batch_first=True)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.encoder = nn.Embedding(ntokens, ninp)
         self.ninp = ninp
@@ -141,11 +141,11 @@ class TransformerModel(nn.Module):
         nn.init.zeros_(self.decoder.weight)
         nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
-    def forward(self, inputs, has_mask=True, **kwargs):
+    def forward(self, inputs, has_mask=False, **kwargs):
         if has_mask:
             device = inputs.device
-            if self.src_mask is None or self.src_mask.size(0) != len(inputs):
-                mask = self._generate_square_subsequent_mask(len(inputs)).to(device)
+            if self.src_mask is None or self.src_mask.shape[1] != inputs.shape[1]:
+                mask = self._generate_square_subsequent_mask(inputs.shape[1]).to(device)
                 self.src_mask = mask
         else:
             self.src_mask = None

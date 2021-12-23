@@ -45,9 +45,13 @@ class _BaseAttacker:
         stats = defaultdict(list)
 
         # Load preprocessing constants:
-        self.data_shape = server_payload[0]["metadata"].shape
-        self.dm = torch.as_tensor(server_payload[0]["metadata"].mean, **self.setup)[None, :, None, None]
-        self.ds = torch.as_tensor(server_payload[0]["metadata"].std, **self.setup)[None, :, None, None]
+        metadata = server_payload[0]["metadata"]
+        self.data_shape = metadata.shape
+        if hasattr(metadata, "mean"):
+            self.dm = torch.as_tensor(metadata.mean, **self.setup)[None, :, None, None]
+            self.ds = torch.as_tensor(metadata.std, **self.setup)[None, :, None, None]
+        else:
+            self.dm, self.ds = 0, 1
 
         # Load server_payload into state:
         rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data)
@@ -63,6 +67,13 @@ class _BaseAttacker:
         if self.cfg.normalize_gradients:
             shared_data = self._normalize_gradients(shared_data)
         return rec_models, labels, stats
+
+    def _circumvent_embedding_layer():
+        """Reconstruct the output of the Embedding Layer?"""
+        # Assuming sequence_length is known, and all tokens are leaked from the Embedding Layer
+        # We should find the input by optimizing a "segmentation map" of these tokens
+        # This can be relaxed to [0,1] constraints and solved with convex programming tricks
+        # The Relaxation can be constructed over the Subset of tokens with non-zero gradients
 
     def _construct_models_from_payload_and_buffers(self, server_payload, shared_data):
         """Construct the model (or multiple) that is sent by the server and include user buffers if any."""

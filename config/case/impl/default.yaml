@@ -12,7 +12,7 @@ benchmark: True # CUDNN benchmarking
 deterministic: False # This option will disable non-deterministic ops
 
 pin_memory: True
-threads: 4 # maximal number of cpu dataloader workers used per GPU
+threads: 0 # maximal number of cpu dataloader workers used per GPU
 persistent_workers: False # this clashes with pin_memory in pytorch 1.7.1 -> set this to true later
 
 mixed_precision: False

@@ -1,0 +1,24 @@
+name: stackoverflow
+modality: text
+task: causal-lm
+
+path: "~/data"
+size: 135,818,730
+
+shape:
+  - 32 # This is sequence_length
+
+# Preprocessing
+tokenizer: GPT-2
+vocab_size: 50_257
+
+# Federated Learning specifics:
+default_clients: 42,477 # number of articles in dataset
+partition: given # use natural data partition
+examples_from_split: training
+
+# Data-specific implementation constants:
+batch_size: 128
+caching: False
+defaults:
+  - db: none # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

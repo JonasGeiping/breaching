@@ -106,7 +106,8 @@ class UserSingleStep(torch.nn.Module):
 
         Shared labels are canonically sorted for simplicity."""
 
-        data, labels = self._load_data()
+        data = self._load_data()
+        B = data["labels"].shape[0]
         # Compute local updates
         shared_grads = []
         shared_buffers = []
@@ -127,22 +128,27 @@ class UserSingleStep(torch.nn.Module):
                         module.momentum = None  # Force recovery without division
                 self.model.train()
 
-        def _compute_batch_gradient(data, labels):
-            data_input = data + self.generator_input.sample(data.shape) if self.generator_input is not None else data
-            outputs = self.model(data_input)
-            loss = self.loss(outputs, labels)
+        def _compute_batch_gradient(data):
+            data["inputs"] = (
+                data["inputs"] + self.generator_input.sample(data["inputs"].shape)
+                if self.generator_input is not None
+                else data["inputs"]
+            )
+            outputs = self.model(**data)
+            loss = self.loss(outputs, data["labels"])
             return torch.autograd.grad(loss, self.model.parameters())
 
         if self.clip_value > 0:  # Compute per-example gradients and clip them in this case
             shared_grads = [torch.zeros_like(p) for p in self.model.parameters()]
-            for data_point, data_label in zip(data, labels):
-                per_example_grads = _compute_batch_gradient(data_point[None, ...], data_label[None, ...])
+            for data_idx in range(B):
+                data_point = {key: val[data_idx : data_idx + 1] for key, val in data.items()}
+                per_example_grads = _compute_batch_gradient(data_point)
                 self._clip_list_of_grad_(per_example_grads)
                 torch._foreach_add_(shared_grads, per_example_grads)
-            torch._foreach_div_(shared_grads, len(data))
+            torch._foreach_div_(shared_grads, B)
         else:
             # Compute the forward pass
-            shared_grads = _compute_batch_gradient(data, labels)
+            shared_grads = _compute_batch_gradient(data)
         self._apply_differential_noise(shared_grads)
 
         if buffers is not None:
@@ -152,13 +158,13 @@ class UserSingleStep(torch.nn.Module):
 
         metadata = dict(
             num_data_points=self.num_data_points if self.provide_num_data_points else None,
-            labels=labels.sort()[0] if self.provide_labels else None,
+            labels=data["labels"].sort()[0] if self.provide_labels else None,
             local_hyperparams=None,
         )
         shared_data = dict(
             gradients=shared_grads, buffers=shared_buffers if self.provide_buffers else None, metadata=metadata
         )
-        true_user_data = dict(data=data, labels=labels, buffers=shared_buffers)
+        true_user_data = dict(data=data["inputs"], labels=data["labels"], buffers=shared_buffers)
 
         return shared_data, true_user_data
 
@@ -176,22 +182,29 @@ class UserSingleStep(torch.nn.Module):
 
     def _load_data(self):
         """Generate data from dataloader, truncated by self.num_data_points"""
-
         # Select data
         data_blocks = []
-        label_blocks = []
         num_samples = 0
 
-        for idx, (data, labels) in enumerate(self.dataloader):
-            data_blocks += [data]
-            label_blocks += [labels]
-            num_samples += labels.shape[0]
+        for idx, data_block in enumerate(self.dataloader):
+            data_blocks += [data_block]
+            num_samples += data_block["labels"].shape[0]
             if num_samples > self.num_data_points:
                 break
 
-        data = torch.cat(data_blocks, dim=0)[: self.num_data_points].to(**self.setup)
-        labels = torch.cat(label_blocks, dim=0)[: self.num_data_points].to(device=self.setup["device"])
-        return data, labels
+        data = dict()
+        for key in data_blocks[0]:
+            data[key] = torch.cat([d[key] for d in data_blocks], dim=0)[: self.num_data_points].to(
+                device=self.setup["device"]
+            )
+        return data
+
+    def print(self, user_data, **kwargs):
+        """Print decoded user data to output."""
+        tokenizer = self.dataloader.dataset.tokenizer
+        decoded_tokens = tokenizer.batch_decode(user_data["data"], clean_up_tokenization_spaces=True)
+        for line in decoded_tokens:
+            print(line)
 
     def plot(self, user_data, scale=False, print_labels=False):
         """Plot user data to output. Probably best called from a jupyter notebook."""
@@ -264,7 +277,7 @@ class UserMultiStep(UserSingleStep):
     def compute_local_updates(self, server_payload):
         """Compute local updates to the given model based on server payload."""
 
-        user_data, user_labels = self._load_data()
+        user_data = self._load_data()
 
         # Compute local updates
         parameters = server_payload["parameters"]
@@ -284,17 +297,22 @@ class UserMultiStep(UserSingleStep):
         seen_data_idx = 0
         label_list = []
         for step in range(self.num_local_updates):
-            data = user_data[seen_data_idx : seen_data_idx + self.num_data_per_local_update_step]
-            labels = user_labels[seen_data_idx : seen_data_idx + self.num_data_per_local_update_step]
+            data = {
+                k: v[seen_data_idx : seen_data_idx + self.num_data_per_local_update_step] for k, v in user_data.items()
+            }
             seen_data_idx += self.num_data_per_local_update_step
             seen_data_idx = seen_data_idx % self.num_data_points
-            label_list.append(labels.sort()[0])
+            label_list.append(data["labels"].sort()[0])
 
             optimizer.zero_grad()
             # Compute the forward pass
-            data_input = data + self.generator_input.sample(data.shape) if self.generator_input is not None else data
-            outputs = self.model(data_input)
-            loss = self.loss(outputs, labels)
+            data["inputs"] = (
+                data["inputs"] + self.generator_input.sample(data["inputs"].shape)
+                if self.generator_input is not None
+                else data["inputs"]
+            )
+            outputs = self.model(**data)
+            loss = self.loss(outputs, data["labels"])
             loss.backward()
 
             grads_ref = [p.grad for p in self.model.parameters()]
@@ -314,7 +332,7 @@ class UserMultiStep(UserSingleStep):
         shared_buffers = [b.clone().detach() for b in self.model.buffers()]
         metadata = dict(
             num_data_points=self.num_data_points if self.provide_num_data_points else None,
-            labels=user_labels if self.provide_labels else None,
+            labels=user_data["labels"] if self.provide_labels else None,
             local_hyperparams=dict(
                 lr=self.local_learning_rate,
                 steps=self.num_local_updates,
@@ -327,7 +345,7 @@ class UserMultiStep(UserSingleStep):
         shared_data = dict(
             gradients=shared_grads, buffers=shared_buffers if self.provide_buffers else None, metadata=metadata
         )
-        true_user_data = dict(data=user_data, labels=user_labels, buffers=shared_buffers)
+        true_user_data = dict(data=user_data["inputs"], labels=user_data["labels"], buffers=shared_buffers)
 
         return shared_data, true_user_data
 

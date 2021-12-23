@@ -1,13 +1,7 @@
 """Implement server code. This will be short, if the server is honest."""
 
-"""Payload template:
-
-payload should be a dict containing the key data and a list of payloads. The length of this list is num_queries.
-Each entry in the list of payloads contains at least the keys "parameters" and "buffers".
-"""
 
 import torch
-from torch.hub import load_state_dict_from_url
 from .malicious_modifications import ImprintBlock, RecoveryOptimizer, SparseImprintBlock, OneShotBlock
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
 
@@ -32,10 +26,9 @@ class HonestServer:
     """Implement an honest server protocol.
 
     This class loads and selects the initial model and then sends this model to the (simulated) user.
-    If multiple queries are possible, then the query sent to the user will contain multiple model states.
+    If multiple queries are possible, then these have to loop externally over muliple rounds via .run_protocol
 
-    Central output: self.distribute_payload -> Dict[queries=List[Queries], data=DataHyperparams]
-    For each Query -> Dict[parameters=parameters, buffers=buffers]
+    Central output: self.distribute_payload -> Dict[parameters=parameters, buffers=buffers, metadata=DataHyperparams]
     """
 
     THREAT = "Honest-but-curious"
@@ -98,23 +91,6 @@ class HonestServer:
                     module.reset_parameters()
                 if "conv" in name or "linear" in name:
                     torch.nn.init.orthogonal_(module.weight, gain=1)
-        if model_state == "moco":
-            try:
-                # url = 'https://dl.fbaipublicfiles.com/moco/moco_checkpoints/moco_v2_800ep/moco_v2_800ep_pretrain.pth.tar'
-                # url = 'https://dl.fbaipublicfiles.com/moco/moco_checkpoints/moco_v2_200ep/moco_v2_200ep_pretrain.pth.tar'
-                url = "https://dl.fbaipublicfiles.com/moco-v3/r-50-1000ep/linear-1000ep.pth.tar"
-                state_dict = load_state_dict_from_url(url, progress=True, map_location=torch.device("cpu"))[
-                    "state_dict"
-                ]
-                for key in list(state_dict.keys()):
-                    val = state_dict.pop(key)
-                    # sanitized_key = key.replace('module.encoder_q.', '') # for mocov2
-                    sanitized_key = key.replace("module.", "")
-                    state_dict[sanitized_key] = val
-
-                self.model.load_state_dict(state_dict, strict=True)  # The fc layer is not actually loaded here
-            except FileNotFoundError:
-                raise ValueError("No MoCo data found for this architecture.")
 
     def distribute_payload(self, query_id=0):
         """Server payload to send to users. These are only references to simplfiy the simulation."""
@@ -134,6 +110,19 @@ class HonestServer:
 
     def queries(self):
         return range(self.num_queries)
+
+    def run_protocol(self, user):
+        """Helper function to simulate multiple queries given a user object."""
+        # Simulate a simple FL protocol
+        shared_user_data = []
+        payloads = []
+        for query_id in self.queries():
+            server_payload = self.distribute_payload(query_id)  # A malicious server can return something "fun" here
+            shared_data_per_round, true_user_data = user.compute_local_updates(server_payload)
+            # true_data can only be used for analysis
+            payloads += [server_payload]
+            shared_user_data += [shared_data_per_round]
+        return shared_user_data, payloads, true_user_data
 
 
 class MaliciousModelServer(HonestServer):

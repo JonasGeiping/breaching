@@ -5,7 +5,6 @@ defaults:
   - impl: default
   - server: honest-but-curious
   - user: local_gradient
-loss: CrossEntropy
 model: ConvNet
 
 user:

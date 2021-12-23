@@ -28,6 +28,7 @@ regularization:
     inner_exp: 2
     outer_exp: 0.5
     double_opponents: True
-
   features:
     scale: 0.1
+  deep_inversion:
+    scale: 0.00005

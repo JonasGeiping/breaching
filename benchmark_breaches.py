@@ -66,7 +66,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
         log.info(f"Now evaluating indices {user.user_idx} in trial {run}.")
         # Run exchange
-        shared_user_data, payloads, true_user_data = _run_fl_protocol(user, server)
+        shared_user_data, payloads, true_user_data = server.run_protocol(user)
         # Evaluate attack:
         reconstruction, stats = attacker.reconstruct(payloads, shared_user_data, server.secrets, dryrun=cfg.dryrun)
 
@@ -97,18 +97,6 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     breaching.utils.save_summary(
         cfg, average_metrics, stats, time.time() - local_time, original_cwd=True, table_name="BENCHMARK_breach"
     )
-
-
-def _run_fl_protocol(user, server):
-    # Simulate a simple FL protocol
-    shared_user_data = []
-    payloads = []
-    for query_id in server.queries():
-        server_payload = server.distribute_payload(query_id)  # A malicious server can return something "fun" here
-        shared_data_per_round, true_user_data = user.compute_local_updates(server_payload)  # true_data is for analysis
-        payloads += [server_payload]
-        shared_user_data += [shared_data_per_round]
-    return shared_user_data, payloads, true_user_data
 
 
 if __name__ == "__main__":

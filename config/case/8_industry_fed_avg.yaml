@@ -5,7 +5,6 @@ defaults:
   - impl: default
   - server: malicious-model
   - user: multiuser_aggregate
-loss: CrossEntropy
 model: ResNet18
 
 # Server and user:

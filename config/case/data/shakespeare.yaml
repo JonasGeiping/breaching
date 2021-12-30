@@ -3,13 +3,13 @@ modality: text
 task: causal-lm
 
 path: "~/data"
-size: 16,068
+size: 16_068
 
 shape:
   - 32 # This is sequence_length
 
 # Preprocessing
-tokenizer: word-level
+tokenizer: GPT-2
 vocab_size: 50_000
 
 # Federated Learning specifics:

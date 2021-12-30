@@ -3,6 +3,8 @@ import torch
 import os
 
 from itertools import chain
+import collections
+from hydra.utils import get_original_cwd
 
 # All language modules are import lazily
 import logging
@@ -12,7 +14,8 @@ log = logging.getLogger(__name__)
 
 def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_dataset=False):
     # os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    from datasets import load_dataset
+    cfg_data.path = os.path.expanduser(cfg_data.path)
+    from datasets import load_dataset, Dataset
 
     if user_idx is None:
         user_idx = torch.randint(0, cfg_data.default_clients, (1,))
@@ -27,6 +30,12 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
     if cfg_data.name == "wikitext":
         raw_dataset = load_dataset("wikitext", "wikitext-103-v1", cache_dir=cfg_data.path, split=split)
         raw_dataset = _split_wikipedia_into_articles(raw_dataset, user_idx, return_full_dataset, min_length=25)
+    elif cfg_data.name == "stackoverflow":
+        raw_texts = load_stackoverflow(cache_dir=cfg_data.path, user_idx=user_idx, split=split)
+        raw_dataset = Dataset.from_dict(dict(text=raw_texts))
+    elif cfg_data.name == "shakespeare":
+        raw_texts = load_shakespeare(cache_dir=cfg_data.path, user_idx=user_idx, split=split)
+        raw_dataset = Dataset.from_dict(dict(text=raw_texts))
     else:
         raise ValueError(f"Invalid text dataset {cfg_data.name} provided.")
 
@@ -101,13 +110,14 @@ def _get_tokenizer(tokenizer_name):
     from transformers import PreTrainedTokenizerFast, AutoTokenizer
 
     if tokenizer_name == "word-level":
+        path = os.path.join(get_original_cwd(), "cache", "word-tokenizer.json")
         try:
-            tokenizer = PreTrainedTokenizerFast(tokenizer_file="word-tokenizer.json")
+            tokenizer = PreTrainedTokenizerFast(tokenizer_file=path)
         except FileNotFoundError:
             from .wordlevel_tokenizer import generate_word_level_tokenizer
 
             generate_word_level_tokenizer()
-            tokenizer = PreTrainedTokenizerFast(tokenizer_file="word-tokenizer.json")
+            tokenizer = PreTrainedTokenizerFast(tokenizer_file=path)
     elif tokenizer_name == "character":
         tokenizer = CanineTokenizer.from_pretrained("google/canine-c")
     elif tokenizer_name == "bert":
@@ -147,3 +157,186 @@ def _split_wikipedia_into_articles(dataset, user_idx=0, return_full_dataset=Fals
                 break
         dataset = dataset.select(clean_line_ids)
     return dataset
+
+
+def load_stackoverflow(cache_dir="~/data", user_idx=0, split="train"):
+    path = os.path.join(get_original_cwd(), "cache", f"stackoverflow_cache_{user_idx}.txt")
+    try:
+        with open(path, "r") as file:
+            raw_texts = list(file)
+    except FileNotFoundError:
+        raw_texts = load_stackoverflow_tff(cache_dir=cache_dir, user_idx=user_idx, split=split)
+        with open(path, "w") as file:
+            for text in raw_texts:
+                file.write(text)
+    return raw_texts
+
+
+def load_shakespeare(cache_dir="~/data", user_idx=0, split="train"):
+    path = os.path.join(get_original_cwd(), "cache", f"shakespeare_cache_{user_idx}.txt")
+    try:
+        with open(path, "r") as file:
+            raw_texts = list(file)
+    except FileNotFoundError:
+        raw_texts = load_shakespeare_tff(cache_dir=cache_dir, user_idx=user_idx, split=split)
+        with open(path, "w") as file:
+            for text in raw_texts:
+                file.write(text)
+    return raw_texts
+
+
+"""The following functions are from tff at
+https://github.com/tensorflow/federated/blob/610843c724740e1b041837cc93501b609fb05d8f/tensorflow_federated/python/simulation/datasets/download.py#L31
+and
+https://github.com/tensorflow/federated/blob/610843c724740e1b041837cc93501b609fb05d8f/tensorflow_federated/python/simulation/datasets/sql_client_data.py#L65
+"""
+# Copyright 2021, The TensorFlow Federated Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+import urllib
+import urllib.parse
+
+import lzma
+import tqdm
+import sqlite3
+
+
+def url_basename(origin: str) -> str:
+    origin_path = urllib.parse.urlparse(origin).path
+    return origin_path.rsplit("/", maxsplit=1)[-1]
+
+
+def _fetch_lzma_file(origin: str, filename: str):
+    """Fetches a LZMA compressed file and decompresses on the fly."""
+    # Read and decompress in approximately megabyte chunks.
+    chunk_size = 2 ** 20
+    decompressor = lzma.LZMADecompressor()
+    with urllib.request.urlopen(origin) as in_stream, open(filename, "wb") as out_stream:
+        length = in_stream.headers.get("content-length")
+        if length is not None:
+            total_size = int(length)
+        else:
+            total_size = None
+        download_chunk = in_stream.read(chunk_size)
+        with tqdm.tqdm(total=total_size, desc=f"Downloading {url_basename(origin)}") as progbar:
+            while download_chunk:
+                progbar.update(len(download_chunk))
+                out_stream.write(decompressor.decompress(download_chunk))
+                download_chunk = in_stream.read(chunk_size)
+
+
+def _load_sql_database(origin_url, cache_dir="~/data"):
+    filename = url_basename(origin_url)
+    local_filename = os.path.join(cache_dir, filename)
+    extracted_filename, ext = os.path.splitext(local_filename)
+    if os.path.exists(extracted_filename):
+        return extracted_filename
+    else:
+        _fetch_lzma_file(origin_url, extracted_filename)
+        return extracted_filename
+
+
+def _fetch_client_id(database_filepath, user_idx, split_name=None):
+    """Fetches the list of client_ids.
+  Args:
+    database_filepath: A path to a SQL database.
+    user_idx: A numerical index to this user
+    split_name: An optional split name to filter on. If `None`, all client ids
+      are returned.
+  Returns:
+    An iterator of string client ids.
+  """
+    connection = sqlite3.connect(database_filepath)
+    query = "SELECT DISTINCT client_id FROM client_metadata"
+    if split_name is not None:
+        query += f" WHERE split_name = '{split_name}'"
+    query += ";"
+    result = connection.execute(query)
+    for idx, client_id in enumerate(result):
+        if idx == user_idx:
+            return client_id[0]
+    else:
+        raise ValueError(f"Given user idx {user_idx} larger than number of clients in database.")
+
+
+TFF_URLS = {
+    "stackoverflow": "https://storage.googleapis.com/tff-datasets-public/stackoverflow.sqlite.lzma",
+    "shakespeare": "https://storage.googleapis.com/tff-datasets-public/shakespeare.sqlite.lzma",
+}
+
+
+def load_stackoverflow_tff(cache_dir="~/data", user_idx=0, split="train"):
+    """Load the tensorflow federated stackoverflow dataset into pytorch."""
+    if split == "validation":
+        split_name = "heldout"
+    elif split in ["train", "test"]:
+        split_name = split
+    else:
+        raise ValueError(f"Split name {split} does not correspond to entries in this dataset.")
+    db_name = _load_sql_database(TFF_URLS["stackoverflow"], cache_dir=cache_dir)
+    client_id = _fetch_client_id(db_name, user_idx, split_name=split_name)
+    query = (
+        f"SELECT serialized_example_proto FROM examples WHERE client_id='{client_id}' and split_name='{split_name}';"
+    )
+    cursor = sqlite3.connect(db_name)
+    result = cursor.execute(query)
+    data = list(result)
+    log.info(f"Now processing user {client_id}.")
+
+    def parse_proto(tensor_proto):
+        import tensorflow as tf  # wanted to circumvent this, but parsing the serialized data cleanly was difficult
+
+        parse_spec = collections.OrderedDict(
+            creation_date=tf.io.FixedLenFeature(dtype=tf.string, shape=()),
+            score=tf.io.FixedLenFeature(dtype=tf.int64, shape=()),
+            tags=tf.io.FixedLenFeature(dtype=tf.string, shape=()),
+            title=tf.io.FixedLenFeature(dtype=tf.string, shape=()),
+            tokens=tf.io.FixedLenFeature(dtype=tf.string, shape=()),
+            type=tf.io.FixedLenFeature(dtype=tf.string, shape=()),
+        )
+        parsed_features = tf.io.parse_example(tensor_proto, parse_spec)
+        return parsed_features["tokens"].numpy().decode("ascii")
+
+    raw_texts = []
+    for proto_entry in data:
+        raw_texts.append(parse_proto(proto_entry[0]))
+    return raw_texts
+
+
+def load_shakespeare_tff(cache_dir="~/data", user_idx=0, split="train"):
+    """Load the tensorflow federated shakespeare dataset into pytorch."""
+    if split in ["train", "test"]:
+        split_name = split
+    else:
+        raise ValueError(f"Split name {split} does not correspond to entries in this dataset.")
+    db_name = _load_sql_database(TFF_URLS["shakespeare"], cache_dir=cache_dir)
+    client_id = _fetch_client_id(db_name, user_idx, split_name=split_name)
+    query = (
+        f"SELECT serialized_example_proto FROM examples WHERE client_id='{client_id}' and split_name='{split_name}';"
+    )
+    cursor = sqlite3.connect(db_name)
+    result = cursor.execute(query)
+    data = list(result)
+    log.info(f"Now processing user {client_id}.")
+
+    def parse_proto(serialized_proto_tensor):
+        import tensorflow as tf  # wanted to circumvent this, but parsing the serialized data cleanly was difficult
+
+        field_dict = {"snippets": tf.io.FixedLenFeature(shape=(), dtype=tf.string)}
+        parsed_fields = tf.io.parse_example(serialized_proto_tensor, field_dict)
+        return parsed_fields["snippets"].numpy().decode("ascii")
+
+    raw_texts = []
+    for proto_entry in data:
+        raw_texts.append(parse_proto(proto_entry[0]))
+    return raw_texts

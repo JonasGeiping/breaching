@@ -1,5 +1,5 @@
 user_type: multiuser_aggregate
-user_range: [1, 1000]
+user_range: [0, 1000]
 num_data_points: 1000
 
 provide_buffers: False

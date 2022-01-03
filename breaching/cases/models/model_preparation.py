@@ -33,6 +33,7 @@ def construct_model(cfg_model, cfg_data, pretrained=True, **kwargs):
         loss_fn = MLMLoss(vocab_size=cfg_data.vocab_size)
     else:
         raise ValueError(f"No loss function registered for task {cfg_data.task}.")
+    loss_fn = torch.jit.script(loss_fn)
     return model, loss_fn
 
 

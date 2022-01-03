@@ -61,7 +61,13 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
         """
         model = RNNModel("LSTM", cfg_data.vocab_size, ninp=96, nhid=96, nlayers=1, dropout=0.0, tie_weights=True)
     else:
-        raise ValueError(f"Invalid text model {cfg_model} given.")
+        try:
+            from transformers import AutoModelForMaskedLM
+
+            # Make sure to use the matching tokenizer!
+            model = AutoModelForMaskedLM.from_pretrained(cfg_model)
+        except OSError as error_msg:
+            raise ValueError(f"Invalid huggingface model {cfg_model} given: {error_msg}")
     return model
 
 

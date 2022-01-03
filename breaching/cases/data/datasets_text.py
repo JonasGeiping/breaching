@@ -109,7 +109,7 @@ def _get_preprocessing(tokenizer, cfg_data):
 
 def _get_tokenizer(tokenizer_name):
     """Load tokenizer."""
-    from transformers import PreTrainedTokenizerFast, AutoTokenizer
+    from transformers import PreTrainedTokenizerFast, AutoTokenizer, CanineTokenizer
 
     if tokenizer_name == "word-level":
         path = os.path.join(get_base_cwd(), "cache", "word-tokenizer.json")
@@ -129,7 +129,10 @@ def _get_tokenizer(tokenizer_name):
     elif tokenizer_name == "eleutherAI-GPT":
         tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neo-2.7B")
     else:
-        raise ValueError(f"Invalid tokenizer {tokenizer_name}.")
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        except OSError as error_msg:
+            raise ValueError(f"Invalid huggingface tokenizer {tokenizer_name} given: {error_msg}")
     tokenizer.add_special_tokens({"pad_token": "[PAD]"})
     return tokenizer
 

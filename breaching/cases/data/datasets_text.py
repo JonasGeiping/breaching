@@ -4,7 +4,7 @@ import os
 
 from itertools import chain
 import collections
-from hydra.utils import get_original_cwd
+from ...utils import get_base_cwd
 
 # All language modules are import lazily
 import logging
@@ -15,7 +15,9 @@ log = logging.getLogger(__name__)
 def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_dataset=False):
     # os.environ["TOKENIZERS_PARALLELISM"] = "false"
     cfg_data.path = os.path.expanduser(cfg_data.path)
-    from datasets import load_dataset, Dataset
+    from datasets import load_dataset, Dataset, set_progress_bar_enabled
+
+    set_progress_bar_enabled(False)
 
     if user_idx is None:
         user_idx = torch.randint(0, cfg_data.default_clients, (1,))
@@ -56,10 +58,10 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
         tokenized_dataset = tokenized_dataset.select(range(0, cfg_data.size))
 
     # Log a few random samples from the training set:
-    for index in torch.randint(len(tokenized_dataset), (3,)):
-        sample = tokenized_dataset[index.item()]
-        sentence = tokenizer.decode(sample["inputs"])
-        log.info(f"Sample {index} of the training set: {sample} is sentence: {sentence}.")
+    # for index in torch.randint(len(tokenized_dataset), (3,)):
+    #     sample = tokenized_dataset[index.item()]
+    #     sentence = tokenizer.decode(sample["inputs"])
+    #     log.info(f"Sample {index} of the training set: {sample} is sentence: {sentence}.")
 
     return tokenized_dataset, collate_fn
 
@@ -110,7 +112,7 @@ def _get_tokenizer(tokenizer_name):
     from transformers import PreTrainedTokenizerFast, AutoTokenizer
 
     if tokenizer_name == "word-level":
-        path = os.path.join(get_original_cwd(), "cache", "word-tokenizer.json")
+        path = os.path.join(get_base_cwd(), "cache", "word-tokenizer.json")
         try:
             tokenizer = PreTrainedTokenizerFast(tokenizer_file=path)
         except FileNotFoundError:
@@ -160,7 +162,7 @@ def _split_wikipedia_into_articles(dataset, user_idx=0, return_full_dataset=Fals
 
 
 def load_stackoverflow(cache_dir="~/data", user_idx=0, split="train"):
-    path = os.path.join(get_original_cwd(), "cache", f"stackoverflow_cache_{user_idx}.txt")
+    path = os.path.join(get_base_cwd(), "cache", f"stackoverflow_cache_{user_idx}.txt")
     try:
         with open(path, "r") as file:
             raw_texts = list(file)
@@ -173,7 +175,7 @@ def load_stackoverflow(cache_dir="~/data", user_idx=0, split="train"):
 
 
 def load_shakespeare(cache_dir="~/data", user_idx=0, split="train"):
-    path = os.path.join(get_original_cwd(), "cache", f"shakespeare_cache_{user_idx}.txt")
+    path = os.path.join(get_base_cwd(), "cache", f"shakespeare_cache_{user_idx}.txt")
     try:
         with open(path, "r") as file:
             raw_texts = list(file)

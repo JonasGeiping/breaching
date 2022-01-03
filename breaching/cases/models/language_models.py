@@ -114,6 +114,21 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
+class LearnablePositionalEmbedding(torch.nn.Module):
+    """Shorthand for a learnable embedding."""
+
+    def __init__(self, embed_dim, max_position_embeddings=512, dropout=0.0):
+        super().__init__()
+        self.embedding = torch.nn.Embedding(max_position_embeddings, embed_dim)
+        self.dropout = torch.nn.Dropout(p=dropout)
+
+    def forward(self, input_embeddings):
+        """This is a batch-first implementation"""
+        position_ids = torch.arange(input_embeddings.shape[1], device=self.embedding.weight.device)
+        position_embeddings = self.embedding(position_ids[None, :])
+        return self.dropout(input_embeddings + position_embeddings)
+
+
 class TransformerModel(nn.Module):
     """Container module with an encoder, a recurrent or transformer module, and a decoder."""
 
@@ -121,7 +136,8 @@ class TransformerModel(nn.Module):
         super(TransformerModel, self).__init__()
         self.model_type = "Transformer"
         self.src_mask = None
-        self.pos_encoder = PositionalEncoding(ninp, dropout)
+        # self.pos_encoder = PositionalEncoding(ninp, dropout)
+        self.pos_encoder = LearnablePositionalEmbedding(ninp, dropout=dropout)
         encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid, dropout, batch_first=True)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.encoder = nn.Embedding(ntokens, ninp)

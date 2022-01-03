@@ -188,6 +188,13 @@ def avg_n_dicts(dicts):
     return means
 
 
+def get_base_cwd():
+    try:
+        return hydra.utils.get_original_cwd()
+    except ValueError:  # Hydra not initialized:
+        return os.getcwd()
+
+
 def overview(server, user, attacker):
     num_params, num_buffers = (
         sum([p.numel() for p in user.model.parameters()]),

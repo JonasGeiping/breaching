@@ -16,7 +16,7 @@ from tokenizers.processors import TemplateProcessing
 from tokenizers.trainers import WordLevelTrainer
 
 from datasets import load_dataset
-from hydra.utils import get_original_cwd
+from ...utils import get_base_cwd
 
 
 def generate_word_level_tokenizer():
@@ -37,7 +37,7 @@ def generate_word_level_tokenizer():
     trainer = WordLevelTrainer(vocab_size=50_000, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
     tokenizer.train_from_iterator(batch_iterator(), trainer=trainer, length=len(dataset))
 
-    path = os.path.join(get_original_cwd(), "cache", "word-tokenizer.json")
+    path = os.path.join(get_base_cwd(), "cache", "word-tokenizer.json")
     tokenizer.save(path)
 
 

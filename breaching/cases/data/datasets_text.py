@@ -42,7 +42,7 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
         raise ValueError(f"Invalid text dataset {cfg_data.name} provided.")
 
     columns = raw_dataset.column_names
-    tokenizer = _get_tokenizer(cfg_data.tokenizer)
+    tokenizer = _get_tokenizer(cfg_data.tokenizer, cache_dir=cfg_data.path)
     tokenize, group_texts, collate_fn = _get_preprocessing(tokenizer, cfg_data)
     tokenizer.model_max_length = 1e10  # Only for batched pre-processing
 
@@ -107,7 +107,7 @@ def _get_preprocessing(tokenizer, cfg_data):
     return tokenize, group_texts, collate_fn
 
 
-def _get_tokenizer(tokenizer_name):
+def _get_tokenizer(tokenizer_name, cache_dir=None):
     """Load tokenizer."""
     from transformers import PreTrainedTokenizerFast, AutoTokenizer, CanineTokenizer
 
@@ -119,18 +119,18 @@ def _get_tokenizer(tokenizer_name):
             from .wordlevel_tokenizer import generate_word_level_tokenizer
 
             generate_word_level_tokenizer()
-            tokenizer = PreTrainedTokenizerFast(tokenizer_file=path)
+            tokenizer = PreTrainedTokenizerFast(tokenizer_file=path, cache_dir=cache_dir)
     elif tokenizer_name == "character":
-        tokenizer = CanineTokenizer.from_pretrained("google/canine-c")
+        tokenizer = CanineTokenizer.from_pretrained("google/canine-c", cache_dir=cache_dir)
     elif tokenizer_name == "bert":
-        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased", cache_dir=cache_dir)
     elif tokenizer_name == "GPT-2":
-        tokenizer = AutoTokenizer.from_pretrained("gpt2")
+        tokenizer = AutoTokenizer.from_pretrained("gpt2", cache_dir=cache_dir)
     elif tokenizer_name == "eleutherAI-GPT":
-        tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neo-2.7B")
+        tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neo-2.7B", cache_dir=cache_dir)
     else:
         try:
-            tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+            tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=cache_dir)
         except OSError as error_msg:
             raise ValueError(f"Invalid huggingface tokenizer {tokenizer_name} given: {error_msg}")
     tokenizer.add_special_tokens({"pad_token": "[PAD]"})

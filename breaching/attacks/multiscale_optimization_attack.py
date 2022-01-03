@@ -74,7 +74,7 @@ class MultiScaleOptimizationAttacker(OptimizationBasedAttacker):
         minimal_value_so_far = torch.as_tensor(float("inf"), **self.setup)
 
         # Initialize optimizers
-        optimizer, scheduler = self._init_optimizer(candidate)
+        optimizer, scheduler = self._init_optimizer([candidate])
         current_wallclock = time.time()
         try:
             for iteration in range(self.cfg.optim.max_iterations):

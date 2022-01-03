@@ -19,7 +19,7 @@ class CausalLoss(torch.nn.Module):
         if labels is None:
             shift_labels = outputs[..., 1:].contiguous()
         elif labels.dtype == torch.long:
-            shift_labels = labels[..., 1:].view(-1).contiguous()
+            shift_labels = labels[..., 1:].contiguous().view(-1)
             shift_logits = shift_logits.view(-1, shift_logits.shape[-1])
         else:
             shift_labels = labels[..., 1:, :]

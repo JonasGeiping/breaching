@@ -1,87 +1,86 @@
-"""Implementation for basic gradient inversion attacks.
-
-This covers optimization-based reconstruction attacks as in Wang et al. "Beyond Infer-
-ring Class Representatives: User-Level Privacy Leakage From Federated Learning."
-and convers subsequent developments such as
-* Zhu et al., "Deep Leakage from gradients",
-* Geiping et al., "Inverting Gradients - How easy is it to break privacy in FL"
-* ?
+"""Implementation for basic gradient inversion attacks. This variation does not compute labels
+by a fixed formula before optimization, but optimizes jointly for candidate data and labels
+(as in the original DLG paper). This is usually a bad idea as the optimization landscape behaves
+even worse, but is necessary in some scenarios (like text, where label order matters).
+And it does also work in simpler settings as in the original paper.
+In some cases turning this on can stabilize an L-BFGS optimizer.
 """
 
 import torch
 import time
 
-from .base_attack import _BaseAttacker
-from .auxiliaries.regularizers import regularizer_lookup, TotalVariation
-from .auxiliaries.objectives import Euclidean, CosineSimilarity, objective_lookup
-from .auxiliaries.augmentations import augmentation_lookup
+from .optimization_based_attack import OptimizationBasedAttacker
+from .auxiliaries.regularizers import TotalVariation
+from .auxiliaries.objectives import Euclidean, CosineSimilarity
 
 import logging
 
 log = logging.getLogger(__name__)
 
 
-class OptimizationBasedAttacker(_BaseAttacker):
-    """Implements a wide spectrum of optimization-based attacks."""
+class CandidateDict(dict):
+    """Container for a candidate solution. Behaves like a torch.Tensor?"""
 
-    def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device("cpu"))):
-        super().__init__(model, loss_fn, cfg_attack, setup)
-        objective_fn = objective_lookup.get(self.cfg.objective.type)
-        if objective_fn is None:
-            raise ValueError(f"Unknown objective type {self.cfg.objective.type} given.")
-        else:
-            self.objective = objective_fn(**self.cfg.objective)
-        self.regularizers = []
-        try:
-            for key in self.cfg.regularization.keys():
-                if self.cfg.regularization[key].scale > 0:
-                    self.regularizers += [regularizer_lookup[key](self.setup, **self.cfg.regularization[key])]
-        except AttributeError:
-            pass  # No regularizers selected.
+    def __init__(self, tensor_dict, *args, **kwargs):
+        self.tensor_dict = tensor_dict
 
-        try:
-            self.augmentations = []
-            for key in self.cfg.augmentations.keys():
-                self.augmentations += [augmentation_lookup[key](**self.cfg.augmentations[key])]
-            self.augmentations = torch.nn.Sequential(*self.augmentations).to(**setup)
-        except AttributeError:
-            self.augmentations = torch.nn.Sequential()  # No augmentations selected.
+    def __getitem__(self, key):
+        return self.tensor_dict[key]
 
-    def __repr__(self):
-        n = "\n"
-        return f"""Attacker (of type {self.__class__.__name__}) with settings:
-    Hyperparameter Template: {self.cfg.type}
+    def __getattr__(self, name):
+        return_vals = CandidateDict(dict())
+        for key, tensor in self.tensor_dict.items():
+            return_vals[key] = getattr(tensor, name)
+        return return_vals
 
-    Objective: {repr(self.objective)}
-    Regularizers: {(n + ' '*18).join([repr(r) for r in self.regularizers])}
-    Augmentations: {(n + ' '*18).join([repr(r) for r in self.augmentations])}
 
-    Optimization Setup:
-        {(n + ' ' * 8).join([f'{key}: {val}' for key, val in self.cfg.optim.items()])}
-        """
+class OptimizationJointAttacker(OptimizationBasedAttacker):
+    """Implements a wide spectrum of optimization-based attacks optimizing jointly for candidate data and labels.
+
+    TODO: Cut down on the terrible amount of code overlap between this class and OptimizationBasedAttacker"""
+
+    def _recover_label_information(self, user_data, server_payload, rec_models, embedding_grads=None):
+        num_data_points = user_data[0]["metadata"]["num_data_points"]
+        num_classes = user_data[0]["gradients"][-1].shape[0]
+        if server_payload[0]["metadata"]["task"] == "classification":
+            label_candidate = self._initialize_data([num_data_points, num_classes])
+        else:  # segmentation type in_shape->out_shape tasks
+
+            label_candidate = self._initialize_data([num_data_points, self.data_shape[0], num_classes])
+        return label_candidate
 
     def reconstruct(self, server_payload, shared_data, server_secrets=None, initial_data=None, dryrun=False):
         # Initialize stats module for later usage:
         rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)
+        if shared_data[0]["metadata"]["labels"] is not None:
+            raise ValueError(
+                "Joint optimization only makes sense if no labels are provided. "
+                "Switch to attack.attack_type=optimization instead"
+            )
+
         # Main reconstruction loop starts here:
         scores = torch.zeros(self.cfg.restarts.num_trials)
-        candidate_solutions = []
+        candidate_solutions, candidate_labels = [], []
         try:
             for trial in range(self.cfg.restarts.num_trials):
-                candidate_solutions += [
-                    self._run_trial(rec_models, shared_data, labels, stats, trial, initial_data, dryrun)
-                ]
-                scores[trial] = self._score_trial(candidate_solutions[trial], labels, rec_models, shared_data)
+                data, label = self._run_trial(rec_models, shared_data, labels, stats, trial, initial_data, dryrun)
+                candidate_solutions += [data]
+                candidate_labels += [labels.argmax(dim=-1)]
+                scores[trial] = self._score_trial(
+                    candidate_solutions[trial], candidate_labels[trial], rec_models, shared_data
+                )
         except KeyboardInterrupt:
             print("Trial procedure manually interruped.")
             pass
-        optimal_solution = self._select_optimal_reconstruction(candidate_solutions, scores, stats)
-        reconstructed_data = dict(data=optimal_solution, labels=labels)
+        optimal_solution, optimal_labels = self._select_optimal_reconstruction(
+            candidate_solutions, candidate_labels, scores, stats
+        )
+        reconstructed_data = dict(data=optimal_solution, labels=optimal_labels)
         if server_payload[0]["metadata"]["modality"] == "text":
             reconstructed_data = self._postprocess_text_data(reconstructed_data)
         return reconstructed_data, stats
 
-    def _run_trial(self, rec_model, shared_data, labels, stats, trial, initial_data=None, dryrun=False):
+    def _run_trial(self, rec_model, shared_data, label_template, stats, trial, initial_data=None, dryrun=False):
         """Run a single reconstruction trial."""
 
         # Initialize losses:
@@ -90,29 +89,36 @@ class OptimizationBasedAttacker(_BaseAttacker):
         self.objective.initialize(self.loss_fn, self.cfg.impl, shared_data[0]["metadata"]["local_hyperparams"])
 
         # Initialize candidate reconstruction data
-        candidate = self._initialize_data([shared_data[0]["metadata"]["num_data_points"], *self.data_shape])
+        candidate_data = self._initialize_data([shared_data[0]["metadata"]["num_data_points"], *self.data_shape])
+        candidate_labels = self._initialize_data(label_template.shape)
         if initial_data is not None:
-            candidate.data = initial_data.data.to(**self.setup)
+            candidate_data.data = initial_data.data.to(**self.setup)
 
-        best_candidate = candidate.detach().clone()
+        best_candidate = candidate_data.detach().clone()
+        best_labels = candidate_labels.detach().clone()
         minimal_value_so_far = torch.as_tensor(float("inf"), **self.setup)
 
         # Initialize optimizers
-        optimizer, scheduler = self._init_optimizer([candidate])
+        optimizer, scheduler = self._init_optimizer([candidate_data, candidate_labels])
         current_wallclock = time.time()
         try:
             for iteration in range(self.cfg.optim.max_iterations):
-                closure = self._compute_objective(candidate, labels, rec_model, optimizer, shared_data, iteration)
+                closure = self._compute_objective(
+                    candidate_data, candidate_labels, rec_model, optimizer, shared_data, iteration
+                )
                 objective_value, task_loss = optimizer.step(closure), self.current_task_loss
                 scheduler.step()
 
                 with torch.no_grad():
                     # Project into image space
                     if self.cfg.optim.boxed:
-                        candidate.data = torch.max(torch.min(candidate, (1 - self.dm) / self.ds), -self.dm / self.ds)
+                        candidate_data.data = torch.max(
+                            torch.min(candidate_data, (1 - self.dm) / self.ds), -self.dm / self.ds
+                        )
                     if objective_value < minimal_value_so_far:
                         minimal_value_so_far = objective_value.detach()
-                        best_candidate = candidate.detach().clone()
+                        best_candidate = candidate_data.detach().clone()
+                        best_labels = candidate_labels.detach().clone()
 
                 if iteration + 1 == self.cfg.optim.max_iterations or iteration % self.cfg.optim.callback == 0:
                     timestamp = time.time()
@@ -134,7 +140,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
             print(f"Recovery interrupted manually in iteration {iteration}!")
             pass
 
-        return best_candidate.detach()
+        return best_candidate.detach(), best_labels.detach()
 
     def _compute_objective(self, candidate, labels, rec_model, optimizer, shared_data, iteration):
         def closure():
@@ -145,11 +151,12 @@ class OptimizationBasedAttacker(_BaseAttacker):
             else:
                 candidate_augmented = candidate
                 candidate_augmented.data = self.augmentations(candidate.data)
-
             total_objective = 0
             total_task_loss = 0
             for model, data in zip(rec_model, shared_data):
-                objective, task_loss = self.objective(model, data["gradients"], candidate_augmented, labels)
+                objective, task_loss = self.objective(
+                    model, data["gradients"], candidate_augmented, labels.softmax(dim=-1)
+                )
                 total_objective += objective
                 total_task_loss += task_loss
             for regularizer in self.regularizers:
@@ -161,12 +168,15 @@ class OptimizationBasedAttacker(_BaseAttacker):
                 step_size = optimizer.param_groups[0]["lr"]
                 noise_map = torch.randn_like(candidate.grad)
                 candidate.grad += self.cfg.optim.langevin_noise * step_size * noise_map
+                labels.grad += self.cfg.optim.langevin_noise * step_size * torch.randn_like(labels.grad)
             if self.cfg.optim.signed is not None:
                 if self.cfg.optim.signed == "soft":
                     scaling_factor = 1 - iteration / self.cfg.optim.max_iterations  # just a simple linear rule for now
                     candidate.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
+                    labels.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
                 elif self.cfg.optim.signed == "hard":
                     candidate.grad.sign_()
+                    labels.grad.sign_()
                 else:
                     pass
 
@@ -190,16 +200,17 @@ class OptimizationBasedAttacker(_BaseAttacker):
             raise ValueError(f"Scoring mechanism {self.cfg.scoring} not implemented.")
         return score if score.isfinite() else float("inf")
 
-    def _select_optimal_reconstruction(self, candidate_solutions, scores, stats):
+    def _select_optimal_reconstruction(self, candidate_solutions, candidate_labels, scores, stats):
         """Choose one of the candidate solutions based on their scores (for now).
 
         More complicated combinations are possible in the future."""
         optimal_val, optimal_index = torch.min(scores, dim=0)
         optimal_solution = candidate_solutions[optimal_index]
+        optimal_labels = candidate_labels[optimal_index]
         stats["opt_value"] = optimal_val.item()
         if optimal_val.isfinite():
             log.info(f"Optimal condidate solution with rec. loss {optimal_val.item():2.4f} selected.")
-            return optimal_solution
+            return optimal_solution, optimal_labels
         else:
             log.info("No valid reconstruction could be found.")
-            return torch.zeros_like(optimal_solution)
+            return torch.zeros_like(optimal_solution), torch.zeros_like(optimal_labels)

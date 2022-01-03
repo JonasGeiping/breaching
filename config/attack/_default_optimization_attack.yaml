@@ -3,6 +3,8 @@ type: default
 attack_type: optimization # analytic, equation solver
 label_strategy: bias-corrected # Only in effect if the user does not provide labels
 # Label strategy options are 'iDLG', 'analytic', 'yin', 'wainakh-simple', 'wainakh-whitebox', 'random', 'exhaustive'
+text_strategy: run-embedding # options: run-embedding
+token_recovery: from-labels
 
 objective:
   type: euclidean
@@ -31,7 +33,6 @@ optim:
 augmentations:
 
 differentiable_augmentations: False
-update_augmentations: 500 # Update augmentation parameters every update_augmentations-many iterations
 
 regularization:
 

@@ -3,6 +3,7 @@
 
 from .optimization_based_attack import OptimizationBasedAttacker
 from .multiscale_optimization_attack import MultiScaleOptimizationAttacker
+from .optimization_with_label_attack import OptimizationJointAttacker
 from .analytic_attack import AnalyticAttacker, ImprintAttacker
 from .recursive_attack import RecursiveAttacker
 
@@ -18,6 +19,8 @@ def prepare_attack(model, loss, cfg_attack, setup):
         attacker = ImprintAttacker(model, loss, cfg_attack, setup)
     elif cfg_attack.attack_type == "recursive":
         attacker = RecursiveAttacker(model, loss, cfg_attack, setup)
+    elif cfg_attack.attack_type == "joint-optimization":
+        attacker = OptimizationJointAttacker(model, loss, cfg_attack, setup)
     else:
         raise ValueError(f"Invalid type of attack {cfg_attack.attack_type} given.")
 

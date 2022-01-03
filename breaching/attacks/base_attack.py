@@ -28,11 +28,10 @@ class _BaseAttacker:
         self.loss_fn = copy.deepcopy(loss_fn)
 
     def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
-
-        stats = defaultdict(list)
-
+        """Overwrite this function to implement a new attack."""
         # Implement the attack here
-        # The attack should consume the shared_data and server payloads and reconstruct
+        # The attack should consume the shared_data and server payloads and reconstruct into a dict
+        # with key data, labels
         raise NotImplementedError()
 
         return reconstructed_data, stats
@@ -51,15 +50,17 @@ class _BaseAttacker:
             self.dm = torch.as_tensor(metadata.mean, **self.setup)[None, :, None, None]
             self.ds = torch.as_tensor(metadata.std, **self.setup)[None, :, None, None]
         else:
-            self.dm, self.ds = 0, 1
+            self.dm, self.ds = torch.tensor(0, **self.setup), torch.tensor(1, **self.setup)
 
         # Load server_payload into state:
         rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data)
         shared_data = self._cast_shared_data(shared_data)
-        self.rec_models = rec_models
+        if metadata["modality"] == "text":
+            rec_models = self._prepare_for_text_data(shared_data, rec_models)
+        self._rec_models = rec_models
         # Consider label information
         if shared_data[0]["metadata"]["labels"] is None:
-            labels = self._recover_label_information(shared_data, rec_models)
+            labels = self._recover_label_information(shared_data, server_payload, rec_models)
         else:
             labels = shared_data[0]["metadata"]["labels"].clone()
 
@@ -68,12 +69,67 @@ class _BaseAttacker:
             shared_data = self._normalize_gradients(shared_data)
         return rec_models, labels, stats
 
-    def _circumvent_embedding_layer():
+    def _prepare_for_text_data(self, shared_data, rec_models):
         """Reconstruct the output of the Embedding Layer?"""
+        # _circumvent_embedding_layer
+        if "run-embedding" == self.cfg.text_strategy:
+            # 1) Basic trick: Optimize in embedding space
+            # Cut off embeddings:
+            self.embeddings = []
+            for model, data in zip(rec_models, shared_data):
+                name_to_idx = dict(zip([n for n, _ in model.named_parameters()], range(len(data["gradients"]))))
+                embedding_position = name_to_idx["encoder.weight"]  # todo: generalize this in a robust way
+                # only remove embeddings on the top level
+                for child_name, child in model.named_children():
+                    if isinstance(child, torch.nn.Embedding):
+                        self.embeddings.append(dict(module=child, grads=data["gradients"].pop(embedding_position)))
+                        setattr(model, child_name, torch.nn.Identity())
+            # Adjust data shape
+            _, token_embedding_dim = self.embeddings[0]["module"].weight.shape
+            self.data_shape = [*self.data_shape, token_embedding_dim]
+        else:
+            raise ValueError(f"Invalid text strategy {self.cfg.text_strategy} given.")
+        # To try later:
         # Assuming sequence_length is known, and all tokens are leaked from the Embedding Layer
         # We should find the input by optimizing a "segmentation map" of these tokens
         # This can be relaxed to [0,1] constraints and solved with convex programming tricks
         # The Relaxation can be constructed over the Subset of tokens with non-zero gradients
+        # Basic model (as also seen in DLG): Optimize in embedding space
+        return rec_models
+
+    def _postprocess_text_data(self, reconstructed_user_data):
+        """Post-process text data to recover tokens."""
+
+        def _max_similarity(recovered_embeddings, true_embeddings):
+            norm_rec = recovered_embeddings.pow(2).sum(dim=-1)
+            norm_true = true_embeddings.pow(2).sum(dim=-1)
+            cosim = (true_embeddings * recovered_embeddings).sum(dim=-1) / norm_rec / norm_true
+            return cosim.argmax(dim=1)
+
+        if self.cfg.token_recovery == "from-embedding":
+            # This is the DLG strategy. Look up all inputs in embedding space.
+            recovered_embeddings = reconstructed_user_data["data"]
+            base_shape = recovered_embeddings.shape[0:2]
+            recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])[:, None, :]
+            true_embeddings = self.embeddings[0]["module"].weight[None]
+
+            recovered_tokens = _max_similarity(recovered_embeddings, true_embeddings).view(*base_shape)
+
+        elif self.cfg.token_recovery == "from-labels":
+            # Only works well in causal-lm
+            recovered_tokens = reconstructed_user_data["labels"]
+        elif self.cfg.token_recovery == "from-limited-embedding":
+            # Retrieve possible embeddings from gradient data
+            recovered_embeddings = reconstructed_user_data["data"]
+            base_shape = recovered_embeddings.shape[0:2]
+            recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])[:, None, :]
+            active_embedding_ids = self.embeddings[0]["grads"].norm(dim=1).nonzero().squeeze()
+            true_embeddings = self.embeddings[0]["module"].weight[None, active_embedding_ids, :]
+
+            recovered_tokens = _max_similarity(recovered_embeddings, true_embeddings).view(*base_shape)
+
+        reconstructed_user_data["data"] = recovered_tokens
+        return reconstructed_user_data
 
     def _construct_models_from_payload_and_buffers(self, server_payload, shared_data):
         """Construct the model (or multiple) that is sent by the server and include user buffers if any."""
@@ -174,9 +230,8 @@ class _BaseAttacker:
         return candidate
 
     def _init_optimizer(self, candidate):
-
         optimizer, scheduler = optimizer_lookup(
-            [candidate],
+            candidate,
             self.cfg.optim.optimizer,
             self.cfg.optim.step_size,
             scheduler=self.cfg.optim.step_size_decay,
@@ -192,7 +247,7 @@ class _BaseAttacker:
             torch._foreach_div_(data["gradients"], max(grad_norm, fudge_factor))
         return shared_data
 
-    def _recover_label_information(self, user_data, rec_models):
+    def _recover_label_information(self, user_data, server_payload, rec_models):
         """Recover label information.
 
         This method runs under the assumption that the last two entries in the gradient vector
@@ -313,6 +368,29 @@ class _BaseAttacker:
                 label_list.append(selected_idx)
                 average_bias[selected_idx] -= m_impact
             labels = torch.stack(label_list)
+        elif self.cfg.label_strategy == "bias-text":  # WIP
+            num_missing_labels = num_data_points * self.data_shape[0]
+            # This is slightly modified analytic label recovery in the style of Wainakh
+            bias_per_query = [shared_data["gradients"][-1] for shared_data in user_data]
+            label_list = []
+            # Stage 1
+            average_bias = torch.stack(bias_per_query).mean(dim=0)
+            valid_classes = (average_bias < 0).nonzero()
+            label_list += [*valid_classes.squeeze(dim=-1)]
+            tokens_in_input = embeddings[0]["grads"].norm(dim=-1).nonzero().squeeze(dim=-1)
+            for token in tokens_in_input:
+                if token not in label_list:
+                    label_list.append(token)
+
+            m_impact = average_bias_correct_label = average_bias[valid_classes].sum() / num_missing_labels
+
+            average_bias[valid_classes] = average_bias[valid_classes] - m_impact
+            # Stage 2
+            while len(label_list) < num_missing_labels:
+                selected_idx = average_bias.argmin()
+                label_list.append(selected_idx)
+                average_bias[selected_idx] -= m_impact
+            labels = torch.stack(label_list).view(num_data_points, self.data_shape[0])
 
         elif self.cfg.label_strategy == "random":
             # A random baseline

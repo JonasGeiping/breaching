@@ -1,4 +1,7 @@
 name: CIFAR100
+modality: vision
+task: classification
+
 path: "~/data"
 size: 50_000
 classes: 100
@@ -26,6 +29,10 @@ augmentations_train:
     - 4
   RandomHorizontalFlip: 0.5
 augmentations_val:
+
+# Federated Learning specifics:
+default_clients: 10
+examples_from_split: validation
 
 caching: # dataset is alreay cached in RAM
 # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

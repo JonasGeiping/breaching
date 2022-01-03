@@ -1,7 +1,7 @@
 type: analytic
 
 attack_type: imprint-readout
-label_strategy: random # Labels are not required for this attack
+label_strategy: # Labels are not required for this attack
 normalize_gradients: False
 
 sort_by_bias: False # Only necessary if rows of the block have been shuffled

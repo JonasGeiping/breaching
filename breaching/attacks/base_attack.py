@@ -15,7 +15,10 @@ log = logging.getLogger(__name__)
 
 
 class _BaseAttacker:
-    """This is a template class for an attack."""
+    """This is a template class for an attack.
+
+    A basic assumption for this attacker is that user data is fixed over multiple queries.
+    """
 
     def __init__(self, model, loss_fn, cfg_attack, setup=dict(dtype=torch.float, device=torch.device("cpu"))):
         self.cfg = cfg_attack
@@ -25,11 +28,10 @@ class _BaseAttacker:
         self.loss_fn = copy.deepcopy(loss_fn)
 
     def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
-
-        stats = defaultdict(list)
-
+        """Overwrite this function to implement a new attack."""
         # Implement the attack here
-        # The attack should consume the shared_data and server payloads and reconstruct
+        # The attack should consume the shared_data and server payloads and reconstruct into a dict
+        # with key data, labels
         raise NotImplementedError()
 
         return reconstructed_data, stats
@@ -42,40 +44,108 @@ class _BaseAttacker:
         stats = defaultdict(list)
 
         # Load preprocessing constants:
-        self.data_shape = server_payload["data"].shape
-        self.dm = torch.as_tensor(server_payload["data"].mean, **self.setup)[None, :, None, None]
-        self.ds = torch.as_tensor(server_payload["data"].std, **self.setup)[None, :, None, None]
+        metadata = server_payload[0]["metadata"]
+        self.data_shape = metadata.shape
+        if hasattr(metadata, "mean"):
+            self.dm = torch.as_tensor(metadata.mean, **self.setup)[None, :, None, None]
+            self.ds = torch.as_tensor(metadata.std, **self.setup)[None, :, None, None]
+        else:
+            self.dm, self.ds = torch.tensor(0, **self.setup), torch.tensor(1, **self.setup)
 
         # Load server_payload into state:
-        rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data["buffers"])
+        rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data)
         shared_data = self._cast_shared_data(shared_data)
-        self.rec_models = rec_models
+        if metadata["modality"] == "text":
+            rec_models = self._prepare_for_text_data(shared_data, rec_models)
+        self._rec_models = rec_models
         # Consider label information
-        if shared_data["labels"] is None:
-            labels = self._recover_label_information(shared_data, rec_models)
+        if shared_data[0]["metadata"]["labels"] is None:
+            labels = self._recover_label_information(shared_data, server_payload, rec_models)
         else:
-            labels = shared_data["labels"].clone()
+            labels = shared_data[0]["metadata"]["labels"].clone()
 
         # Condition gradients?
         if self.cfg.normalize_gradients:
             shared_data = self._normalize_gradients(shared_data)
         return rec_models, labels, stats
 
-    def _construct_models_from_payload_and_buffers(self, server_payload, user_buffers):
+    def _prepare_for_text_data(self, shared_data, rec_models):
+        """Reconstruct the output of the Embedding Layer?"""
+        # _circumvent_embedding_layer
+        if "run-embedding" == self.cfg.text_strategy:
+            # 1) Basic trick: Optimize in embedding space
+            # Cut off embeddings:
+            self.embeddings = []
+            for model, data in zip(rec_models, shared_data):
+                name_to_idx = dict(zip([n for n, _ in model.named_parameters()], range(len(data["gradients"]))))
+                embedding_position = name_to_idx["encoder.weight"]  # todo: generalize this in a robust way
+                # only remove embeddings on the top level
+                for child_name, child in model.named_children():
+                    if isinstance(child, torch.nn.Embedding):
+                        self.embeddings.append(dict(module=child, grads=data["gradients"].pop(embedding_position)))
+                        setattr(model, child_name, torch.nn.Identity())
+            # Adjust data shape
+            _, token_embedding_dim = self.embeddings[0]["module"].weight.shape
+            self.data_shape = [*self.data_shape, token_embedding_dim]
+        else:
+            raise ValueError(f"Invalid text strategy {self.cfg.text_strategy} given.")
+        # To try later:
+        # Assuming sequence_length is known, and all tokens are leaked from the Embedding Layer
+        # We should find the input by optimizing a "segmentation map" of these tokens
+        # This can be relaxed to [0,1] constraints and solved with convex programming tricks
+        # The Relaxation can be constructed over the Subset of tokens with non-zero gradients
+        # Basic model (as also seen in DLG): Optimize in embedding space
+        return rec_models
+
+    def _postprocess_text_data(self, reconstructed_user_data):
+        """Post-process text data to recover tokens."""
+
+        def _max_similarity(recovered_embeddings, true_embeddings):
+            norm_rec = recovered_embeddings.pow(2).sum(dim=-1)
+            norm_true = true_embeddings.pow(2).sum(dim=-1)
+            cosim = (true_embeddings * recovered_embeddings).sum(dim=-1) / norm_rec / norm_true
+            return cosim.argmax(dim=1)
+
+        if self.cfg.token_recovery == "from-embedding":
+            # This is the DLG strategy. Look up all inputs in embedding space.
+            recovered_embeddings = reconstructed_user_data["data"]
+            base_shape = recovered_embeddings.shape[0:2]
+            recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])[:, None, :]
+            true_embeddings = self.embeddings[0]["module"].weight[None]
+
+            recovered_tokens = _max_similarity(recovered_embeddings, true_embeddings).view(*base_shape)
+
+        elif self.cfg.token_recovery == "from-labels":
+            # Only works well in causal-lm
+            recovered_tokens = reconstructed_user_data["labels"]
+        elif self.cfg.token_recovery == "from-limited-embedding":
+            # Retrieve possible embeddings from gradient data
+            recovered_embeddings = reconstructed_user_data["data"]
+            base_shape = recovered_embeddings.shape[0:2]
+            recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])[:, None, :]
+            active_embedding_ids = self.embeddings[0]["grads"].norm(dim=1).nonzero().squeeze()
+            true_embeddings = self.embeddings[0]["module"].weight[None, active_embedding_ids, :]
+
+            recovered_tokens = _max_similarity(recovered_embeddings, true_embeddings).view(*base_shape)
+
+        reconstructed_user_data["data"] = recovered_tokens
+        return reconstructed_user_data
+
+    def _construct_models_from_payload_and_buffers(self, server_payload, shared_data):
         """Construct the model (or multiple) that is sent by the server and include user buffers if any."""
 
         # Load states into multiple models if necessary
         models = []
-        for idx, payload in enumerate(server_payload["queries"]):
+        for idx, payload in enumerate(server_payload):
 
             new_model = copy.deepcopy(self.model_template)
             new_model.to(**self.setup, memory_format=self.memory_format)
 
             # Load parameters
             parameters = payload["parameters"]
-            if user_buffers is not None and idx < len(user_buffers):
+            if shared_data[idx]["buffers"] is not None:
                 # User sends buffers. These should be used!
-                buffers = user_buffers[idx]
+                buffers = shared_data[idx]["buffers"]
                 new_model.eval()
             elif payload["buffers"] is not None:
                 # The server has public buffers in any case
@@ -108,10 +178,10 @@ class _BaseAttacker:
 
     def _cast_shared_data(self, shared_data):
         """Cast user data to reconstruction data type."""
-        cast_grad_list = []
-        for shared_grad in shared_data["gradients"]:
-            cast_grad_list += [[g.to(dtype=self.setup["dtype"]) for g in shared_grad]]
-        shared_data["gradients"] = cast_grad_list
+        for data in shared_data:
+            data["gradients"] = [g.to(dtype=self.setup["dtype"]) for g in data["gradients"]]
+            if data["buffers"] is not None:
+                data["buffers"] = [b.to(dtype=self.setup["dtype"]) for b in data["buffers"]]
         return shared_data
 
     def _initialize_data(self, data_shape):
@@ -160,9 +230,8 @@ class _BaseAttacker:
         return candidate
 
     def _init_optimizer(self, candidate):
-
         optimizer, scheduler = optimizer_lookup(
-            [candidate],
+            candidate,
             self.cfg.optim.optimizer,
             self.cfg.optim.step_size,
             scheduler=self.cfg.optim.step_size_decay,
@@ -173,12 +242,12 @@ class _BaseAttacker:
 
     def _normalize_gradients(self, shared_data, fudge_factor=1e-6):
         """Normalize gradients to have norm of 1. No guarantees that this would be a good idea for FL updates."""
-        for shared_grad in shared_data["gradients"]:
-            grad_norm = torch.stack([g.pow(2).sum() for g in shared_grad]).sum().sqrt()
-            torch._foreach_div_(shared_grad, max(grad_norm, fudge_factor))
+        for data in shared_data:
+            grad_norm = torch.stack([g.pow(2).sum() for g in data["gradients"]]).sum().sqrt()
+            torch._foreach_div_(data["gradients"], max(grad_norm, fudge_factor))
         return shared_data
 
-    def _recover_label_information(self, user_data, rec_models):
+    def _recover_label_information(self, user_data, server_payload, rec_models):
         """Recover label information.
 
         This method runs under the assumption that the last two entries in the gradient vector
@@ -187,24 +256,26 @@ class _BaseAttacker:
 
         The behavior with respect to multiple queries is work in progress and subject of debate.
         """
-        num_data_points = user_data["num_data_points"]
-        num_classes = user_data["gradients"][0][-1].shape[0]
-        num_queries = len(user_data["gradients"])
+        num_data_points = user_data[0]["metadata"]["num_data_points"]
+        num_classes = user_data[0]["gradients"][-1].shape[0]
+        num_queries = len(user_data)
 
-        # In the simplest case, the label can just be inferred from the last layer
-        if self.cfg.label_strategy == "iDLG":
+        if self.cfg.label_strategy is None:
+            return None
+        elif self.cfg.label_strategy == "iDLG":
+            # In the simplest case, the label can just be inferred from the last layer
             # This was popularized in "iDLG" by Zhao et al., 2020
             # assert num_data_points == 1
             label_list = []
-            for query_id, shared_grad in enumerate(user_data["gradients"]):
-                last_weight_min = torch.argmin(torch.sum(shared_grad[-2], dim=-1), dim=-1)
+            for query_id, shared_data in enumerate(user_data):
+                last_weight_min = torch.argmin(torch.sum(shared_data["gradients"][-2], dim=-1), dim=-1)
                 label_list += [last_weight_min.detach()]
             labels = torch.stack(label_list).unique()
         elif self.cfg.label_strategy == "analytic":
             # Analytic recovery simply works as long as all labels are unique.
             label_list = []
-            for query_id, shared_grad in enumerate(user_data["gradients"]):
-                valid_classes = (shared_grad[-1] < 0).nonzero()
+            for query_id, shared_data in enumerate(user_data):
+                valid_classes = (shared_data["gradients"][-1] < 0).nonzero()
                 label_list += [valid_classes]
             labels = torch.stack(label_list).unique()[:num_data_points]
         elif self.cfg.label_strategy == "yin":
@@ -214,8 +285,8 @@ class _BaseAttacker:
             # This scheme also works best if all labels are unique
             # Otherwise this is an extension of iDLG to multiple labels:
             total_min_vals = 0
-            for query_id, shared_grad in enumerate(user_data["gradients"]):
-                total_min_vals += shared_grad[-2].min(dim=-1)[0]
+            for query_id, shared_data in enumerate(user_data):
+                total_min_vals += shared_data["gradients"][-2].min(dim=-1)[0]
             labels = total_min_vals.argsort()[:num_data_points]
 
         elif "wainakh" in self.cfg.label_strategy:
@@ -223,8 +294,8 @@ class _BaseAttacker:
             if self.cfg.label_strategy == "wainakh-simple":
                 # As seen in Weinakh et al., "User Label Leakage from Gradients in Federated Learning"
                 m_impact = 0
-                for query_id, shared_grad in enumerate(user_data["gradients"]):
-                    g_i = shared_grad[-2].sum(dim=1)
+                for query_id, shared_data in enumerate(user_data):
+                    g_i = shared_data["gradients"][-2].sum(dim=1)
                     m_query = (
                         torch.where(g_i < 0, g_i, torch.zeros_like(g_i)).sum() * (1 + 1 / num_classes) / num_data_points
                     )
@@ -236,7 +307,7 @@ class _BaseAttacker:
                 s_offset = torch.zeros(num_classes, **self.setup)
 
                 print("Starting a white-box search for optimal labels. This will take some time.")
-                for query_id, (shared_grad, model) in enumerate(zip(user_data["gradients"], rec_models)):
+                for query_id, model in enumerate(rec_models):
                     # Estimate m:
                     weight_params = (list(rec_models[0].parameters())[-2],)
                     for class_idx in range(num_classes):
@@ -264,7 +335,7 @@ class _BaseAttacker:
 
             # After determining impact and offset, run the actual recovery algorithm
             label_list = []
-            g_per_query = [shared_grad[-2].sum(dim=1) for shared_grad in user_data["gradients"]]
+            g_per_query = [shared_data["gradients"][-2].sum(dim=1) for shared_data in user_data]
             g_i = torch.stack(g_per_query).mean(dim=0)
             # Stage 1:
             for idx in range(num_classes):
@@ -282,7 +353,7 @@ class _BaseAttacker:
 
         elif self.cfg.label_strategy == "bias-corrected":  # WIP
             # This is slightly modified analytic label recovery in the style of Wainakh
-            bias_per_query = [shared_grad[-1] for shared_grad in user_data["gradients"]]
+            bias_per_query = [shared_data["gradients"][-1] for shared_data in user_data]
             label_list = []
             # Stage 1
             average_bias = torch.stack(bias_per_query).mean(dim=0)
@@ -297,6 +368,29 @@ class _BaseAttacker:
                 label_list.append(selected_idx)
                 average_bias[selected_idx] -= m_impact
             labels = torch.stack(label_list)
+        elif self.cfg.label_strategy == "bias-text":  # WIP
+            num_missing_labels = num_data_points * self.data_shape[0]
+            # This is slightly modified analytic label recovery in the style of Wainakh
+            bias_per_query = [shared_data["gradients"][-1] for shared_data in user_data]
+            label_list = []
+            # Stage 1
+            average_bias = torch.stack(bias_per_query).mean(dim=0)
+            valid_classes = (average_bias < 0).nonzero()
+            label_list += [*valid_classes.squeeze(dim=-1)]
+            tokens_in_input = embeddings[0]["grads"].norm(dim=-1).nonzero().squeeze(dim=-1)
+            for token in tokens_in_input:
+                if token not in label_list:
+                    label_list.append(token)
+
+            m_impact = average_bias_correct_label = average_bias[valid_classes].sum() / num_missing_labels
+
+            average_bias[valid_classes] = average_bias[valid_classes] - m_impact
+            # Stage 2
+            while len(label_list) < num_missing_labels:
+                selected_idx = average_bias.argmin()
+                label_list.append(selected_idx)
+                average_bias[selected_idx] -= m_impact
+            labels = torch.stack(label_list).view(num_data_points, self.data_shape[0])
 
         elif self.cfg.label_strategy == "random":
             # A random baseline

@@ -10,13 +10,85 @@ from .densenets import DenseNet, densenet_depths_to_config
 from .nfnets import NFNet
 from .vgg import VGG
 
+from .language_models import RNNModel, TransformerModel
+from .losses import CausalLoss, MLMLoss
 
-def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
+
+def construct_model(cfg_model, cfg_data, pretrained=True, **kwargs):
+    if cfg_data.modality == "vision":
+        model = _construct_vision_model(cfg_model, cfg_data, pretrained, **kwargs)
+    elif cfg_data.modality == "text":
+        model = _construct_text_model(cfg_model, cfg_data, pretrained, **kwargs)
+    else:
+        raise ValueError(f"Invalid data modality {cfg_data.modality}")
+    # Save nametag for printouts later:
+    model.name = cfg_model
+
+    # Choose loss function according to data and model:
+    if "classification" in cfg_data.task:
+        loss_fn = torch.nn.CrossEntropyLoss()
+    elif "causal-lm" in cfg_data.task:
+        loss_fn = CausalLoss()
+    elif "masked-lm" in cfg_data.task:
+        loss_fn = MLMLoss(vocab_size=cfg_data.vocab_size)
+    else:
+        raise ValueError(f"No loss function registered for task {cfg_data.task}.")
+    loss_fn = torch.jit.script(loss_fn)
+    return model, loss_fn
+
+
+def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
+    if cfg_model == "transformer3":
+        # This is the transformer from "A field guide to federated learning"
+        """
+        we train a modified 3-layer Transformer model [250],
+        where the dimension of the token embeddings is 96, and the hidden dimension of the feed-forward
+        network (FFN) block is 1536. We use 8 heads for the multi-head attention, where each head is based
+        on 12-dimensional (query, key, value) vectors. We use ReLU activation and set dropout rate to 0.1.
+        """
+        # For simplicity the dropout is disabled for now
+        # I also have no idea what is meant with the 12-dim query comment
+        model = TransformerModel(ntokens=cfg_data.vocab_size, ninp=96, nhead=8, nhid=1536, nlayers=3, dropout=0)
+    elif cfg_model == "transformer1":
+        # This is our initial sanity check transformer:
+        model = TransformerModel(ntokens=cfg_data.vocab_size, ninp=200, nhead=2, nhid=200, nlayers=1, dropout=0)
+    elif cfg_model == "LSTM":
+        # This is the LSTM from "LEARNING DIFFERENTIALLY PRIVATE RECURRENT LANGUAGE MODELS"
+        """
+        word s t is mapped to an embedding vector e t ∈ R 96
+        by looking up the word in the model’s vocabulary. The e t is composed with the state emitted by
+        the model in the previous time step s t−1 ∈ R 256 to emit a new state vector s t and an “output
+        embedding” o t ∈ R 96 .
+        """
+        model = RNNModel("LSTM", cfg_data.vocab_size, ninp=96, nhid=96, nlayers=1, dropout=0.0, tie_weights=True)
+    else:
+        try:
+            from transformers import AutoModelForMaskedLM
+
+            # Make sure to use the matching tokenizer!
+            model = AutoModelForMaskedLM.from_pretrained(cfg_model)
+        except OSError as error_msg:
+            raise ValueError(f"Invalid huggingface model {cfg_model} given: {error_msg}")
+    return model
+
+
+class VisionContainer(torch.nn.Module):
+    """We'll use a container to catch extra attributes and allow for usage with model(**data)."""
+
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, inputs, **kwargs):
+        return self.model(inputs)
+
+
+def _construct_vision_model(cfg_model, cfg_data, pretrained=True, **kwargs):
     """Construct the neural net that is used."""
     channels = cfg_data.shape[0]
     classes = cfg_data.classes
 
-    if cfg_data.name == "ImageNet":
+    if "ImageNet" in cfg_data.name:
         try:
             model = getattr(torchvision.models, cfg_model.lower())(pretrained=pretrained)
         except AttributeError:
@@ -38,6 +110,22 @@ def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
                 model = torch.hub.load("facebookresearch/semi-supervised-ImageNet1K-models", "resnet50_swsl")
             elif "resnet50ssl" in cfg_model:
                 model = torch.hub.load("facebookresearch/semi-supervised-ImageNet1K-models", "resnet50_ssl")
+            elif "resnetmoco" in cfg_model:
+                model = torchvision.models.resnet50(pretrained=False)
+                if pretrained:
+                    # url = 'https://dl.fbaipublicfiles.com/moco/moco_checkpoints/moco_v2_800ep/moco_v2_800ep_pretrain.pth.tar'
+                    # url = 'https://dl.fbaipublicfiles.com/moco/moco_checkpoints/moco_v2_200ep/moco_v2_200ep_pretrain.pth.tar'
+                    url = "https://dl.fbaipublicfiles.com/moco-v3/r-50-1000ep/linear-1000ep.pth.tar"
+                    state_dict = load_state_dict_from_url(url, progress=True, map_location=torch.device("cpu"))[
+                        "state_dict"
+                    ]
+                    for key in list(state_dict.keys()):
+                        val = state_dict.pop(key)
+                        # sanitized_key = key.replace('module.encoder_q.', '') # for mocov2
+                        sanitized_key = key.replace("module.", "")
+                        state_dict[sanitized_key] = val
+
+                    model.load_state_dict(state_dict, strict=True)  # The fc layer is not actually loaded here
             elif "vit_base" in cfg_model:
                 import timm  # lazily import
 
@@ -209,9 +297,7 @@ def construct_model(cfg_model, cfg_data, pretrained=False, **kwargs):
         else:
             raise ValueError("Model could not be found.")
 
-    # Save nametag for printouts later:
-    model.name = cfg_model
-    return model
+    return VisionContainer(model)
 
 
 class ConvNetSmall(torch.nn.Module):

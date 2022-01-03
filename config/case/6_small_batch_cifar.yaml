@@ -5,7 +5,6 @@ defaults:
   - impl: default
   - server: honest-but-curious
   - user: local_gradient
-loss: CrossEntropy
 model: ConvNet
 
 # Server and user:
@@ -13,5 +12,3 @@ num_queries: 1
 
 user:
   num_data_points: 8
-
-examples_from_split: validation

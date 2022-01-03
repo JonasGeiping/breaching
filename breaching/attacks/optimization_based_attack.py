@@ -60,40 +60,45 @@ class OptimizationBasedAttacker(_BaseAttacker):
         {(n + ' ' * 8).join([f'{key}: {val}' for key, val in self.cfg.optim.items()])}
         """
 
-    def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
+    def reconstruct(self, server_payload, shared_data, server_secrets=None, initial_data=None, dryrun=False):
         # Initialize stats module for later usage:
         rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)
-
         # Main reconstruction loop starts here:
         scores = torch.zeros(self.cfg.restarts.num_trials)
         candidate_solutions = []
         try:
             for trial in range(self.cfg.restarts.num_trials):
-                candidate_solutions += [self._run_trial(rec_models, shared_data, labels, stats, trial, dryrun)]
+                candidate_solutions += [
+                    self._run_trial(rec_models, shared_data, labels, stats, trial, initial_data, dryrun)
+                ]
                 scores[trial] = self._score_trial(candidate_solutions[trial], labels, rec_models, shared_data)
         except KeyboardInterrupt:
             print("Trial procedure manually interruped.")
             pass
         optimal_solution = self._select_optimal_reconstruction(candidate_solutions, scores, stats)
         reconstructed_data = dict(data=optimal_solution, labels=labels)
-
+        if server_payload[0]["metadata"]["modality"] == "text":
+            reconstructed_data = self._postprocess_text_data(reconstructed_data)
         return reconstructed_data, stats
 
-    def _run_trial(self, rec_model, shared_data, labels, stats, trial, dryrun=False):
+    def _run_trial(self, rec_model, shared_data, labels, stats, trial, initial_data=None, dryrun=False):
         """Run a single reconstruction trial."""
 
         # Initialize losses:
         for regularizer in self.regularizers:
             regularizer.initialize(rec_model, shared_data, labels)
-        self.objective.initialize(self.loss_fn, self.cfg.impl, shared_data["local_hyperparams"])
+        self.objective.initialize(self.loss_fn, self.cfg.impl, shared_data[0]["metadata"]["local_hyperparams"])
 
         # Initialize candidate reconstruction data
-        candidate = self._initialize_data([shared_data["num_data_points"], *self.data_shape])
+        candidate = self._initialize_data([shared_data[0]["metadata"]["num_data_points"], *self.data_shape])
+        if initial_data is not None:
+            candidate.data = initial_data.data.to(**self.setup)
+
         best_candidate = candidate.detach().clone()
         minimal_value_so_far = torch.as_tensor(float("inf"), **self.setup)
 
         # Initialize optimizers
-        optimizer, scheduler = self._init_optimizer(candidate)
+        optimizer, scheduler = self._init_optimizer([candidate])
         current_wallclock = time.time()
         try:
             for iteration in range(self.cfg.optim.max_iterations):
@@ -143,8 +148,8 @@ class OptimizationBasedAttacker(_BaseAttacker):
 
             total_objective = 0
             total_task_loss = 0
-            for model, shared_grad in zip(rec_model, shared_data["gradients"]):
-                objective, task_loss = self.objective(model, shared_grad, candidate_augmented, labels)
+            for model, data in zip(rec_model, shared_data):
+                objective, task_loss = self.objective(model, data["gradients"], candidate_augmented, labels)
                 total_objective += objective
                 total_task_loss += task_loss
             for regularizer in self.regularizers:
@@ -175,10 +180,10 @@ class OptimizationBasedAttacker(_BaseAttacker):
 
         if self.cfg.restarts.scoring in ["euclidean", "cosine-similarity"]:
             objective = Euclidean() if self.cfg.restarts.scoring == "euclidean" else CosineSimilarity()
-            objective.initialize(self.loss_fn, self.cfg.impl, shared_data["local_hyperparams"])
+            objective.initialize(self.loss_fn, self.cfg.impl, shared_data[0]["metadata"]["local_hyperparams"])
             score = 0
-            for model, shared_grad in zip(rec_model, shared_data["gradients"]):
-                score += objective(model, shared_grad, candidate, labels)[0]
+            for model, data in zip(rec_model, shared_data):
+                score += objective(model, data["gradients"], candidate, labels)[0]
         elif self.cfg.restarts.scoring in ["TV", "total-variation"]:
             score = TotalVariation(scale=1.0)(candidate)
         else:

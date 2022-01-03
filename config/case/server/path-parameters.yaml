@@ -1,9 +1,0 @@
-name: path_parameters
-model_state: untrained # This is used as initial state, but can be changed by the server
-provide_public_buffers: True # Send public buffers to users (this is batch norm specific)
-
-has_external_data: True
-
-alpha: 0.375
-num_bins: 8
-num_paths: 8

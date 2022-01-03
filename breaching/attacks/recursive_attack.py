@@ -43,8 +43,8 @@ class RecursiveAttacker(_BaseAttacker):
 
         # Main reconstruction: loop starts here:
         inputs_from_queries = []
-        for model, user_gradient in zip(rec_models, shared_data["gradients"]):
-            inputs = self._rgap(list(user_gradient), labels, model, feature_shapes)
+        for model, user_data in zip(rec_models, shared_data):
+            inputs = self._rgap(list(user_data["gradients"]), labels, model, feature_shapes)
             inputs_from_queries += [torch.as_tensor(inputs, **self.setup)]
 
         final_reconstruction = torch.stack(inputs_from_queries).mean(dim=0)
@@ -140,7 +140,7 @@ class RecursiveAttacker(_BaseAttacker):
         inputs = x_.reshape([1, *self.data_shape])
         return inputs
 
-    def _retrieve_feature_shapes(self, model, shared_data):
+    def _retrieve_feature_shapes(self, model, K):
         """Retrieve x_shape by hooking into the model and recording it.
 
         Feature shapes are returned in reverse order!"""
@@ -156,7 +156,7 @@ class RecursiveAttacker(_BaseAttacker):
 
         # Run the model with random data to query it
         # This requires the model to be in eval mode!
-        model(torch.randn([shared_data["num_data_points"], *self.data_shape], **self.setup))
+        model(torch.randn([shared_data["metadata"]["num_data_points"], *self.data_shape], **self.setup))
         for hook in hooks_list:
             hook.remove()
 

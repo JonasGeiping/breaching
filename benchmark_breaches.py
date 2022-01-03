@@ -12,7 +12,6 @@ import time
 import logging
 
 import breaching
-import random
 
 import os
 
@@ -46,51 +45,43 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     """This function controls the central routine."""
     local_time = time.time()
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
+    model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data)
 
-    user, server = breaching.cases.construct_case(cfg.case, setup)
-    attacker = breaching.attacks.prepare_attack(server.model, server.loss, cfg.attack, setup)
-    if user.data_idx is not None:
-        print("The argument data_idx is disregarded during the benchmark. Data selection is fixed.")
+    server = breaching.cases.construct_server(model, loss_fn, cfg.case, setup)
+    model = server.vet_model(model)
+    attacker = breaching.attacks.prepare_attack(model, loss_fn, cfg.attack, setup)
+    if cfg.case.user.user_idx is not None:
+        print("The argument user_idx is disregarded during the benchmark. Data selection is fixed.")
 
-    batch_size = user.num_data_points
-    if batch_size == 1:
-        # Simply iterate through successive image classes without randomness. [Similar to the setup in InvertingGradients]
-        offset = len(user.dataloader.dataset) // len(user.dataloader.dataset.classes)
-        indices = [[idx * offset] for idx in range(num_trials)]
+    if cfg.case.user.num_data_points == 1:
+        cfg.case.data.partition == "unique-class"  # Different label per user
     else:
-        # Benchmark: Default: all classes
-        subset = range(len(user.dataloader.dataset))
-        # But the first 397 classes are all animals, which makes this reasonably safe to do on ImageNet
-        # if interested in visualization of results:
-        # safe_subset = torch.arange(0, 397 * 50)
-        raw_indices = random.sample(subset, batch_size * num_trials)
-        indices = [raw_indices[idx * batch_size : (idx + 1) * batch_size] for idx in range(num_trials)]
+        cfg.case.data.partition == "balanced"  # Balanced partition of labels
 
+    cfg.case.user.user_idx = 0
     overall_metrics = []
     for run in range(num_trials):
         # Select data that has not been seen before:
-        user.data_idx = indices[run]
-        log.info(f"Now evaluating indices {user.data_idx} in trial {run}.")
+        cfg.case.user.user_idx += 1
+        user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
+        log.info(f"Now evaluating indices {user.user_idx} in trial {run}.")
         # Run exchange
-        server_payload = server.distribute_payload()
-        shared_data, true_user_data = user.compute_local_updates(server_payload)
+        shared_user_data, payloads, true_user_data = server.run_protocol(user)
         # Evaluate attack:
-        reconstructed_user_data, stats = attacker.reconstruct(
-            server_payload, shared_data, server.secrets, dryrun=cfg.dryrun
-        )
+        reconstruction, stats = attacker.reconstruct(payloads, shared_user_data, server.secrets, dryrun=cfg.dryrun)
 
         # Run the full set of metrics:
         metrics = breaching.analysis.report(
-            reconstructed_user_data,
+            reconstruction,
             true_user_data,
-            server_payload,
+            payloads,
             server.model,
-            user.dataloader,
-            setup,
             order_batch=True,
             compute_full_iip=True,
             compute_rpsnr=True,
             compute_ssim=True,
+            cfg_case=cfg.case,
+            setup=setup,
         )
 
         # Save local summary:

@@ -1,4 +1,7 @@
 name: TinyImageNet
+modality: vision
+task: classification
+
 path: "~/data"
 size: 100_000
 classes: 200
@@ -7,6 +10,7 @@ shape:
   - 64
   - 64
 
+# Preprocessing
 normalize: True
 mean:
   - 0.4789886474609375
@@ -16,10 +20,7 @@ std:
   - 0.27698642015457153
   - 0.2690644860267639
   - 0.2820819020271301
-
-# Data-specific implementation constants:
-batch_size: 128 # this is the maximum batchsize that fits onto the GPU for gradient accumulation
-
+# Data Augmentations
 augmentations_train:
   RandomCrop:
     - 64
@@ -27,7 +28,14 @@ augmentations_train:
   RandomHorizontalFlip: 0.5
 augmentations_val:
   CenterCrop: 64
-caching: # dataset is alreay cached in RAM
-# Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB
+
+# Federated Learning specifics:
+default_clients: 200
+partition: balanced # used for synthetic splits. Current options for synthetic split: balanced / unique-class
+examples_from_split: validation
+
+# Data-specific implementation constants:
+batch_size: 128
+caching: False
 defaults:
-  - db: none
+  - db: none # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

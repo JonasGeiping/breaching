@@ -1,14 +1,11 @@
 name: industry_fed_avg
 
 defaults:
-  - data: ImageNet
+  - data: ImageNetAnimals
   - impl: default
   - server: malicious-model
   - user: multiuser_aggregate
-loss: CrossEntropy
 model: ResNet18
 
 # Server and user:
 num_queries: 1
-
-examples_from_split: validation

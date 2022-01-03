@@ -1,11 +1,10 @@
 name: large_batch
 
 defaults:
-  - data: ImageNet
+  - data: ImageNetAnimals
   - impl: default
   - server: honest-but-curious
   - user: local_gradient
-loss: CrossEntropy
 model: ResNet152
 
 # Server and user:
@@ -14,5 +13,3 @@ num_queries: 1
 # User data:
 user:
   num_data_points: 128
-
-examples_from_split: validation

@@ -28,10 +28,10 @@ def report(
 
     metadata = server_payload[0]["metadata"]
     if hasattr(metadata, "mean"):
-        self.dm = torch.as_tensor(metadata.mean, **self.setup)[None, :, None, None]
-        self.ds = torch.as_tensor(metadata.std, **self.setup)[None, :, None, None]
+        dm = torch.as_tensor(metadata.mean, **setup)[None, :, None, None]
+        ds = torch.as_tensor(metadata.std, **setup)[None, :, None, None]
     else:
-        self.dm, self.ds = torch.tensor(0, **self.setup), torch.tensor(1, **self.setup)
+        dm, ds = torch.tensor(0, **setup), torch.tensor(1, **setup)
     model.to(**setup)
 
     rec_denormalized = torch.clamp(reconstructed_user_data["data"].to(**setup) * ds + dm, 0, 1)

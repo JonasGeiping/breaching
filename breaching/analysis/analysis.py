@@ -26,8 +26,12 @@ def report(
 
     lpips_scorer = lpips.LPIPS(net="alex", verbose=False).to(**setup)
 
-    dm = torch.as_tensor(server_payload[0]["metadata"].mean, **setup)[None, :, None, None]
-    ds = torch.as_tensor(server_payload[0]["metadata"].std, **setup)[None, :, None, None]
+    metadata = server_payload[0]["metadata"]
+    if hasattr(metadata, "mean"):
+        self.dm = torch.as_tensor(metadata.mean, **self.setup)[None, :, None, None]
+        self.ds = torch.as_tensor(metadata.std, **self.setup)[None, :, None, None]
+    else:
+        self.dm, self.ds = torch.tensor(0, **self.setup), torch.tensor(1, **self.setup)
     model.to(**setup)
 
     rec_denormalized = torch.clamp(reconstructed_user_data["data"].to(**setup) * ds + dm, 0, 1)

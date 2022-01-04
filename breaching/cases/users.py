@@ -193,11 +193,18 @@ class UserSingleStep(torch.nn.Module):
             if num_samples > self.num_data_points:
                 break
 
+        if num_samples < self.num_data_points:
+            raise ValueError(
+                f"This user does not have the requested {self.num_data_points} samples,"
+                f"they only own {num_samples} samples."
+            )
+
         data = dict()
         for key in data_blocks[0]:
             data[key] = torch.cat([d[key] for d in data_blocks], dim=0)[: self.num_data_points].to(
                 device=self.setup["device"]
             )
+
         return data
 
     def print(self, user_data, **kwargs):

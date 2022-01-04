@@ -5,6 +5,8 @@ tables/*.csv
 tables/*.csv#
 tables/*.ods
 
+
+
 *.pdf
 images
 
@@ -147,3 +149,7 @@ dmypy.json
 *.ods
 
 *.json
+
+
+# unignore tensorflow cache
+!cache/*.txt

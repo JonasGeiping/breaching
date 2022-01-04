@@ -8,6 +8,18 @@ import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 
+class LinearModel(torch.nn.Module):
+    """Container with just an encoder and a decoder."""
+
+    def __init__(self, vocab_size, embedding_size):
+        super().__init__()
+        self.encoder = torch.nn.Embedding(vocab_size, embedding_size)
+        self.decoder = torch.nn.Linear(embedding_size, vocab_size)
+
+    def forward(self, inputs, *args, **kwargs):
+        return self.decoder(self.encoder(inputs))
+
+
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
 

@@ -10,7 +10,7 @@ from .densenets import DenseNet, densenet_depths_to_config
 from .nfnets import NFNet
 from .vgg import VGG
 
-from .language_models import RNNModel, TransformerModel
+from .language_models import RNNModel, TransformerModel, LinearModel
 from .losses import CausalLoss, MLMLoss
 
 
@@ -61,6 +61,8 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
         embedding” o t ∈ R 96 .
         """
         model = RNNModel("LSTM", cfg_data.vocab_size, ninp=96, nhid=96, nlayers=1, dropout=0.0, tie_weights=True)
+    elif cfg_model == "linear":
+        model = LinearModel(cfg_data.vocab_size, embedding_size=200)
     else:
         try:
             from transformers import AutoModelForMaskedLM

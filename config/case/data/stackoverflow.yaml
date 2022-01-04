@@ -10,7 +10,7 @@ shape:
 
 # Preprocessing
 tokenizer: GPT-2
-vocab_size: 50_257
+vocab_size: 50257
 
 # Federated Learning specifics:
 default_clients: 715 # number of unique characters in shakespeare plays

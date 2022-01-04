@@ -92,7 +92,7 @@ class OptimizationJointAttacker(OptimizationBasedAttacker):
         candidate_data = self._initialize_data([shared_data[0]["metadata"]["num_data_points"], *self.data_shape])
         candidate_labels = self._initialize_data(label_template.shape)
         if initial_data is not None:
-            candidate_data.data = initial_data.data.to(**self.setup)
+            candidate_data.data = initial_data.data.clone().to(**self.setup)
 
         best_candidate = candidate_data.detach().clone()
         best_labels = candidate_labels.detach().clone()
@@ -163,7 +163,7 @@ class OptimizationJointAttacker(OptimizationBasedAttacker):
                 total_objective += regularizer(candidate_augmented)
 
             if total_objective.requires_grad:
-                total_objective.backward(inputs=candidate, create_graph=False)
+                total_objective.backward(inputs=[candidate, labels], create_graph=False)
             if self.cfg.optim.langevin_noise > 0:
                 step_size = optimizer.param_groups[0]["lr"]
                 noise_map = torch.randn_like(candidate.grad)

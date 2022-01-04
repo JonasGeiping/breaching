@@ -92,7 +92,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
         # Initialize candidate reconstruction data
         candidate = self._initialize_data([shared_data[0]["metadata"]["num_data_points"], *self.data_shape])
         if initial_data is not None:
-            candidate.data = initial_data.data.to(**self.setup)
+            candidate.data = initial_data.data.clone().to(**self.setup)
 
         best_candidate = candidate.detach().clone()
         minimal_value_so_far = torch.as_tensor(float("inf"), **self.setup)

@@ -89,14 +89,56 @@ class Euclidean(GradientLoss):
     @staticmethod
     @torch.jit.script
     def _euclidean(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        objective = gradient_rec[0].new_zeros(
-            1,
-        )
+        objective = gradient_rec[0].new_zeros(1,)
         for rec, data in zip(gradient_rec, gradient_data):
             objective += (rec - data).pow(2).sum()
         return 0.5 * objective
 
-        return objective
+
+class EuclideanTag(GradientLoss):
+    """Gradient matching based on the euclidean distance of two gradient vectors plus TAG regularizer
+
+    from Deng et al., "TAG: Gradient Attack on Transformer-based Language Models"
+    How to scale each layer is unclear to me based on the paper, so I am recycling decay schemes from
+    the InvertingGradients repo.
+    """
+
+    def __init__(self, scale=1.0, task_regularization=0.0, tag_scale=0.0, scale_scheme="linear", **kwargs):
+        super().__init__()
+        self.scale = scale
+        self.task_regularization = task_regularization
+        self.tag_scale = 0.1
+        self.scale_scheme = scale_scheme
+        self.weights = None
+
+    def gradient_based_loss(self, gradient_rec, gradient_data):
+        if self.weights is None:
+            setup = dict(dtype=gradient_rec[0].dtype, device=gradient_rec[0].device)
+            if self.scale_scheme == "linear":
+                weights = torch.arange(len(gradient_rec), 0, -1, **setup) / len(gradient_rec)
+            elif self.scale_scheme == "exp":
+                weights = torch.arange(len(gradient_rec), 0, -1, **setup)
+                weights = weights.softmax(dim=0)
+                weights = weights / weights[0]
+            else:
+                weights = gradient_rec[0].new_ones(len(gradient_rec))
+        return self._weighted_euclidean_l1(gradient_rec, gradient_data, weights, self.tag_scale) * self.scale
+
+    def __repr__(self):
+        return (
+            f"Tag loss with scale={self.scale}, weight scheme {self.scale_scheme}, L1 scale {self.tag_scale} "
+            f"and task reg={self.task_regularization}"
+        )
+
+    @staticmethod
+    @torch.jit.script
+    def _weighted_euclidean_l1(
+        gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor], weights: torch.Tensor, tag_scale: float,
+    ):
+        objective = gradient_rec[0].new_zeros(1,)
+        for rec, data, weight in zip(gradient_rec, gradient_data, weights):
+            objective += (rec - data).pow(2).sum() + tag_scale * weight * (rec - data).abs().sum()
+        return 0.5 * objective
 
 
 class L1Loss(GradientLoss):
@@ -116,9 +158,7 @@ class L1Loss(GradientLoss):
     @staticmethod
     @torch.jit.script
     def _l1loss(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        objective = gradient_rec[0].new_zeros(
-            1,
-        )
+        objective = gradient_rec[0].new_zeros(1,)
         for rec, data in zip(gradient_rec, gradient_data):
             objective += (rec - data).abs().sum()
         return 0.5 * objective
@@ -143,15 +183,9 @@ class CosineSimilarity(GradientLoss):
     @staticmethod
     @torch.jit.script
     def _cosine_sim(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        scalar_product = gradient_rec[0].new_zeros(
-            1,
-        )
-        rec_norm = gradient_rec[0].new_zeros(
-            1,
-        )
-        data_norm = gradient_rec[0].new_zeros(
-            1,
-        )
+        scalar_product = gradient_rec[0].new_zeros(1,)
+        rec_norm = gradient_rec[0].new_zeros(1,)
+        data_norm = gradient_rec[0].new_zeros(1,)
 
         for rec, data in zip(gradient_rec, gradient_data):
             scalar_product += (rec * data).sum()
@@ -225,15 +259,9 @@ class FastCosineSimilarity(GradientLoss):
     @staticmethod
     @torch.jit.script
     def _cosine_sim(gradient_rec: List[torch.Tensor], gradient_data: List[torch.Tensor]):
-        scalar_product = gradient_rec[0].new_zeros(
-            1,
-        )
-        rec_norm = gradient_rec[0].new_zeros(
-            1,
-        )
-        data_norm = gradient_rec[0].new_zeros(
-            1,
-        )
+        scalar_product = gradient_rec[0].new_zeros(1,)
+        rec_norm = gradient_rec[0].new_zeros(1,)
+        data_norm = gradient_rec[0].new_zeros(1,)
 
         for rec, data in zip(gradient_rec, gradient_data):
             scalar_product += (rec * data).sum()
@@ -474,4 +502,5 @@ objective_lookup = {
     "l1": L1Loss,
     "pearlmutter-loss": PearlmutterEuclidean,
     "pearlmutter-cosine": PearlmutterCosine,
+    "tag-euclidean": EuclideanTag,
 }

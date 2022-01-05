@@ -46,28 +46,39 @@ def main_process(process_idx, local_group_size, cfg):
     local_time = time.time()
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
 
-    # Instantiate all parties
-    user, server = breaching.cases.construct_case(cfg.case, setup)
-    attacker = breaching.attacks.prepare_attack(server.model, server.loss, cfg.attack, setup)
+    # Propose a model architecture:
+    # (Replace this line with your own model if you want)
+    model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data)
 
-    print(user)
-    print(server)
-    print(attacker)
-    # Simulate an attacked FL protocol
-    server_payload = server.distribute_payload()
-    shared_data, true_user_data = user.compute_local_updates(
-        server_payload
-    )  # True user data is returned only for analysis
-    reconstructed_user_data, stats = attacker.reconstruct(
-        server_payload, shared_data, server.secrets, dryrun=cfg.dryrun
-    )
+    # Instantiate server and vet model
+    # This is a no-op for an honest-but-curious server, but a malicious-model server can modify the model in this step.
+    server = breaching.cases.construct_server(model, loss_fn, cfg.case, setup)
+    model = server.vet_model(model)
+    # Instantiate user and attacker
+    user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
+    attacker = breaching.attacks.prepare_attack(model, loss_fn, cfg.attack, setup)
+    # Summarize startup:
+    breaching.utils.overview(server, user, attacker)
+
+    # Simulate a simple FL protocol
+    shared_user_data = []
+    payloads = []
+    for query_id in server.queries():
+        server_payload = server.distribute_payload(query_id)  # A malicious server can return something "fun" here
+        shared_data_per_round, true_user_data = user.compute_local_updates(server_payload)  # true_data is for analysis
+        payloads += [server_payload]
+        shared_user_data += [shared_data_per_round]
+
+    # Run an attack using only payload information and shared data
+    reconstructed_user_data, stats = attacker.reconstruct(payloads, shared_user_data, server.secrets, dryrun=cfg.dryrun)
 
     # How good is the reconstruction?
     metrics = breaching.analysis.report(
-        reconstructed_user_data, true_user_data, server_payload, server.model, user.dataloader, setup
+        reconstructed_user_data, true_user_data, payloads, model, cfg_case=cfg.case, setup=setup
     )
-    breaching.utils.save_summary(cfg, metrics, stats, time.time() - local_time)
 
+    # Save a summary
+    breaching.utils.save_summary(cfg, metrics, stats, time.time() - local_time)
     # breach.utils.save_image()
 
 

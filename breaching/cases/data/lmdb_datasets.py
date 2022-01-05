@@ -1,4 +1,4 @@
-"""LMBD dataset wrap an existing dataset and create a database if necessary."""
+"""LMDB dataset to wrap an existing dataset and create a database if necessary."""
 
 import os
 import io

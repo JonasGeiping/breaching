@@ -4,21 +4,21 @@ type: invertinggradients
 
 objective:
   type: cosine-similarity
-  scale: 1.0
+  scale: 1.0 # need to have a much smaller scale like 0.0001 for euclidean objectives
+
+init: zeros
 
 restarts:
   num_trials: 1
-  scoring: cosine-similarity
+  scoring: "cosine-similarity"
 
 optim:
   optimizer: adam
-  signed: "hard"
+  signed: "soft"
   step_size: 0.1
   boxed: True
   max_iterations: 24_000
   step_size_decay: cosine-decay
-  langevin_noise: 1e-5
-  warmup: 50
 
   callback: 1000 # Print objective value every callback many iterations
 
@@ -28,8 +28,7 @@ regularization:
     inner_exp: 2
     outer_exp: 0.5
     double_opponents: True
-  norm:
-    scale: 1e-6
-    pnorm: 2
-  deep_inversion: # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
-    scale: 0.001
+  features:
+    scale: 0.1
+  deep_inversion:
+    scale: 0.00005

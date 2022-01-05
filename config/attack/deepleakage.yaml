@@ -2,6 +2,10 @@
 defaults:
   - _default_optimization_attack
 type: deep-leakage
+attack_type: joint-optimization
+label_strategy: None
+
+token_recovery: from-embedding
 
 optim:
   optimizer: L-BFGS

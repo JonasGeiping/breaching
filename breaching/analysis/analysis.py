@@ -3,7 +3,7 @@ import torch
 
 
 from .metrics import psnr_compute, registered_psnr_compute, image_identifiability_precision, cw_ssim
-
+from ..cases import construct_dataloader
 
 import logging
 
@@ -15,19 +15,23 @@ def report(
     true_user_data,
     server_payload,
     model,
-    dataloader=None,
-    setup=dict(device=torch.device("cpu"), dtype=torch.float),
     order_batch=True,
     compute_full_iip=False,
     compute_rpsnr=True,
     compute_ssim=True,
+    cfg_case=None,
+    setup=dict(device=torch.device("cpu"), dtype=torch.float),
 ):
     import lpips  # lazily import this only if report is used.
 
     lpips_scorer = lpips.LPIPS(net="alex", verbose=False).to(**setup)
 
-    dm = torch.as_tensor(server_payload["data"].mean, **setup)[None, :, None, None]
-    ds = torch.as_tensor(server_payload["data"].std, **setup)[None, :, None, None]
+    metadata = server_payload[0]["metadata"]
+    if hasattr(metadata, "mean"):
+        dm = torch.as_tensor(metadata.mean, **setup)[None, :, None, None]
+        ds = torch.as_tensor(metadata.std, **setup)[None, :, None, None]
+    else:
+        dm, ds = torch.tensor(0, **setup), torch.tensor(1, **setup)
     model.to(**setup)
 
     rec_denormalized = torch.clamp(reconstructed_user_data["data"].to(**setup) * ds + dm, 0, 1)
@@ -42,18 +46,21 @@ def report(
     else:
         order = None
 
-    if any(reconstructed_user_data["labels"].sort()[0] != true_user_data["labels"]):
-        found_labels = 0
-        label_pool = true_user_data["labels"].clone().tolist()
-        for label in reconstructed_user_data["labels"]:
-            if label in label_pool:
-                found_labels += 1
-                label_pool.remove(label)
+    if reconstructed_user_data["labels"] is not None:
+        if any(reconstructed_user_data["labels"].sort()[0] != true_user_data["labels"]):
+            found_labels = 0
+            label_pool = true_user_data["labels"].clone().tolist()
+            for label in reconstructed_user_data["labels"]:
+                if label in label_pool:
+                    found_labels += 1
+                    label_pool.remove(label)
 
-        log.info(f"Label recovery was sucessfull in {found_labels} cases.")
-        test_label_acc = found_labels / len(true_user_data["labels"])
+            log.info(f"Label recovery was sucessfull in {found_labels} cases.")
+            test_label_acc = found_labels / len(true_user_data["labels"])
+        else:
+            test_label_acc = 1
     else:
-        test_label_acc = 1
+        test_label_acc = 0
 
     test_mse = (rec_denormalized - ground_truth_denormalized).pow(2).mean().item()
     test_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1).item()
@@ -68,8 +75,9 @@ def report(
     else:
         test_rpsnr = float("nan")
 
-    # Compute IIP score if a dataloader is passed:
-    if dataloader is not None:
+    # Compute IIP score if data config is passed:
+    if cfg_case is not None:
+        dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=None, return_full_dataset=True)
         if compute_full_iip:
             scores = ["pixel", "lpips", "self"]
         else:
@@ -81,7 +89,7 @@ def report(
         iip_scores = dict(none=float("NaN"))
 
     feat_mse = 0.0
-    for idx, payload in enumerate(server_payload["queries"]):
+    for idx, payload in enumerate(server_payload):
         parameters = payload["parameters"]
         buffers = payload["buffers"]
 

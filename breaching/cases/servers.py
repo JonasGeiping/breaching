@@ -2,6 +2,7 @@
 
 
 import torch
+import copy
 from .malicious_modifications import ImprintBlock, RecoveryOptimizer, SparseImprintBlock, OneShotBlock
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
 
@@ -370,3 +371,14 @@ class MaliciousParameterServer(HonestServer):
 
         # Then do fun things:
         self.parameter_algorithm.optimize_recovery()
+
+
+class AnotherMaliciousParameterServer(HonestServer):
+    def __init__(
+        self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device("cpu")), external_dataloader=None
+    ):
+        """Inialize the server settings."""
+        super().__init__(model, loss, cfg_case, setup, external_dataloader)
+        self.model_state = "custom"  # Do not mess with model parameters no matter what init is agreed upon
+        self.secrets = dict()
+        self.original_model = copy.deepcopy(model)

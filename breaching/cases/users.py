@@ -130,10 +130,10 @@ class UserSingleStep(torch.nn.Module):
                 self.model.train()
 
         def _compute_batch_gradient(data):
-            data["inputs"] = (
-                data["inputs"] + self.generator_input.sample(data["inputs"].shape)
+            data[self.data_key] = (
+                data[self.data_key] + self.generator_input.sample(data[self.data_key].shape)
                 if self.generator_input is not None
-                else data["inputs"]
+                else data[self.data_key]
             )
             outputs = self.model(**data)
             loss = self.loss(outputs, data["labels"])
@@ -165,7 +165,7 @@ class UserSingleStep(torch.nn.Module):
         shared_data = dict(
             gradients=shared_grads, buffers=shared_buffers if self.provide_buffers else None, metadata=metadata
         )
-        true_user_data = dict(data=data["inputs"], labels=data["labels"], buffers=shared_buffers)
+        true_user_data = dict(data=data[self.data_key], labels=data["labels"], buffers=shared_buffers)
 
         return shared_data, true_user_data
 
@@ -204,6 +204,8 @@ class UserSingleStep(torch.nn.Module):
             data[key] = torch.cat([d[key] for d in data_blocks], dim=0)[: self.num_data_points].to(
                 device=self.setup["device"]
             )
+        # This is "inputs" for many vision models but can be "input_ids" for some language stuff:
+        self.data_key = "inputs" if "inputs" in data.keys() else "input_ids"
 
         return data
 
@@ -314,10 +316,10 @@ class UserMultiStep(UserSingleStep):
 
             optimizer.zero_grad()
             # Compute the forward pass
-            data["inputs"] = (
-                data["inputs"] + self.generator_input.sample(data["inputs"].shape)
+            data[self.data_key] = (
+                data[self.data_key] + self.generator_input.sample(data[self.data_key].shape)
                 if self.generator_input is not None
-                else data["inputs"]
+                else data[self.data_key]
             )
             outputs = self.model(**data)
             loss = self.loss(outputs, data["labels"])
@@ -349,11 +351,12 @@ class UserMultiStep(UserSingleStep):
             )
             if self.provide_local_hyperparams
             else None,
+            data_key=self.data_key,
         )
         shared_data = dict(
             gradients=shared_grads, buffers=shared_buffers if self.provide_buffers else None, metadata=metadata
         )
-        true_user_data = dict(data=user_data["inputs"], labels=user_data["labels"], buffers=shared_buffers)
+        true_user_data = dict(data=user_data[self.data_key], labels=user_data["labels"], buffers=shared_buffers)
 
         return shared_data, true_user_data
 

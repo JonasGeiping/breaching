@@ -149,7 +149,7 @@ class TotalVariation(torch.nn.Module):
     def __repr__(self):
         return (
             f"Total Variation, scale={self.scale}. p={self.inner_exp} q={self.outer_exp}. "
-            f"{'Color TV: double oppponents (double opp.)' if self.double_opponents else ''}"
+            f"{'Color TV: double oppponents' if self.double_opponents else ''}"
         )
 
 

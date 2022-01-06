@@ -148,8 +148,8 @@ class TransformerModel(nn.Module):
         super(TransformerModel, self).__init__()
         self.model_type = "Transformer"
         self.src_mask = None
-        # self.pos_encoder = PositionalEncoding(ninp, dropout)
-        self.pos_encoder = LearnablePositionalEmbedding(ninp, dropout=dropout)
+        self.pos_encoder = PositionalEncoding(ninp, dropout)
+        # self.pos_encoder = LearnablePositionalEmbedding(ninp, dropout=dropout)
         encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid, dropout, batch_first=True)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.encoder = nn.Embedding(ntokens, ninp)
@@ -169,7 +169,8 @@ class TransformerModel(nn.Module):
         nn.init.zeros_(self.decoder.weight)
         nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
-    def forward(self, inputs, has_mask=False, **kwargs):
+    def forward(self, inputs, has_mask=False, input_embeds=None, **kwargs):
+        """Can utilize input embeddings directly instead of inputs."""
         if has_mask:
             device = inputs.device
             if self.src_mask is None or self.src_mask.shape[1] != inputs.shape[1]:
@@ -178,7 +179,10 @@ class TransformerModel(nn.Module):
         else:
             self.src_mask = None
 
-        inputs = self.encoder(inputs) * math.sqrt(self.ninp)
+        if input_embeds is None:
+            inputs = self.encoder(inputs) * math.sqrt(self.ninp)
+        else:
+            inputs = input_embeds * math.sqrt(self.ninp)
         inputs = self.pos_encoder(inputs)
         output = self.transformer_encoder(inputs, self.src_mask)
         output = self.decoder(output)

@@ -1,6 +1,7 @@
 name: shakespeare
 modality: text
 task: causal-lm
+mlm_probability: 0 # only used when task=masked-lm
 
 path: "~/data"
 size: 16_068

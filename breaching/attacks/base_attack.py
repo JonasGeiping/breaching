@@ -43,6 +43,9 @@ class _BaseAttacker:
         """Basic startup common to many reconstruction methods."""
         stats = defaultdict(list)
 
+        shared_data = shared_data.copy()  # Shallow copy is enough
+        server_payload = server_payload.copy()
+
         # Load preprocessing constants:
         metadata = server_payload[0]["metadata"]
         self.data_shape = metadata.shape
@@ -56,7 +59,7 @@ class _BaseAttacker:
         rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data)
         shared_data = self._cast_shared_data(shared_data)
         if metadata["modality"] == "text":
-            rec_models = self._prepare_for_text_data(shared_data, rec_models)
+            rec_models, shared_data = self._prepare_for_text_data(shared_data, rec_models)
         self._rec_models = rec_models
         # Consider label information
         if shared_data[0]["metadata"]["labels"] is None:
@@ -95,7 +98,7 @@ class _BaseAttacker:
         # This can be relaxed to [0,1] constraints and solved with convex programming tricks
         # The Relaxation can be constructed over the Subset of tokens with non-zero gradients
         # Basic model (as also seen in DLG): Optimize in embedding space
-        return rec_models
+        return rec_models, shared_data
 
     def _postprocess_text_data(self, reconstructed_user_data):
         """Post-process text data to recover tokens."""
@@ -125,8 +128,8 @@ class _BaseAttacker:
             recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])[:, None, :]
             active_embedding_ids = self.embeddings[0]["grads"].norm(dim=1).nonzero().squeeze()
             true_embeddings = self.embeddings[0]["module"].weight[None, active_embedding_ids, :]
-
-            recovered_tokens = _max_similarity(recovered_embeddings, true_embeddings).view(*base_shape)
+            matches = _max_similarity(recovered_embeddings, true_embeddings)
+            recovered_tokens = active_embedding_ids[matches].view(*base_shape)
 
         reconstructed_user_data["data"] = recovered_tokens
         return reconstructed_user_data

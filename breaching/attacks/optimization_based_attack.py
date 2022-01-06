@@ -198,7 +198,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
         optimal_solution = candidate_solutions[optimal_index]
         stats["opt_value"] = optimal_val.item()
         if optimal_val.isfinite():
-            log.info(f"Optimal condidate solution with rec. loss {optimal_val.item():2.4f} selected.")
+            log.info(f"Optimal candidate solution with rec. loss {optimal_val.item():2.4f} selected.")
             return optimal_solution
         else:
             log.info("No valid reconstruction could be found.")

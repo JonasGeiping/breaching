@@ -1,7 +1,7 @@
 """Simple report function based on PSNR and maybe SSIM and maybe better ideas..."""
 import torch
 
-
+import re
 from .metrics import psnr_compute, registered_psnr_compute, image_identifiability_precision, cw_ssim
 from ..cases import construct_dataloader
 
@@ -11,6 +11,136 @@ log = logging.getLogger(__name__)
 
 
 def report(
+    reconstructed_user_data,
+    true_user_data,
+    server_payload,
+    model,
+    order_batch=True,
+    compute_full_iip=False,
+    compute_rpsnr=True,
+    compute_ssim=True,
+    cfg_case=None,
+    setup=dict(device=torch.device("cpu"), dtype=torch.float),
+):
+    model.to(**setup)
+    metadata = server_payload[0]["metadata"]
+    if metadata["modality"] == "text":
+        modality_metrics = _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, cfg_case)
+    else:
+        modality_metrics = _run_vision_metrics(
+            reconstructed_user_data,
+            true_user_data,
+            server_payload,
+            model,
+            order_batch,
+            compute_full_iip,
+            compute_rpsnr,
+            compute_ssim,
+            cfg_case,
+            setup,
+        )
+    if reconstructed_user_data["labels"] is not None:
+        if any(reconstructed_user_data["labels"].view(-1).sort()[0] != true_user_data["labels"].view(-1)):
+            found_labels = 0
+            label_pool = true_user_data["labels"].view(-1).clone().tolist()
+            for label in reconstructed_user_data["labels"].view(-1):
+                if label in label_pool:
+                    found_labels += 1
+                    label_pool.remove(label)
+
+            log.info(f"Label recovery was sucessfull in {found_labels} cases.")
+            test_label_acc = found_labels / len(true_user_data["labels"])
+        else:
+            test_label_acc = 1
+    else:
+        test_label_acc = 0
+
+    feat_mse = 0.0
+    for idx, payload in enumerate(server_payload):
+        parameters = payload["parameters"]
+        buffers = payload["buffers"]
+
+        with torch.no_grad():
+            for param, server_state in zip(model.parameters(), parameters):
+                param.copy_(server_state.to(**setup))
+            if buffers is not None:
+                for buffer, server_state in zip(model.buffers(), buffers):
+                    buffer.copy_(server_state.to(**setup))
+            else:
+                for buffer, user_state in zip(model.buffers(), true_user_data["buffers"][idx]):
+                    buffer.copy_(user_state.to(**setup))
+
+            # Compute the forward passes
+            feats_rec = model(reconstructed_user_data["data"].to(device=setup["device"]))
+            feats_true = model(true_user_data["data"].to(device=setup["device"]))
+            relevant_features = true_user_data["labels"]
+            feat_mse += (feats_rec - feats_true)[..., relevant_features.view(-1)].pow(2).mean().item()
+
+    # Record model parameters:
+    parameters = sum([p.numel() for p in model.parameters()])
+
+    if metadata["modality"] == "text":
+        m = modality_metrics
+        log.info(
+            f"METRICS: | Accuracy: {m['accuracy']:2.4f} | BLEU: {m['bleu']:4.2f} | FMSE: {feat_mse:2.4e} | " + "\n"
+            f" G-BLEU: {m['google_bleu']:4.2f} | ROUGE1: {m['rouge1']:4.2f}| ROUGE2: {m['rouge2']:4.2f} "
+            f"| Word Acc: {test_label_acc:2.2%}"
+        )
+    else:
+        m = modality_metrics
+        iip_scoring = " | ".join([f"{k}: {v:5.2%}" for k, v in m.items() if "IIP" in k])
+        log.info(
+            f"METRICS: | MSE: {m['mse']:2.4f} | PSNR: {m['psnr']:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {m['lpips']:4.2f}|"
+            + "\n"
+            f" R-PSNR: {m['rpsnr']:4.2f} | {iip_scoring} | SSIM: {m['ssim']:2.4f} | "
+            f"max R-PSNR: {m['max_rpsnr']:4.2f} | max SSIM: {m['max_ssim']:2.4f} | Label Acc: {test_label_acc:2.2%}"
+        )
+
+    metrics = dict(**modality_metrics, feat_mse=feat_mse, parameters=parameters, label_acc=test_label_acc,)
+    return metrics
+
+
+def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, cfg_case):
+    import datasets
+    from ..cases.data.datasets_text import _get_tokenizer
+
+    candidate_metrics = ["accuracy", "bleu", "rouge", "google_bleu", "sacrebleu"]
+    metrics = {name: datasets.load_metric(name) for name in candidate_metrics}
+
+    tokenizer = _get_tokenizer(server_payload[0]["metadata"]["tokenizer"], cache_dir=cfg_case.data.path)
+
+    text_metrics = dict()
+    # Accuracy:
+    for rec_example, ref_example in zip(reconstructed_user_data["data"], true_user_data["data"]):
+        metrics["accuracy"].add_batch(predictions=rec_example, references=ref_example)
+    text_metrics["accuracy"] = metrics["accuracy"].compute()["accuracy"]
+
+    for name in ["bleu", "google_bleu"]:
+        # Metrics that operate on lists of words [re-encoded into word-level to reduce tokenizer impact]
+        RE_split = r"[\w']+"
+        rec_sent_words = [
+            re.findall(RE_split, sentence) for sentence in tokenizer.batch_decode(reconstructed_user_data["data"])
+        ]
+        ref_sent_words = [re.findall(RE_split, sentence) for sentence in tokenizer.batch_decode(true_user_data["data"])]
+        num_sentences = len(rec_sent_words)
+        score = metrics[name].compute(predictions=rec_sent_words, references=[ref_sent_words] * num_sentences)
+        text_metrics[name] = score[name]
+
+    for name in ["sacrebleu", "rouge"]:
+        # Metrics that operate on full sentences
+        rec_sentence = tokenizer.batch_decode(reconstructed_user_data["data"])
+        ref_sentence = tokenizer.batch_decode(true_user_data["data"])
+        num_sentences = len(rec_sentence)
+        score = metrics[name].compute(predictions=rec_sentence, references=[ref_sent_words] * num_sentences)
+        if name == "sacrebleu":
+            text_metrics[name] = score["score"]
+        else:
+            text_metrics["rouge1"] = score["rouge1"].mid.fmeasure
+            text_metrics["rouge2"] = score["rouge2"].mid.fmeasure
+    return text_metrics
+
+
+def _run_vision_metrics(
     reconstructed_user_data,
     true_user_data,
     server_payload,
@@ -32,7 +162,6 @@ def report(
         ds = torch.as_tensor(metadata.std, **setup)[None, :, None, None]
     else:
         dm, ds = torch.tensor(0, **setup), torch.tensor(1, **setup)
-    model.to(**setup)
 
     rec_denormalized = torch.clamp(reconstructed_user_data["data"].to(**setup) * ds + dm, 0, 1)
     ground_truth_denormalized = torch.clamp(true_user_data["data"].to(**setup) * ds + dm, 0, 1)
@@ -46,34 +175,20 @@ def report(
     else:
         order = None
 
-    if reconstructed_user_data["labels"] is not None:
-        if any(reconstructed_user_data["labels"].sort()[0] != true_user_data["labels"]):
-            found_labels = 0
-            label_pool = true_user_data["labels"].clone().tolist()
-            for label in reconstructed_user_data["labels"]:
-                if label in label_pool:
-                    found_labels += 1
-                    label_pool.remove(label)
-
-            log.info(f"Label recovery was sucessfull in {found_labels} cases.")
-            test_label_acc = found_labels / len(true_user_data["labels"])
-        else:
-            test_label_acc = 1
-    else:
-        test_label_acc = 0
-
-    test_mse = (rec_denormalized - ground_truth_denormalized).pow(2).mean().item()
-    test_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1).item()
-    test_ssim = cw_ssim(rec_denormalized, ground_truth_denormalized, scales=5).item()
+    mse_score = (rec_denormalized - ground_truth_denormalized).pow(2).mean(dim=[1, 2, 3])
+    avg_mse, max_mse = mse_score.mean().item(), mse_score.max().item()
+    avg_psnr, max_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1)
+    avg_ssim, max_ssim = cw_ssim(rec_denormalized, ground_truth_denormalized, scales=5)
 
     # Hint: This part switches to the lpips [-1, 1] normalization:
-    test_lpips = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True).mean().item()
+    lpips_score = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True)
+    avg_lpips, max_lpips = lpips_score.mean().item(), lpips_score.max().item()
 
     # Compute registered psnr. This is a bit computationally intensive:
     if compute_rpsnr:
-        test_rpsnr = registered_psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1).item()
+        avg_rpsnr, max_rpsnr = registered_psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1)
     else:
-        test_rpsnr = float("nan")
+        avg_rpsnr, max_rpsnr = float("nan"), float("nan")
 
     # Compute IIP score if data config is passed:
     if cfg_case is not None:
@@ -88,51 +203,18 @@ def report(
     else:
         iip_scores = dict(none=float("NaN"))
 
-    feat_mse = 0.0
-    for idx, payload in enumerate(server_payload):
-        parameters = payload["parameters"]
-        buffers = payload["buffers"]
-
-        with torch.no_grad():
-            for param, server_state in zip(model.parameters(), parameters):
-                param.copy_(server_state.to(**setup))
-            if buffers is not None:
-                for buffer, server_state in zip(model.buffers(), buffers):
-                    buffer.copy_(server_state.to(**setup))
-            else:
-                for buffer, user_state in zip(model.buffers(), true_user_data["buffers"][idx]):
-                    buffer.copy_(user_state.to(**setup))
-
-            # Compute the forward passes
-            feats_rec = model(reconstructed_user_data["data"].to(**setup))
-            feats_true = model(true_user_data["data"].to(**setup))
-            relevant_features = true_user_data["labels"]
-            feat_mse += (feats_rec - feats_true)[range(len(relevant_features)), relevant_features].pow(2).mean().item()
-
-    # Record model parameters:
-    parameters = sum([p.numel() for p in model.parameters()])
-
-    # Print report:
-    iip_scoring = " | ".join([f"IIP-{k}: {v:5.2%}" for k, v in iip_scores.items()])
-    log.info(
-        f"METRICS: | MSE: {test_mse:2.4f} | PSNR: {test_psnr:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {test_lpips:4.2f}|"
-        + "\n"
-        f" R-PSNR: {test_rpsnr:4.2f} | {iip_scoring} | SSIM: {test_ssim:2.4f} | Label Acc: {test_label_acc:2.2%}"
-    )
-
-    metrics = dict(
-        mse=test_mse,
-        psnr=test_psnr,
-        feat_mse=feat_mse,
-        lpips=test_lpips,
-        rpsnr=test_rpsnr,
-        ssim=test_ssim,
+    vision_metrics = dict(
+        mse=avg_mse,
+        psnr=avg_psnr,
+        lpips=avg_lpips,
+        rpsnr=avg_rpsnr,
+        ssim=avg_ssim,
+        max_ssim=max_ssim,
+        max_rpsnr=max_rpsnr,
         order=order,
         **{f"IIP-{k}": v for k, v in iip_scores.items()},
-        parameters=parameters,
-        label_acc=test_label_acc,
     )
-    return metrics
+    return vision_metrics
 
 
 def compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalized, setup):

@@ -4,7 +4,7 @@ from functools import partial
 import warnings
 
 
-def cw_ssim(img_batch, ref_batch, scales=5, skip_scales=None, K=1e-6):
+def cw_ssim(img_batch, ref_batch, scales=5, skip_scales=None, K=1e-6, reduction="mean"):
     """Batched complex wavelet structural similarity.
 
     As in Zhou Wang and Eero P. Simoncelli, "TRANSLATION INSENSITIVE IMAGE SIMILARITY IN COMPLEX WAVELET DOMAIN"
@@ -46,8 +46,9 @@ def cw_ssim(img_batch, ref_batch, scales=5, skip_scales=None, K=1e-6):
             square_ref = (yc * yc.conj()).abs().sum(dim=2)
 
             ssim_val = (2 * conj_product + K) / (square_img + square_ref + K)
-            ssim += ssim_val.mean()
-    return ssim / total_scales
+            ssim += ssim_val.mean(dim=[1, 2, 3])
+    ssim = ssim / total_scales
+    return ssim.mean().item(), ssim.max().item()
 
 
 def gradient_uniqueness(model, loss_fn, user_data, server_payload, setup, query=0, fudge=1e-7):
@@ -117,11 +118,12 @@ def psnr_compute(img_batch, ref_batch, batched=False, factor=1.0, clip=False):
         B = img_batch.shape[0]
         mse_per_example = ((img_batch.detach() - ref_batch) ** 2).view(B, -1).mean(dim=1)
         if any(mse_per_example == 0):
-            return torch.tensor(float("inf"), device=img_batch.device)
+            return [torch.tensor(float("inf"), device=img_batch.device)] * 2
         elif not all(torch.isfinite(mse_per_example)):
-            return torch.tensor(float("nan"), device=img_batch.device)
+            return [torch.tensor(float("nan"), device=img_batch.device)] * 2
         else:
-            return (10 * torch.log10(factor ** 2 / mse_per_example)).mean()
+            psnr_per_example = 10 * torch.log10(factor ** 2 / mse_per_example)
+            return psnr_per_example.mean().item(), psnr_per_example.max().item()
 
 
 def registered_psnr_compute(img_batch, ref_batch, factor=1.0):
@@ -156,7 +158,8 @@ def _registered_psnr_compute_kornia(img_batch, ref_batch, factor=1.0):
         registered_psnrs += [10 * torch.log10(factor ** 2 / mse)]
 
     # Return best of default and warped PSNR:
-    return torch.stack([torch.stack(default_psnrs), torch.stack(registered_psnrs)]).max(dim=0)[0].mean()
+    result = torch.stack([torch.stack(default_psnrs), torch.stack(registered_psnrs)]).max(dim=0)[0]
+    return result.mean().item(), result.max().item()
 
 
 def _registered_psnr_compute_kornia_loftr(img_batch, ref_batch, factor=1.0):

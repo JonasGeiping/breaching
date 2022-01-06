@@ -41,12 +41,11 @@ class OptimizationJointAttacker(OptimizationBasedAttacker):
 
     def _recover_label_information(self, user_data, server_payload, rec_models, embedding_grads=None):
         num_data_points = user_data[0]["metadata"]["num_data_points"]
-        num_classes = user_data[0]["gradients"][-1].shape[0]
-        if server_payload[0]["metadata"]["task"] == "classification":
-            label_candidate = self._initialize_data([num_data_points, num_classes])
+        metadata = server_payload[0]["metadata"]
+        if metadata["task"] == "classification":
+            label_candidate = self._initialize_data([num_data_points, metadata.classes])
         else:  # segmentation type in_shape->out_shape tasks
-
-            label_candidate = self._initialize_data([num_data_points, self.data_shape[0], num_classes])
+            label_candidate = self._initialize_data([num_data_points, self.data_shape[0], metadata.vocab_size])
         return label_candidate
 
     def reconstruct(self, server_payload, shared_data, server_secrets=None, initial_data=None, dryrun=False):

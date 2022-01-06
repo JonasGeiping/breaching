@@ -20,11 +20,10 @@ class CausalLoss(torch.nn.Module):
             shift_labels = outputs[..., 1:].contiguous()
         elif labels.dtype == torch.long:
             shift_labels = labels[..., 1:].contiguous().view(-1)
-            shift_logits = shift_logits.view(-1, shift_logits.shape[-1])
         else:
-            shift_labels = labels[..., 1:, :]
+            shift_labels = labels[..., 1:, :].contiguous().view(-1, labels.shape[-1])
         # Flatten the tokens
-        return self.loss_fct(shift_logits, shift_labels)
+        return self.loss_fct(shift_logits.view(-1, shift_logits.shape[-1]), shift_labels)
 
 
 class MLMLoss(torch.nn.Module):
@@ -34,6 +33,10 @@ class MLMLoss(torch.nn.Module):
         self.vocab_size = vocab_size
 
     def forward(self, outputs: torch.Tensor, labels: torch.Tensor):
-        """Not sure if this needs to be its own function."""
+        """Make sure to handle both soft labels and numeric targets."""
         # Flatten the tokens
-        return self.loss_fct(outputs.view(-1, self.vocab_size), labels.view(-1))
+        if labels.dtype == torch.long:
+            labels = labels.view(-1)
+        else:
+            labels = labels.view(-1, self.vocab_size)
+        return self.loss_fct(outputs.view(-1, self.vocab_size), labels)

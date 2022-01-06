@@ -75,15 +75,19 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
 
 
 class HuggingFaceContainer(torch.nn.Module):
-    """Wrap huggingface models for a unified interface."""
+    """Wrap huggingface models for a unified interface. Ugh."""
 
     def __init__(self, model):
         super().__init__()
         self.model = model
 
-    def forward(self, **kwargs):
+    def forward(self, *args, **kwargs):
         if "inputs" in kwargs:
-            kwargs["input_ids"] = kwargs["inputs"].pop()
+            kwargs["input_ids"] = kwargs.pop("inputs")
+        if "input_ids" not in kwargs:
+            kwargs["input_ids"] = args[0]
+        if kwargs["input_ids"].dtype != torch.long:
+            kwargs["inputs_embeds"] = kwargs.pop("input_ids")
         outputs = self.model(**kwargs)
         return outputs["logits"]
 

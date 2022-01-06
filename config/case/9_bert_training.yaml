@@ -1,0 +1,17 @@
+name: bert_training
+
+defaults:
+  - data: shakespeare
+  - impl: default
+  - server: honest-but-curious
+  - user: local_gradient
+data:
+  tokenizer: bert-base-uncased
+  task: masked-lm
+  vocab_size: 30522
+  mlm_probability: 0.9
+
+model: bert-base-uncased
+
+# Server and user:
+num_queries: 1

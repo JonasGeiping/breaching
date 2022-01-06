@@ -67,11 +67,24 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
         try:
             from transformers import AutoModelForMaskedLM
 
-            # Make sure to use the matching tokenizer!
-            model = AutoModelForMaskedLM.from_pretrained(cfg_model)
+            # Make sure to use the matching tokenizer and vocab_size!
+            model = HuggingFaceContainer(AutoModelForMaskedLM.from_pretrained(cfg_model))
         except OSError as error_msg:
             raise ValueError(f"Invalid huggingface model {cfg_model} given: {error_msg}")
     return model
+
+
+class HuggingFaceContainer(torch.nn.Module):
+    """Wrap huggingface models for a unified interface."""
+
+    def __init__(self, model):
+        self.model = model
+
+    def forward(self, **kwargs):
+        if "inputs" in kwargs:
+            kwargs["input_ids"] = kwargs["inputs"].pop()
+        outputs = self.model(**kwargs)
+        return outputs["logits"]
 
 
 class VisionContainer(torch.nn.Module):

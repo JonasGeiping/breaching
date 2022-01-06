@@ -12,6 +12,7 @@ from ..common import optimizer_lookup
 import logging
 
 log = logging.getLogger(__name__)
+embedding_layer_names = ["encoding.weight", "word_embeddings.weight"]
 
 
 class _BaseAttacker:
@@ -81,12 +82,18 @@ class _BaseAttacker:
             self.embeddings = []
             for model, data in zip(rec_models, shared_data):
                 name_to_idx = dict(zip([n for n, _ in model.named_parameters()], range(len(data["gradients"]))))
-                embedding_position = name_to_idx["encoder.weight"]  # todo: generalize this in a robust way
+
+                for name in embedding_layer_names:
+                    for key in name_to_idx.keys():
+                        if name in key:
+                             embedding_position = name_to_idx[key]  # todo: generalize this in a robuster way
                 # only remove embeddings on the top level
                 for child_name, child in model.named_children():
                     if isinstance(child, torch.nn.Embedding):
                         self.embeddings.append(dict(module=child, grads=data["gradients"].pop(embedding_position)))
                         setattr(model, child_name, torch.nn.Identity())
+                        break
+
             # Adjust data shape
             _, token_embedding_dim = self.embeddings[0]["module"].weight.shape
             self.data_shape = [*self.data_shape, token_embedding_dim]

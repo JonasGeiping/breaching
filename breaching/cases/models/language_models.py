@@ -16,8 +16,8 @@ class LinearModel(torch.nn.Module):
         self.encoder = torch.nn.Embedding(vocab_size, embedding_size)
         self.decoder = torch.nn.Linear(embedding_size, vocab_size)
 
-    def forward(self, inputs, *args, **kwargs):
-        return self.decoder(self.encoder(inputs))
+    def forward(self, input_ids, *args, **kwargs):
+        return self.decoder(self.encoder(input_ids))
 
 
 class RNNModel(nn.Module):
@@ -64,8 +64,8 @@ class RNNModel(nn.Module):
         nn.init.zeros_(self.decoder.weight)
         nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
-    def forward(self, inputs, hiddens, **kwargs):
-        emb = self.drop(self.encoder(inputs))
+    def forward(self, input_ids, hiddens, **kwargs):
+        emb = self.drop(self.encoder(input_ids))
         output, hidden = self.rnn(emb, hiddens)
         output = self.drop(output)
         decoded = self.decoder(output)
@@ -169,18 +169,18 @@ class TransformerModel(nn.Module):
         nn.init.zeros_(self.decoder.weight)
         nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
-    def forward(self, inputs, has_mask=False, input_embeds=None, **kwargs):
+    def forward(self, input_ids, has_mask=False, input_embeds=None, **kwargs):
         """Can utilize input embeddings directly instead of inputs."""
         if has_mask:
-            device = inputs.device
-            if self.src_mask is None or self.src_mask.shape[1] != inputs.shape[1]:
-                mask = self._generate_square_subsequent_mask(inputs.shape[1]).to(device)
+            device = input_ids.device
+            if self.src_mask is None or self.src_mask.shape[1] != input_ids.shape[1]:
+                mask = self._generate_square_subsequent_mask(input_ids.shape[1]).to(device)
                 self.src_mask = mask
         else:
             self.src_mask = None
 
         if input_embeds is None:
-            inputs = self.encoder(inputs) * math.sqrt(self.ninp)
+            inputs = self.encoder(input_ids) * math.sqrt(self.ninp)
         else:
             inputs = input_embeds * math.sqrt(self.ninp)
         inputs = self.pos_encoder(inputs)

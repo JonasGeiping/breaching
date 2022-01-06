@@ -12,7 +12,7 @@ from ..common import optimizer_lookup
 import logging
 
 log = logging.getLogger(__name__)
-embedding_layer_names = ["encoding.weight", "word_embeddings.weight"]
+embedding_layer_names = ["encoder.weight", "word_embeddings.weight"]
 
 
 class _BaseAttacker:
@@ -86,16 +86,28 @@ class _BaseAttacker:
                 for name in embedding_layer_names:
                     for key in name_to_idx.keys():
                         if name in key:
-                             embedding_position = name_to_idx[key]  # todo: generalize this in a robuster way
-                # only remove embeddings on the top level
-                for child_name, child in model.named_children():
-                    if isinstance(child, torch.nn.Embedding):
-                        self.embeddings.append(dict(module=child, grads=data["gradients"].pop(embedding_position)))
-                        setattr(model, child_name, torch.nn.Identity())
-                        break
+                            embedding_position = name_to_idx[key]  # todo: generalize this in a robuster way
+
+                self.embeddings.append(
+                    dict(
+                        weight=list(model.parameters())[embedding_position],
+                        grads=data["gradients"].pop(embedding_position),
+                    )
+                )
+                # Recur through model to find the matching module and disable it:
+
+                def replace(model):
+                    for child_name, child in model.named_children():
+                        if isinstance(child, torch.nn.Embedding):
+                            if child.weight is self.embeddings[-1]["weight"]:
+                                setattr(model, child_name, torch.nn.Identity())
+                        else:
+                            replace(child)
+
+                replace(model)
 
             # Adjust data shape
-            _, token_embedding_dim = self.embeddings[0]["module"].weight.shape
+            _, token_embedding_dim = self.embeddings[0]["weight"].shape
             self.data_shape = [*self.data_shape, token_embedding_dim]
         else:
             raise ValueError(f"Invalid text strategy {self.cfg.text_strategy} given.")
@@ -121,7 +133,7 @@ class _BaseAttacker:
             recovered_embeddings = reconstructed_user_data["data"]
             base_shape = recovered_embeddings.shape[0:2]
             recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])[:, None, :]
-            true_embeddings = self.embeddings[0]["module"].weight[None]
+            true_embeddings = self.embeddings[0]["weight"][None]
 
             recovered_tokens = _max_similarity(recovered_embeddings, true_embeddings).view(*base_shape)
 
@@ -134,7 +146,7 @@ class _BaseAttacker:
             base_shape = recovered_embeddings.shape[0:2]
             recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])[:, None, :]
             active_embedding_ids = self.embeddings[0]["grads"].norm(dim=1).nonzero().squeeze()
-            true_embeddings = self.embeddings[0]["module"].weight[None, active_embedding_ids, :]
+            true_embeddings = self.embeddings[0]["weight"][None, active_embedding_ids, :]
             matches = _max_similarity(recovered_embeddings, true_embeddings)
             recovered_tokens = active_embedding_ids[matches].view(*base_shape)
 

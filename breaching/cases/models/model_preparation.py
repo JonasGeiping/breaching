@@ -78,6 +78,7 @@ class HuggingFaceContainer(torch.nn.Module):
     """Wrap huggingface models for a unified interface."""
 
     def __init__(self, model):
+        super().__init__()
         self.model = model
 
     def forward(self, **kwargs):
@@ -144,11 +145,12 @@ def _construct_vision_model(cfg_model, cfg_data, pretrained=True, **kwargs):
             elif "vit_base" in cfg_model:
                 import timm  # lazily import
 
+                # timm models are listed at https://github.com/rwightman/pytorch-image-models/blob/master/results/results-imagenet.csv
                 model = timm.create_model("vit_base_patch16_224", pretrained=pretrained)
             elif "vit_small" in cfg_model:
                 import timm
 
-                model = timm.create_model("vit_base_patch16_224", pretrained=pretrained)
+                model = timm.create_model("vit_small_patch16_224", pretrained=pretrained)
             elif "linear" == cfg_model:
                 input_dim = cfg_data.shape[0] * cfg_data.shape[1] * cfg_data.shape[2]
                 model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(input_dim, classes))

@@ -48,7 +48,7 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
 
     tokenized_dataset = raw_dataset.map(tokenize, batched=True, remove_columns=columns, load_from_cache_file=True)
     tokenized_dataset = tokenized_dataset.map(group_texts, batched=True, load_from_cache_file=True)
-    tokenized_dataset = tokenized_dataset.rename_column("input_ids", "inputs")
+    # tokenized_dataset = tokenized_dataset.rename_column("input_ids", "inputs")
     tokenized_dataset.set_format("torch")
     tokenized_dataset.tokenizer = tokenizer  # Stash here
     # tokenizer.model_max_length = cfg_data.shape[0]

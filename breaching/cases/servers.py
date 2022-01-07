@@ -1,8 +1,10 @@
 """Implement server code. This will be short, if the server is honest."""
 
+import copy
+import numpy as np
+import numbers
 
 import torch
-import copy
 from .malicious_modifications import ImprintBlock, RecoveryOptimizer, SparseImprintBlock, OneShotBlock
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
 
@@ -18,6 +20,8 @@ def construct_server(model, loss_fn, cfg_case, setup):
         server = MaliciousModelServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
     elif cfg_case.server.name == "malicious_parameters":
         server = MaliciousParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
+    elif cfg_case.server.name == "class_malicious_parameters":
+        server = ClassParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
     else:
         raise ValueError(f"Invalid server type {cfg_case.server} given.")
     return server
@@ -373,7 +377,7 @@ class MaliciousParameterServer(HonestServer):
         self.parameter_algorithm.optimize_recovery()
 
 
-class AnotherMaliciousParameterServer(HonestServer):
+class ClassParameterServer(HonestServer):
     def __init__(
         self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device("cpu")), external_dataloader=None
     ):
@@ -382,3 +386,192 @@ class AnotherMaliciousParameterServer(HonestServer):
         self.model_state = "custom"  # Do not mess with model parameters no matter what init is agreed upon
         self.secrets = dict()
         self.original_model = copy.deepcopy(model)
+
+    def reset_model(self):
+        self.model = copy.deepcopy(self.original_model)
+
+    def wrap_indices(self, indices):
+        if isinstance(indices, numbers.Number):
+            return [indices]
+        else:
+            return list(indices)
+    
+    def reconfigure_model(self, model_state, extra_info={}):
+        super().reconfigure_model(model_state)
+        
+        if model_state == 'cls_attack' and 'cls_to_obtain' in extra_info:
+            cls_to_obtain = extra_info['cls_to_obtain']
+            cls_to_obtain = self.wrap_indices(cls_to_obtain)
+
+            with torch.no_grad():
+                *_, l_w, l_b = self.model.parameters()
+
+                # linear weight
+                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                masked_param[cls_to_obtain] = torch.ones_like(l_w[cls_to_obtain], dtype=l_w.dtype) * 0.5
+                l_w.copy_(masked_param.to(**self.setup))
+ 
+                # linear bias
+                masked_param = torch.ones_like(l_b, dtype=l_b.dtype) * 1000
+                masked_param[cls_to_obtain] = l_b[cls_to_obtain]
+                l_b.copy_(masked_param.to(**self.setup))
+
+        if model_state == 'feature_attack' and 'cls_to_obtain' in extra_info and \
+                    'feat_to_obtain' in extra_info:
+            cls_to_obtain = extra_info['cls_to_obtain']
+            feat_to_obtain = extra_info['feat_to_obtain']
+            cls_to_obtain = self.wrap_indices(cls_to_obtain)
+            feat_to_obtain = self.wrap_indices(feat_to_obtain)
+
+            with torch.no_grad():
+                *_, bn_w, bn_b, l_w, l_b = self.model.parameters()
+
+                # # batch norm weight
+                # masked_param = torch.zeros_like(bn_w, dtype=bn_w.dtype)
+                # masked_param[feat_to_obtain] = bn_w[feat_to_obtain]
+                # bn_w.copy_(masked_param.to(**self.setup))
+
+                # # batch norm bias
+                # masked_param = torch.zeros_like(bn_b, dtype=bn_b.dtype)
+                # masked_param[feat_to_obtain] = bn_b[feat_to_obtain]
+                # bn_b.copy_(masked_param.to(**self.setup))
+
+                if 'feat_value' not in extra_info:
+                    # just turn off other features
+                    masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                    masked_param[cls_to_obtain, feat_to_obtain] = torch.ones_like(l_w[cls_to_obtain, feat_to_obtain], 
+                                        dtype=l_w.dtype)
+                    l_w.copy_(masked_param.to(**self.setup))
+                else:
+                    # do gradient amplification
+                    multiplier = extra_info['multiplier']
+                    extra_b = extra_info['extra_b'] if 'extra_b' in extra_info else 0
+                    non_target_logit = extra_info['non_target_logit'] if 'non_target_logit' in extra_info else 0
+                    db_flip = extra_info['db_flip']
+
+                    masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                    masked_param[cls_to_obtain, feat_to_obtain] = torch.ones_like(l_w[cls_to_obtain, feat_to_obtain], 
+                                        dtype=l_w.dtype) * multiplier * db_flip
+                    l_w.copy_(masked_param.to(**self.setup))
+
+                    masked_param = torch.zeros_like(l_b, dtype=l_b.dtype) + non_target_logit
+                    masked_param[cls_to_obtain] = torch.zeros_like(l_b[cls_to_obtain], 
+                                        dtype=l_b.dtype) - extra_info['feat_value'] * multiplier * db_flip + extra_b
+                    l_b.copy_(masked_param.to(**self.setup))
+
+        if model_state == 'db_attack' and 'cls_to_obtain' in extra_info:
+            cls_to_obtain = extra_info['cls_to_obtain']
+            cls_to_obtain = self.wrap_indices(cls_to_obtain)
+            db_multiplier = extra_info['db_multiplier']
+            multiplier = extra_info['multiplier']
+            db_flip = extra_info['db_flip']
+            
+            with torch.no_grad():
+                *_, bn_w, bn_b, l_w, l_b = self.model.parameters()
+
+                # batch norm weight
+                masked_param = bn_w
+                bn_w.copy_(masked_param.to(**self.setup))
+
+                # batch norm bias
+                masked_param = bn_b + l_w[cls_to_obtain[0]] * db_multiplier
+                bn_b.copy_(masked_param.to(**self.setup))
+
+                # linear weight
+                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                masked_param[cls_to_obtain] = l_w[cls_to_obtain] * multiplier * db_flip
+                l_w.copy_(masked_param.to(**self.setup))
+ 
+                # linear bias
+                masked_param = torch.zeros_like(l_b, dtype=l_b.dtype)
+                masked_param[cls_to_obtain] = l_b[cls_to_obtain] * db_flip
+                l_b.copy_(masked_param.to(**self.setup))
+
+    def binary_attack(self, user, extra_info):
+        # now: naive version for two imgs, to be recursively recovering all gradients
+        # make everything neat?
+        server_payload = self.distribute_payload()
+        shared_data, _ = user.compute_local_updates(server_payload)
+        num_data_points = shared_data['num_data_points']
+
+        # get overall gradients
+        extra_info['multiplier'] = 1
+        self.reset_model()
+        self.reconfigure_model('cls_attack', extra_info=extra_info)
+        self.reconfigure_model('feature_attack', extra_info=extra_info)
+        server_payload = self.distribute_payload()
+        shared_data, _ = user.compute_local_updates(server_payload)
+        grad_01 = list(shared_data['gradients'][0])
+
+        # first half
+        extra_info['multiplier'] = 300
+        self.reset_model()
+        self.reconfigure_model('cls_attack', extra_info=extra_info)
+        self.reconfigure_model('feature_attack', extra_info=extra_info)
+        server_payload = self.distribute_payload()
+        shared_data, _ = user.compute_local_updates(server_payload)
+        grad_0 = list(shared_data['gradients'][0])
+        grad_0[:-1] = [grad_ii * num_data_points / extra_info['multiplier'] for grad_ii in grad_0[:-1]]
+
+        # second half
+        grad_1 = copy.deepcopy(grad_0)
+        grad_1[:-1] = [grad_ii * num_data_points - grad_jj for grad_ii, grad_jj in zip(grad_01[:-1], grad_0[:-1])]
+
+        return [grad_0, grad_1]
+
+    def reconstruct_feature(self, shared_data, cls_to_obtain):
+        measured_features = []
+        for shared_grad in shared_data['gradients']:
+            weights = shared_grad[-2]
+            bias = shared_grad[-1]
+            grads_fc_debiased = weights / bias[:, None]
+            features_per_label = []
+            if bias[cls_to_obtain] != 0:
+                features_per_label.append(grads_fc_debiased[cls_to_obtain])
+            else:
+                features_per_label.append(torch.zeros_like(grads_fc_debiased[0]))
+            measured_features.append(torch.stack(features_per_label))
+
+        return measured_features
+
+    def cal_single_gradients(self, attacker, true_user_data, device):    
+        true_data = true_user_data['data']
+        num_data = len(true_data)
+        labels = true_user_data['labels']
+        model = self.model.to(device)
+        
+        single_gradients = []
+        single_losses = []
+
+        for ii in range(num_data):
+            cand_ii = true_data[ii:(ii + 1)]
+            label_ii = labels[ii:(ii + 1)]
+            model.zero_grad()
+            spoofed_loss_ii = attacker.loss_fn(model(cand_ii), label_ii)
+            gradient_ii, _ = attacker.objective._grad_fn_single_step(model, cand_ii, label_ii)
+            gradient_ii = [g_ii.reshape(-1) for g_ii in gradient_ii]
+            gradient_ii = torch.cat(gradient_ii)
+            single_gradients.append(gradient_ii)
+            single_losses.append(spoofed_loss_ii)
+        
+        return single_gradients, single_losses
+
+    def print_gradients_norm(self, singl_gradients, single_losses, which_to_recover, return_results=False):
+        grad_norm = []
+        losses = []
+        
+        if not return_results:
+            print('grad norm         loss')
+
+        for i, gradient_ii in enumerate(singl_gradients):
+            if not return_results:
+                if i == which_to_recover:
+                    print(float(torch.norm(gradient_ii)), float(single_losses[i]), '   target')
+                else:
+                    print(float(torch.norm(gradient_ii)), float(single_losses[i]))
+
+            grad_norm.append(float(torch.norm(gradient_ii)))
+            losses.append(float(single_losses[i]))
+
+        if return_results:
+            return np.array(grad_norm), np.array(losses)

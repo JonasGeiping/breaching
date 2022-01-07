@@ -27,6 +27,7 @@ optim:
   step_size_decay:
   langevin_noise: 0.0
   warmup: 0
+  grad_clip:
 
   callback: 100 # Print objective value every callback many iterations
 

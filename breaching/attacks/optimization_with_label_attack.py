@@ -171,21 +171,29 @@ class OptimizationJointAttacker(OptimizationBasedAttacker):
 
             if total_objective.requires_grad:
                 total_objective.backward(inputs=[candidate, labels], create_graph=False)
-            if self.cfg.optim.langevin_noise > 0:
-                step_size = optimizer.param_groups[0]["lr"]
-                noise_map = torch.randn_like(candidate.grad)
-                candidate.grad += self.cfg.optim.langevin_noise * step_size * noise_map
-                labels.grad += self.cfg.optim.langevin_noise * step_size * torch.randn_like(labels.grad)
-            if self.cfg.optim.signed is not None:
-                if self.cfg.optim.signed == "soft":
-                    scaling_factor = 1 - iteration / self.cfg.optim.max_iterations  # just a simple linear rule for now
-                    candidate.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
-                    labels.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
-                elif self.cfg.optim.signed == "hard":
-                    candidate.grad.sign_()
-                    labels.grad.sign_()
-                else:
-                    pass
+            with torch.no_grad():
+                if self.cfg.optim.langevin_noise > 0:
+                    step_size = optimizer.param_groups[0]["lr"]
+                    noise_map = torch.randn_like(candidate.grad)
+                    candidate.grad += self.cfg.optim.langevin_noise * step_size * noise_map
+                    labels.grad += self.cfg.optim.langevin_noise * step_size * torch.randn_like(labels.grad)
+                if self.cfg.optim.grad_clip is not None:
+                    for element in [candidate, labels]:
+                        grad_norm = element.grad.norm()
+                        if grad_norm > self.cfg.optim.grad_clip:
+                            element.grad.mul_(self.cfg.optim.grad_clip / (grad_norm + 1e-6))
+                if self.cfg.optim.signed is not None:
+                    if self.cfg.optim.signed == "soft":
+                        scaling_factor = (
+                            1 - iteration / self.cfg.optim.max_iterations
+                        )  # just a simple linear rule for now
+                        candidate.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
+                        labels.grad.mul_(scaling_factor).tanh_().div_(scaling_factor)
+                    elif self.cfg.optim.signed == "hard":
+                        candidate.grad.sign_()
+                        labels.grad.sign_()
+                    else:
+                        pass
 
             self.current_task_loss = total_task_loss  # Side-effect this because of L-BFGS closure limitations :<
             return total_objective

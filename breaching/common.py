@@ -9,6 +9,9 @@ def optimizer_lookup(params, optim_name, step_size, scheduler=None, warmup=0, ma
         optimizer = torch.optim.Adam(params, lr=step_size)
     elif optim_name.lower() == "adam-safe":
         optimizer = torch.optim.Adam(params, lr=step_size, betas=(0.5, 0.99), eps=1e-4)
+    elif optim_name.lower() == "bert-adam":
+        # This is "almost" bert adam see more discussion at https://github.com/huggingface/transformers/issues/420
+        optimizer = torch.optim.AdamW(params, lr=step_size, betas=(0.9, 0.999), eps=1e-6, weight_decay=0.01)
     elif optim_name.lower() == "momgd":
         optimizer = torch.optim.SGD(params, lr=step_size, momentum=0.9, nesterov=True)
     elif optim_name.lower() == "gd":

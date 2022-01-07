@@ -103,11 +103,11 @@ class EuclideanTag(GradientLoss):
     the InvertingGradients repo.
     """
 
-    def __init__(self, scale=1.0, task_regularization=0.0, tag_scale=0.0, scale_scheme="linear", **kwargs):
+    def __init__(self, scale=1.0, task_regularization=0.0, tag_scale=0.1, scale_scheme="linear", **kwargs):
         super().__init__()
         self.scale = scale
         self.task_regularization = task_regularization
-        self.tag_scale = 0.1
+        self.tag_scale = tag_scale
         self.scale_scheme = scale_scheme
         self.weights = None
 

@@ -163,10 +163,9 @@ class OptimizationBasedAttacker(_BaseAttacker):
                     noise_map = torch.randn_like(candidate.grad)
                     candidate.grad += self.cfg.optim.langevin_noise * step_size * noise_map
                 if self.cfg.optim.grad_clip is not None:
-                    for element in [candidate, labels]:
-                        grad_norm = element.grad.norm()
+                        grad_norm = candidate.grad.norm()
                         if grad_norm > self.cfg.optim.grad_clip:
-                            element.grad.mul_(self.cfg.optim.grad_clip / (grad_norm + 1e-6))
+                            candidate.grad.mul_(self.cfg.optim.grad_clip / (grad_norm + 1e-6))
                 if self.cfg.optim.signed is not None:
                     if self.cfg.optim.signed == "soft":
                         scaling_factor = (

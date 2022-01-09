@@ -447,7 +447,7 @@ class ClassParameterServer(HonestServer):
                     multiplier = extra_info['multiplier']
                     extra_b = extra_info['extra_b'] if 'extra_b' in extra_info else 0
                     non_target_logit = extra_info['non_target_logit'] if 'non_target_logit' in extra_info else 0
-                    db_flip = extra_info['db_flip']
+                    db_flip = extra_info['db_flip'] if 'db_flip' in extra_info else 1
 
                     masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
                     masked_param[cls_to_obtain, feat_to_obtain] = torch.ones_like(l_w[cls_to_obtain, feat_to_obtain], 
@@ -492,49 +492,125 @@ class ClassParameterServer(HonestServer):
         # make everything neat?
         server_payload = self.distribute_payload()
         shared_data, _ = user.compute_local_updates(server_payload)
-        num_data_points = shared_data['num_data_points']
-
-        # get overall gradients
+        cls_to_obtain = extra_info['cls_to_obtain']
+        feat_to_obtain = extra_info['feat_to_obtain']
+        num_target_data = np.count_nonzero(shared_data['metadata']['labels'].cpu().detach().numpy() == cls_to_obtain)
+        
         extra_info['multiplier'] = 1
         self.reset_model()
         self.reconfigure_model('cls_attack', extra_info=extra_info)
-        self.reconfigure_model('feature_attack', extra_info=extra_info)
         server_payload = self.distribute_payload()
         shared_data, _ = user.compute_local_updates(server_payload)
-        grad_01 = list(shared_data['gradients'][0])
-
-        # first half
+        avg_feature = np.array(torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu())
+        feat_value = avg_feature[feat_to_obtain]
+        
+        # get filter feature points first
         extra_info['multiplier'] = 300
+        all_feat_value = self.binary_attack_helper(user, extra_info, feat_value, 0, num_target_data, 0)
+
+        # recover gradients
+        single_gradients = []
+        prev_grad = None
+        num_data_points = len(shared_data['metadata']['labels'])
+        extra_info['multiplier'] = 300
+
+        for feat_value in all_feat_value:
+            extra_info['feat_value'] = feat_value
+            self.reset_model()
+            self.reconfigure_model('cls_attack', extra_info=extra_info)
+            self.reconfigure_model('feature_attack', extra_info=extra_info)
+            server_payload = self.distribute_payload()
+            shared_data, _ = user.compute_local_updates(server_payload)
+            curr_grad = list(shared_data['gradients'])
+            curr_grad[:-1] = [grad_ii * num_data_points / extra_info['multiplier'] for grad_ii in curr_grad[:-1]]
+
+            if prev_grad:
+                grad_i = [grad_ii - grad_jj for grad_ii, grad_jj in zip(curr_grad, prev_grad)]
+                single_gradients.append(grad_i)
+            else:
+                single_gradients.append(curr_grad)
+                
+            prev_grad = curr_grad
+
+        return single_gradients
+        
+    def binary_attack_helper(self, user, extra_info, feat_01_value, left_feat_value, curr_num, left_num):
+        # now: naive binarily cut the feature, might be smarter to predict the number of datapoints?
+        # on the left hand side
+        target_num = int(curr_num / 2)
+        
+        if target_num == 0:
+            return [feat_01_value]
+
+        # get left and right mid point
+        cls_to_obtain = extra_info['cls_to_obtain']
+        feat_to_obtain = extra_info['feat_to_obtain']
+        extra_info['feat_value'] = feat_01_value
         self.reset_model()
         self.reconfigure_model('cls_attack', extra_info=extra_info)
         self.reconfigure_model('feature_attack', extra_info=extra_info)
         server_payload = self.distribute_payload()
         shared_data, _ = user.compute_local_updates(server_payload)
-        grad_0 = list(shared_data['gradients'][0])
-        grad_0[:-1] = [grad_ii * num_data_points / extra_info['multiplier'] for grad_ii in grad_0[:-1]]
+        feat_0 = np.array(torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu())
+        feat_0_value = feat_0[feat_to_obtain] # the middle includes left hand side
+        feat_0_value = (feat_0_value * (curr_num + left_num - target_num) - left_feat_value * left_num) / target_num
+        feat_1_value = (feat_01_value * curr_num - feat_0_value * target_num) / target_num
 
-        # second half
-        grad_1 = copy.deepcopy(grad_0)
-        grad_1[:-1] = [grad_ii * num_data_points - grad_jj for grad_ii, grad_jj in zip(grad_01[:-1], grad_0[:-1])]
+        # call left
+        if feat_0_value == 0:
+            final_left = []
+        elif feat_0_value == feat_01_value:
+            return [feat_0_value]
+        else:
+            final_left = self.binary_attack_helper(user, extra_info, feat_0_value, left_feat_value, target_num, left_num)
 
-        return [grad_0, grad_1]
+        # call right
+        if feat_1_value == 0:
+            final_left = []
+        elif feat_1_value == feat_01_value:
+            return [feat_1_value]
+        else:
+            new_left_feat_value = (left_feat_value * left_num + feat_0_value * target_num) / (left_num + target_num)
+            final_right = self.binary_attack_helper(user, extra_info, feat_1_value, new_left_feat_value, target_num, left_num + target_num)
+
+        return final_left + final_right
+
+    def order_gradients(self, recovered_single_gradients, gt_single_gradients, setup):
+        from scipy.optimize import linear_sum_assignment
+
+        single_gradients = []
+        num_data = len(gt_single_gradients)
+
+        for grad_i in recovered_single_gradients:
+            single_gradients.append(torch.cat([torch.flatten(i) for i in grad_i]))
+
+        similarity_matrix = torch.zeros(num_data, num_data, **setup)
+        for idx, x in enumerate(single_gradients):
+            for idy, y in enumerate(gt_single_gradients):
+                similarity_matrix[idx, idy] = -torch.nn.CosineSimilarity(dim=0)(x, y).detach()
+
+        try:
+            _, rec_assignment = linear_sum_assignment(similarity_matrix.cpu().numpy(), maximize=False)
+        except ValueError:
+            print(f"ValueError from similarity matrix {similarity_matrix.cpu().numpy()}")
+            print("Returning trivial order...")
+            rec_assignment = list(range(num_data))
+
+        return [recovered_single_gradients[i] for i in rec_assignment]
 
     def reconstruct_feature(self, shared_data, cls_to_obtain):
-        measured_features = []
-        for shared_grad in shared_data['gradients']:
-            weights = shared_grad[-2]
-            bias = shared_grad[-1]
-            grads_fc_debiased = weights / bias[:, None]
-            features_per_label = []
-            if bias[cls_to_obtain] != 0:
-                features_per_label.append(grads_fc_debiased[cls_to_obtain])
-            else:
-                features_per_label.append(torch.zeros_like(grads_fc_debiased[0]))
-            measured_features.append(torch.stack(features_per_label))
+        shared_grad = shared_data['gradients']
 
-        return measured_features
+        weights = shared_grad[-2]
+        bias = shared_grad[-1]
+        grads_fc_debiased = weights / bias[:, None]
 
-    def cal_single_gradients(self, attacker, true_user_data, device):    
+        if bias[cls_to_obtain] != 0:
+            return grads_fc_debiased[cls_to_obtain]
+        else:
+            return torch.zeros_like(grads_fc_debiased[0])
+
+    def cal_single_gradients(self, attacker, true_user_data, device):
         true_data = true_user_data['data']
         num_data = len(true_data)
         labels = true_user_data['labels']
@@ -548,6 +624,7 @@ class ClassParameterServer(HonestServer):
             label_ii = labels[ii:(ii + 1)]
             model.zero_grad()
             spoofed_loss_ii = attacker.loss_fn(model(cand_ii), label_ii)
+            attacker.objective.loss_fn = attacker.loss_fn
             gradient_ii, _ = attacker.objective._grad_fn_single_step(model, cand_ii, label_ii)
             gradient_ii = [g_ii.reshape(-1) for g_ii in gradient_ii]
             gradient_ii = torch.cat(gradient_ii)
@@ -556,7 +633,7 @@ class ClassParameterServer(HonestServer):
         
         return single_gradients, single_losses
 
-    def print_gradients_norm(self, singl_gradients, single_losses, which_to_recover, return_results=False):
+    def print_gradients_norm(self, singl_gradients, single_losses, which_to_recover=-1, return_results=False):
         grad_norm = []
         losses = []
         

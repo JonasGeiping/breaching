@@ -575,7 +575,7 @@ class ClassParameterServer(HonestServer):
 
         return final_left + final_right
 
-    def order_gradients(self, recovered_single_gradients, gt_single_gradients, setup):
+    def order_gradients(self, recovered_single_gradients, gt_single_gradients):
         from scipy.optimize import linear_sum_assignment
 
         single_gradients = []
@@ -584,7 +584,7 @@ class ClassParameterServer(HonestServer):
         for grad_i in recovered_single_gradients:
             single_gradients.append(torch.cat([torch.flatten(i) for i in grad_i]))
 
-        similarity_matrix = torch.zeros(num_data, num_data, **setup)
+        similarity_matrix = torch.zeros(num_data, num_data, **self.setup)
         for idx, x in enumerate(single_gradients):
             for idy, y in enumerate(gt_single_gradients):
                 similarity_matrix[idx, idy] = -torch.nn.CosineSimilarity(dim=0)(x, y).detach()
@@ -610,11 +610,11 @@ class ClassParameterServer(HonestServer):
         else:
             return torch.zeros_like(grads_fc_debiased[0])
 
-    def cal_single_gradients(self, attacker, true_user_data, device):
+    def cal_single_gradients(self, attacker, true_user_data):
         true_data = true_user_data['data']
         num_data = len(true_data)
         labels = true_user_data['labels']
-        model = self.model.to(device)
+        model = self.model.to(**self.setup)
         
         single_gradients = []
         single_losses = []

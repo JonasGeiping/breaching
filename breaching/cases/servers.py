@@ -415,6 +415,33 @@ class ClassParameterServer(HonestServer):
                 masked_param = torch.ones_like(l_b, dtype=l_b.dtype) * 1000
                 masked_param[cls_to_obtain] = l_b[cls_to_obtain]
                 l_b.copy_(masked_param.to(**self.setup))
+        
+        if model_state == 'fishing_attack' and 'cls_to_obtain' in extra_info:
+            cls_to_obtain = extra_info['cls_to_obtain']
+            b_mv = extra_info['b_mv'] if 'b_mv' in extra_info else 0
+            b_mv_non = extra_info['b_mv_non'] if 'b_mv_non' in extra_info else 0
+            cls_to_obtain = self.wrap_indices(cls_to_obtain)
+
+            with torch.no_grad():
+                *_, l_w, l_b = self.model.parameters()
+
+                # linear weight
+                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                masked_param[cls_to_obtain] = l_w[cls_to_obtain]
+                l_w.copy_(masked_param.to(**self.setup))
+ 
+                # linear bias
+                masked_param = torch.ones_like(l_b, dtype=l_b.dtype) * b_mv_non
+                masked_param[cls_to_obtain] = l_b[cls_to_obtain] + b_mv
+                l_b.copy_(masked_param.to(**self.setup))
+
+                *_, l_w, l_b = self.model.parameters()
+                *_, l_w_o, l_b_o = self.original_model.parameters()
+                cls_to_obtain = int(extra_info['cls_to_obtain'])
+                l_w[:cls_to_obtain] = l_w_o[:cls_to_obtain]
+                l_w[cls_to_obtain+1:] = l_w_o[cls_to_obtain+1:]
+                l_b[:cls_to_obtain] = l_b_o[:cls_to_obtain]
+                l_b[cls_to_obtain+1:] = l_b_o[cls_to_obtain+1:]
 
         if model_state == 'feature_attack' and 'cls_to_obtain' in extra_info and \
                     'feat_to_obtain' in extra_info:
@@ -652,3 +679,78 @@ class ClassParameterServer(HonestServer):
 
         if return_results:
             return np.array(grad_norm), np.array(losses)
+
+    def random_transoformation(self, img):
+        import torchvision.transforms as transforms
+        transform = transforms.Compose(
+            [transforms.RandomResizedCrop(img.shape[-2:], scale=(0.5, 1.0)),
+             transforms.RandomHorizontalFlip(p=1),
+             # transforms.RandomVerticalFlip(p=1),
+             transforms.GaussianBlur(3)
+            ])
+        
+        return transform(img)
+
+    class pseudo_dataset:
+        def __init__(self, target_img, dataset_len=2000, num_classes=1000, target_cls=0, prob=2):
+            self.target_img = target_img
+            self.img_size = tuple(target_img.shape[-2:])
+            self.dataset_len = dataset_len
+            self.num_classes = num_classes
+            self.target_cls = target_cls
+            self.prob = prob
+
+        def __len__(self):
+            return self.dataset_len
+
+        def __getitem__(self, idx):
+            prob_label = torch.zeros((self.num_classes))
+
+            if idx % self.prob == 0:
+                target_img = self.target_img
+                prob_label[self.target_cls] = -1
+            else:
+                target_img = torch.rand(self.target_img.shape) * 2 - 1
+                prob_label += 1
+            
+            return target_img, prob_label
+
+
+    def fishing_attack_retrain(self, target_img, target_cls=0, dataset_len=2000):
+        import torch.optim as optim
+        from tqdm import tqdm
+        from torch import nn
+        from torch.utils.data import DataLoader
+
+        # only retraining on the last linear layer
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        *_, l_w, l_b = self.model.parameters()
+        l_w.requires_grad = True
+        l_b.requires_grad = True
+
+        # prepare for training
+        dataset = self.pseudo_dataset(target_img, target_cls=target_cls, dataset_len=dataset_len)
+        dataloader = DataLoader(dataset, batch_size=8, num_workers=4)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.SGD(self.model.parameters(), lr=0.001, momentum=0.9)
+
+        with tqdm(dataloader, unit="batch") as tepoch:
+            running_loss = 0.0
+
+            for i, (inputs, labels) in enumerate(tepoch):
+                inputs, labels = inputs.to(**self.setup), labels.to(**self.setup)
+
+                optimizer.zero_grad()
+                    
+                outputs = self.model(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+
+                running_loss += loss.item()
+                tepoch.set_postfix(loss=running_loss / (i + 1))
+
+        for param in self.model.parameters():
+            param.requires_grad = True

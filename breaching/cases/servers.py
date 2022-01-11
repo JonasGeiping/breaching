@@ -1,5 +1,8 @@
 """Implement server code. This will be short, if the server is honest."""
 
+import copy
+import numpy as np
+import numbers
 
 import torch
 from .malicious_modifications import ImprintBlock, RecoveryOptimizer, SparseImprintBlock, OneShotBlock
@@ -17,6 +20,8 @@ def construct_server(model, loss_fn, cfg_case, setup):
         server = MaliciousModelServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
     elif cfg_case.server.name == "malicious_parameters":
         server = MaliciousParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
+    elif cfg_case.server.name == "class_malicious_parameters":
+        server = ClassParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
     else:
         raise ValueError(f"Invalid server type {cfg_case.server} given.")
     return server
@@ -370,3 +375,385 @@ class MaliciousParameterServer(HonestServer):
 
         # Then do fun things:
         self.parameter_algorithm.optimize_recovery()
+
+
+class ClassParameterServer(HonestServer):
+    def __init__(
+        self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device("cpu")), external_dataloader=None
+    ):
+        """Inialize the server settings."""
+        super().__init__(model, loss, cfg_case, setup, external_dataloader)
+        self.model_state = "custom"  # Do not mess with model parameters no matter what init is agreed upon
+        self.secrets = dict()
+        self.original_model = copy.deepcopy(model)
+
+    def reset_model(self):
+        self.model = copy.deepcopy(self.original_model)
+
+    def wrap_indices(self, indices):
+        if isinstance(indices, numbers.Number):
+            return [indices]
+        else:
+            return list(indices)
+    
+    def reconfigure_model(self, model_state, extra_info={}):
+        super().reconfigure_model(model_state)
+        
+        if model_state == 'cls_attack' and 'cls_to_obtain' in extra_info:
+            cls_to_obtain = extra_info['cls_to_obtain']
+            cls_to_obtain = self.wrap_indices(cls_to_obtain)
+
+            with torch.no_grad():
+                *_, l_w, l_b = self.model.parameters()
+
+                # linear weight
+                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                masked_param[cls_to_obtain] = torch.ones_like(l_w[cls_to_obtain], dtype=l_w.dtype) * 0.5
+                l_w.copy_(masked_param.to(**self.setup))
+ 
+                # linear bias
+                masked_param = torch.ones_like(l_b, dtype=l_b.dtype) * 1000
+                masked_param[cls_to_obtain] = l_b[cls_to_obtain]
+                l_b.copy_(masked_param.to(**self.setup))
+        
+        if model_state == 'fishing_attack' and 'cls_to_obtain' in extra_info:
+            cls_to_obtain = extra_info['cls_to_obtain']
+            b_mv = extra_info['b_mv'] if 'b_mv' in extra_info else 0
+            b_mv_non = extra_info['b_mv_non'] if 'b_mv_non' in extra_info else 0
+            cls_to_obtain = self.wrap_indices(cls_to_obtain)
+
+            with torch.no_grad():
+                *_, l_w, l_b = self.model.parameters()
+
+                # linear weight
+                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                masked_param[cls_to_obtain] = l_w[cls_to_obtain]
+                l_w.copy_(masked_param.to(**self.setup))
+ 
+                # linear bias
+                masked_param = torch.ones_like(l_b, dtype=l_b.dtype) * b_mv_non
+                masked_param[cls_to_obtain] = l_b[cls_to_obtain] + b_mv
+                l_b.copy_(masked_param.to(**self.setup))
+
+                *_, l_w, l_b = self.model.parameters()
+                *_, l_w_o, l_b_o = self.original_model.parameters()
+                cls_to_obtain = int(extra_info['cls_to_obtain'])
+                l_w[:cls_to_obtain] = l_w_o[:cls_to_obtain]
+                l_w[cls_to_obtain+1:] = l_w_o[cls_to_obtain+1:]
+                l_b[:cls_to_obtain] = l_b_o[:cls_to_obtain]
+                l_b[cls_to_obtain+1:] = l_b_o[cls_to_obtain+1:]
+
+        if model_state == 'feature_attack' and 'cls_to_obtain' in extra_info and \
+                    'feat_to_obtain' in extra_info:
+            cls_to_obtain = extra_info['cls_to_obtain']
+            feat_to_obtain = extra_info['feat_to_obtain']
+            cls_to_obtain = self.wrap_indices(cls_to_obtain)
+            feat_to_obtain = self.wrap_indices(feat_to_obtain)
+
+            with torch.no_grad():
+                *_, bn_w, bn_b, l_w, l_b = self.model.parameters()
+
+                # # batch norm weight
+                # masked_param = torch.zeros_like(bn_w, dtype=bn_w.dtype)
+                # masked_param[feat_to_obtain] = bn_w[feat_to_obtain]
+                # bn_w.copy_(masked_param.to(**self.setup))
+
+                # # batch norm bias
+                # masked_param = torch.zeros_like(bn_b, dtype=bn_b.dtype)
+                # masked_param[feat_to_obtain] = bn_b[feat_to_obtain]
+                # bn_b.copy_(masked_param.to(**self.setup))
+
+                if 'feat_value' not in extra_info:
+                    # just turn off other features
+                    masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                    masked_param[cls_to_obtain, feat_to_obtain] = torch.ones_like(l_w[cls_to_obtain, feat_to_obtain], 
+                                        dtype=l_w.dtype)
+                    l_w.copy_(masked_param.to(**self.setup))
+                else:
+                    # do gradient amplification
+                    multiplier = extra_info['multiplier']
+                    extra_b = extra_info['extra_b'] if 'extra_b' in extra_info else 0
+                    non_target_logit = extra_info['non_target_logit'] if 'non_target_logit' in extra_info else 0
+                    db_flip = extra_info['db_flip'] if 'db_flip' in extra_info else 1
+
+                    masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                    masked_param[cls_to_obtain, feat_to_obtain] = torch.ones_like(l_w[cls_to_obtain, feat_to_obtain], 
+                                        dtype=l_w.dtype) * multiplier * db_flip
+                    l_w.copy_(masked_param.to(**self.setup))
+
+                    masked_param = torch.zeros_like(l_b, dtype=l_b.dtype) + non_target_logit
+                    masked_param[cls_to_obtain] = torch.zeros_like(l_b[cls_to_obtain], 
+                                        dtype=l_b.dtype) - extra_info['feat_value'] * multiplier * db_flip + extra_b
+                    l_b.copy_(masked_param.to(**self.setup))
+
+        if model_state == 'db_attack' and 'cls_to_obtain' in extra_info:
+            cls_to_obtain = extra_info['cls_to_obtain']
+            cls_to_obtain = self.wrap_indices(cls_to_obtain)
+            db_multiplier = extra_info['db_multiplier']
+            multiplier = extra_info['multiplier']
+            db_flip = extra_info['db_flip']
+            
+            with torch.no_grad():
+                *_, bn_w, bn_b, l_w, l_b = self.model.parameters()
+
+                # batch norm weight
+                masked_param = bn_w
+                bn_w.copy_(masked_param.to(**self.setup))
+
+                # batch norm bias
+                masked_param = bn_b + l_w[cls_to_obtain[0]] * db_multiplier
+                bn_b.copy_(masked_param.to(**self.setup))
+
+                # linear weight
+                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                masked_param[cls_to_obtain] = l_w[cls_to_obtain] * multiplier * db_flip
+                l_w.copy_(masked_param.to(**self.setup))
+ 
+                # linear bias
+                masked_param = torch.zeros_like(l_b, dtype=l_b.dtype)
+                masked_param[cls_to_obtain] = l_b[cls_to_obtain] * db_flip
+                l_b.copy_(masked_param.to(**self.setup))
+
+    def binary_attack(self, user, extra_info):
+        # now: naive version for two imgs, to be recursively recovering all gradients
+        # make everything neat?
+        server_payload = self.distribute_payload()
+        shared_data, _ = user.compute_local_updates(server_payload)
+        cls_to_obtain = extra_info['cls_to_obtain']
+        feat_to_obtain = extra_info['feat_to_obtain']
+        num_target_data = np.count_nonzero(shared_data['metadata']['labels'].cpu().detach().numpy() == cls_to_obtain)
+        
+        extra_info['multiplier'] = 1
+        self.reset_model()
+        self.reconfigure_model('cls_attack', extra_info=extra_info)
+        server_payload = self.distribute_payload()
+        shared_data, _ = user.compute_local_updates(server_payload)
+        avg_feature = np.array(torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu())
+        feat_value = avg_feature[feat_to_obtain]
+        
+        # get filter feature points first
+        extra_info['multiplier'] = 300
+        all_feat_value = self.binary_attack_helper(user, extra_info, feat_value, 0, num_target_data, 0)
+
+        # recover gradients
+        single_gradients = []
+        prev_grad = None
+        num_data_points = len(shared_data['metadata']['labels'])
+        extra_info['multiplier'] = 300
+
+        for feat_value in all_feat_value:
+            extra_info['feat_value'] = feat_value
+            self.reset_model()
+            self.reconfigure_model('cls_attack', extra_info=extra_info)
+            self.reconfigure_model('feature_attack', extra_info=extra_info)
+            server_payload = self.distribute_payload()
+            shared_data, _ = user.compute_local_updates(server_payload)
+            curr_grad = list(shared_data['gradients'])
+            curr_grad[:-1] = [grad_ii * num_data_points / extra_info['multiplier'] for grad_ii in curr_grad[:-1]]
+
+            if prev_grad:
+                grad_i = [grad_ii - grad_jj for grad_ii, grad_jj in zip(curr_grad, prev_grad)]
+                single_gradients.append(grad_i)
+            else:
+                single_gradients.append(curr_grad)
+                
+            prev_grad = curr_grad
+
+        return single_gradients
+        
+    def binary_attack_helper(self, user, extra_info, feat_01_value, left_feat_value, curr_num, left_num):
+        # now: naive binarily cut the feature, might be smarter to predict the number of datapoints?
+        # on the left hand side
+        target_num = int(curr_num / 2)
+        
+        if target_num == 0:
+            return [feat_01_value]
+
+        # get left and right mid point
+        cls_to_obtain = extra_info['cls_to_obtain']
+        feat_to_obtain = extra_info['feat_to_obtain']
+        extra_info['feat_value'] = feat_01_value
+        self.reset_model()
+        self.reconfigure_model('cls_attack', extra_info=extra_info)
+        self.reconfigure_model('feature_attack', extra_info=extra_info)
+        server_payload = self.distribute_payload()
+        shared_data, _ = user.compute_local_updates(server_payload)
+        feat_0 = np.array(torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu())
+        feat_0_value = feat_0[feat_to_obtain] # the middle includes left hand side
+        feat_0_value = (feat_0_value * (curr_num + left_num - target_num) - left_feat_value * left_num) / target_num
+        feat_1_value = (feat_01_value * curr_num - feat_0_value * target_num) / target_num
+
+        # call left
+        if feat_0_value == 0:
+            final_left = []
+        elif feat_0_value == feat_01_value:
+            return [feat_0_value]
+        else:
+            final_left = self.binary_attack_helper(user, extra_info, feat_0_value, left_feat_value, target_num, left_num)
+
+        # call right
+        if feat_1_value == 0:
+            final_left = []
+        elif feat_1_value == feat_01_value:
+            return [feat_1_value]
+        else:
+            new_left_feat_value = (left_feat_value * left_num + feat_0_value * target_num) / (left_num + target_num)
+            final_right = self.binary_attack_helper(user, extra_info, feat_1_value, new_left_feat_value, target_num, left_num + target_num)
+
+        return final_left + final_right
+
+    def order_gradients(self, recovered_single_gradients, gt_single_gradients):
+        from scipy.optimize import linear_sum_assignment
+
+        single_gradients = []
+        num_data = len(gt_single_gradients)
+
+        for grad_i in recovered_single_gradients:
+            single_gradients.append(torch.cat([torch.flatten(i) for i in grad_i]))
+
+        similarity_matrix = torch.zeros(num_data, num_data, **self.setup)
+        for idx, x in enumerate(single_gradients):
+            for idy, y in enumerate(gt_single_gradients):
+                similarity_matrix[idx, idy] = -torch.nn.CosineSimilarity(dim=0)(x, y).detach()
+
+        try:
+            _, rec_assignment = linear_sum_assignment(similarity_matrix.cpu().numpy(), maximize=False)
+        except ValueError:
+            print(f"ValueError from similarity matrix {similarity_matrix.cpu().numpy()}")
+            print("Returning trivial order...")
+            rec_assignment = list(range(num_data))
+
+        return [recovered_single_gradients[i] for i in rec_assignment]
+
+    def reconstruct_feature(self, shared_data, cls_to_obtain):
+        shared_grad = shared_data['gradients']
+
+        weights = shared_grad[-2]
+        bias = shared_grad[-1]
+        grads_fc_debiased = weights / bias[:, None]
+
+        if bias[cls_to_obtain] != 0:
+            return grads_fc_debiased[cls_to_obtain]
+        else:
+            return torch.zeros_like(grads_fc_debiased[0])
+
+    def cal_single_gradients(self, attacker, true_user_data):
+        true_data = true_user_data['data']
+        num_data = len(true_data)
+        labels = true_user_data['labels']
+        model = self.model.to(**self.setup)
+        
+        single_gradients = []
+        single_losses = []
+
+        for ii in range(num_data):
+            cand_ii = true_data[ii:(ii + 1)]
+            label_ii = labels[ii:(ii + 1)]
+            model.zero_grad()
+            spoofed_loss_ii = attacker.loss_fn(model(cand_ii), label_ii)
+            attacker.objective.loss_fn = attacker.loss_fn
+            gradient_ii, _ = attacker.objective._grad_fn_single_step(model, cand_ii, label_ii)
+            gradient_ii = [g_ii.reshape(-1) for g_ii in gradient_ii]
+            gradient_ii = torch.cat(gradient_ii)
+            single_gradients.append(gradient_ii)
+            single_losses.append(spoofed_loss_ii)
+        
+        return single_gradients, single_losses
+
+    def print_gradients_norm(self, singl_gradients, single_losses, which_to_recover=-1, return_results=False):
+        grad_norm = []
+        losses = []
+        
+        if not return_results:
+            print('grad norm         loss')
+
+        for i, gradient_ii in enumerate(singl_gradients):
+            if not return_results:
+                if i == which_to_recover:
+                    print(float(torch.norm(gradient_ii)), float(single_losses[i]), '   target')
+                else:
+                    print(float(torch.norm(gradient_ii)), float(single_losses[i]))
+
+            grad_norm.append(float(torch.norm(gradient_ii)))
+            losses.append(float(single_losses[i]))
+
+        if return_results:
+            return np.array(grad_norm), np.array(losses)
+
+    def random_transoformation(self, img):
+        import torchvision.transforms as transforms
+        transform = transforms.Compose(
+            [transforms.RandomResizedCrop(img.shape[-2:], scale=(0.5, 1.0)),
+             transforms.RandomHorizontalFlip(p=1),
+             # transforms.RandomVerticalFlip(p=1),
+             transforms.GaussianBlur(3)
+            ])
+        
+        return transform(img)
+
+    class pseudo_dataset:
+        def __init__(self, target_img, dataset_len=2000, num_classes=1000, target_cls=0, prob=2):
+            self.target_img = target_img
+            self.img_size = tuple(target_img.shape[-2:])
+            self.dataset_len = dataset_len
+            self.num_classes = num_classes
+            self.target_cls = target_cls
+            self.prob = prob
+
+        def __len__(self):
+            return self.dataset_len
+
+        def __getitem__(self, idx):
+            prob_label = torch.zeros((self.num_classes))
+
+            if idx % self.prob == 0:
+                target_img = self.target_img
+                prob_label[self.target_cls] = -5
+            else:
+                target_img = torch.rand(self.target_img.shape) * 2 - 1
+                prob_label[self.target_cls] = 5
+                # prob_label += 1
+                # prob_label[self.target_cls + 1] = 1
+            
+            return target_img, prob_label
+
+
+    def fishing_attack_retrain(self, target_img, target_cls=0, dataset_len=2000):
+        import torch.optim as optim
+        from tqdm import tqdm
+        from torch import nn
+        from torch.utils.data import DataLoader
+
+        # only retraining on the last linear layer
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        *_, l_w, l_b = self.model.parameters()
+        l_w.requires_grad = True
+        l_b.requires_grad = True
+
+        # prepare for training
+        dataset = self.pseudo_dataset(target_img, target_cls=target_cls, dataset_len=dataset_len)
+        dataloader = DataLoader(dataset, batch_size=8, num_workers=4)
+        # criterion = nn.CrossEntropyLoss()
+        criterion = nn.MSELoss()
+        optimizer = optim.SGD(self.model.parameters(), lr=0.001, momentum=0.9)
+
+        with tqdm(dataloader, unit="batch") as tepoch:
+            running_loss = 0.0
+
+            for i, (inputs, labels) in enumerate(tepoch):
+                inputs, labels = inputs.to(**self.setup), labels.to(**self.setup)
+
+                optimizer.zero_grad()
+                    
+                outputs = self.model(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+
+                running_loss += loss.item()
+                tepoch.set_postfix(loss=running_loss / (i + 1))
+
+        for param in self.model.parameters():
+            param.requires_grad = True

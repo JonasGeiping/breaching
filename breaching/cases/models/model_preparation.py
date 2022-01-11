@@ -65,10 +65,18 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
         model = LinearModel(cfg_data.vocab_size, embedding_size=200)
     else:
         try:
-            from transformers import AutoModelForMaskedLM
-
+            from transformers import AutoModelForMaskedLM, AutoModelForPreTraining, AutoConfig
+            
+            if cfg_data.task == "masked-lm":
+                auto_class = AutoModelForMaskedLM
+            else:
+                auto_class = AutoModelForPreTraining
             # Make sure to use the matching tokenizer and vocab_size!
-            model = HuggingFaceContainer(AutoModelForMaskedLM.from_pretrained(cfg_model))
+            if pretrained:
+                model = HuggingFaceContainer(auto_class.from_pretrained(cfg_model))
+            else:
+                hf_cfg = AutoConfig.from_pretrained(cfg_model)
+                model = HuggingFaceContainer(auto_class.from_config(hf_cfg))
         except OSError as error_msg:
             raise ValueError(f"Invalid huggingface model {cfg_model} given: {error_msg}")
     return model
@@ -89,7 +97,7 @@ class HuggingFaceContainer(torch.nn.Module):
         if kwargs["input_ids"].dtype != torch.long:
             kwargs["inputs_embeds"] = kwargs.pop("input_ids")
         outputs = self.model(**kwargs)
-        return outputs["logits"]
+        return outputs["logits"] if "logits" in outputs else outputs["prediction_logits"]
 
 
 class VisionContainer(torch.nn.Module):

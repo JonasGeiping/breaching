@@ -708,10 +708,12 @@ class ClassParameterServer(HonestServer):
 
             if idx % self.prob == 0:
                 target_img = self.target_img
-                prob_label[self.target_cls] = -1
+                prob_label[self.target_cls] = -5
             else:
                 target_img = torch.rand(self.target_img.shape) * 2 - 1
-                prob_label += 1
+                prob_label[self.target_cls] = 5
+                # prob_label += 1
+                # prob_label[self.target_cls + 1] = 1
             
             return target_img, prob_label
 
@@ -733,7 +735,8 @@ class ClassParameterServer(HonestServer):
         # prepare for training
         dataset = self.pseudo_dataset(target_img, target_cls=target_cls, dataset_len=dataset_len)
         dataloader = DataLoader(dataset, batch_size=8, num_workers=4)
-        criterion = nn.CrossEntropyLoss()
+        # criterion = nn.CrossEntropyLoss()
+        criterion = nn.MSELoss()
         optimizer = optim.SGD(self.model.parameters(), lr=0.001, momentum=0.9)
 
         with tqdm(dataloader, unit="batch") as tepoch:

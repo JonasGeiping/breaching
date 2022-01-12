@@ -6,18 +6,26 @@ from .malicious_modifications.parameter_utils import introspect_model, replace_m
 
 from .aux_training import train_encoder_decoder
 from .malicious_modifications.feat_decoders import generate_decoder
+from .data import construct_dataloader
 
 
-def construct_server(model, loss_fn, cfg_case, setup):
+def construct_server(model, loss_fn, cfg_case, setup, external_dataloader=None):
     """Interface function."""
+    if external_dataloader is None and cfg_case.server.has_external_data:
+        user_split = cfg_case.data.examples_from_split
+        cfg_case.data.examples_from_split = "train" if "validation" in user_split else "validation"
+        dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=None, return_full_dataset=True)
+        cfg_case.data.examples_from_split = user_split
+    else:
+        dataloader = external_dataloader
     if cfg_case.server.name == "honest_but_curious":
-        server = HonestServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
+        server = HonestServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
     elif cfg_case.server.name == "malicious_model":
-        server = MaliciousModelServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
+        server = MaliciousModelServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
     elif cfg_case.server.name == "malicious_parameters":
-        server = MaliciousParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
+        server = MaliciousParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
     elif cfg_case.server.name == "class_malicious_parameters":
-        server = ClassParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=None)
+        server = ClassParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
     else:
         raise ValueError(f"Invalid server type {cfg_case.server} given.")
     return server

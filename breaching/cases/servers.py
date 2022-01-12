@@ -1,9 +1,5 @@
 """Implement server code. This will be short, if the server is honest."""
 
-import copy
-import numpy as np
-import numbers
-
 import torch
 from .malicious_modifications import ImprintBlock, RecoveryOptimizer, SparseImprintBlock, OneShotBlock
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
@@ -385,12 +381,18 @@ class ClassParameterServer(HonestServer):
         super().__init__(model, loss, cfg_case, setup, external_dataloader)
         self.model_state = "custom"  # Do not mess with model parameters no matter what init is agreed upon
         self.secrets = dict()
+        import copy
+
         self.original_model = copy.deepcopy(model)
 
     def reset_model(self):
+        import copy
+
         self.model = copy.deepcopy(self.original_model)
 
     def wrap_indices(self, indices):
+        import numbers
+
         if isinstance(indices, numbers.Number):
             return [indices]
         else:
@@ -407,41 +409,45 @@ class ClassParameterServer(HonestServer):
                 *_, l_w, l_b = self.model.parameters()
 
                 # linear weight
-                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
-                masked_param[cls_to_obtain] = torch.ones_like(l_w[cls_to_obtain], dtype=l_w.dtype) * 0.5
-                l_w.copy_(masked_param.to(**self.setup))
+                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype).to(l_w.device)
+                masked_param[cls_to_obtain] = torch.ones_like(l_w[cls_to_obtain], dtype=l_w.dtype).to(l_w.device) * 0.5
+                l_w.copy_(masked_param.to(l_w.device))
 
                 # linear bias
-                masked_param = torch.ones_like(l_b, dtype=l_b.dtype) * 1000
+                masked_param = torch.ones_like(l_b, dtype=l_b.dtype).to(l_b.device) * 1000
                 masked_param[cls_to_obtain] = l_b[cls_to_obtain]
-                l_b.copy_(masked_param.to(**self.setup))
+                l_b.copy_(masked_param.to(l_b.device))
 
         if model_state == "fishing_attack" and "cls_to_obtain" in extra_info:
             cls_to_obtain = extra_info["cls_to_obtain"]
             b_mv = extra_info["b_mv"] if "b_mv" in extra_info else 0
             b_mv_non = extra_info["b_mv_non"] if "b_mv_non" in extra_info else 0
+            multiplier = extra_info["multiplier"] if "multiplier" in extra_info else 1
             cls_to_obtain = self.wrap_indices(cls_to_obtain)
 
             with torch.no_grad():
                 *_, l_w, l_b = self.model.parameters()
 
                 # linear weight
-                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype).to(l_w.device)
                 masked_param[cls_to_obtain] = l_w[cls_to_obtain]
-                l_w.copy_(masked_param.to(**self.setup))
+                l_w.copy_(masked_param.to(l_w.device))
 
                 # linear bias
-                masked_param = torch.ones_like(l_b, dtype=l_b.dtype) * b_mv_non
+                masked_param = torch.ones_like(l_b, dtype=l_b.dtype).to(l_b.device)
                 masked_param[cls_to_obtain] = l_b[cls_to_obtain] + b_mv
-                l_b.copy_(masked_param.to(**self.setup))
+                l_b.copy_(masked_param.to(l_b.device))
 
                 *_, l_w, l_b = self.model.parameters()
                 *_, l_w_o, l_b_o = self.original_model.parameters()
                 cls_to_obtain = int(extra_info["cls_to_obtain"])
                 l_w[:cls_to_obtain] = l_w_o[:cls_to_obtain]
                 l_w[cls_to_obtain + 1 :] = l_w_o[cls_to_obtain + 1 :]
-                l_b[:cls_to_obtain] = l_b_o[:cls_to_obtain]
-                l_b[cls_to_obtain + 1 :] = l_b_o[cls_to_obtain + 1 :]
+                l_b[:cls_to_obtain] = l_b_o[:cls_to_obtain] + b_mv_non
+                l_b[cls_to_obtain + 1 :] = l_b_o[cls_to_obtain + 1 :] + b_mv_non
+
+                l_w *= multiplier
+                l_b *= multiplier
 
         if model_state == "feature_attack" and "cls_to_obtain" in extra_info and "feat_to_obtain" in extra_info:
             cls_to_obtain = extra_info["cls_to_obtain"]
@@ -464,11 +470,11 @@ class ClassParameterServer(HonestServer):
 
                 if "feat_value" not in extra_info:
                     # just turn off other features
-                    masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                    masked_param = torch.zeros_like(l_w, dtype=l_w.dtype).to(l_w.device)
                     masked_param[cls_to_obtain, feat_to_obtain] = torch.ones_like(
                         l_w[cls_to_obtain, feat_to_obtain], dtype=l_w.dtype
                     )
-                    l_w.copy_(masked_param.to(**self.setup))
+                    l_w.copy_(masked_param.to(l_w.device))
                 else:
                     # do gradient amplification
                     multiplier = extra_info["multiplier"]
@@ -476,19 +482,21 @@ class ClassParameterServer(HonestServer):
                     non_target_logit = extra_info["non_target_logit"] if "non_target_logit" in extra_info else 0
                     db_flip = extra_info["db_flip"] if "db_flip" in extra_info else 1
 
-                    masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                    masked_param = torch.zeros_like(l_w, dtype=l_w.dtype).to(l_w.device)
                     masked_param[cls_to_obtain, feat_to_obtain] = (
-                        torch.ones_like(l_w[cls_to_obtain, feat_to_obtain], dtype=l_w.dtype) * multiplier * db_flip
+                        torch.ones_like(l_w[cls_to_obtain, feat_to_obtain], dtype=l_w.dtype).to(l_w.device)
+                        * multiplier
+                        * db_flip
                     )
-                    l_w.copy_(masked_param.to(**self.setup))
+                    l_w.copy_(masked_param.to(l_w.device))
 
-                    masked_param = torch.zeros_like(l_b, dtype=l_b.dtype) + non_target_logit
+                    masked_param = torch.zeros_like(l_b, dtype=l_b.dtype).to(l_b.device) + non_target_logit
                     masked_param[cls_to_obtain] = (
-                        torch.zeros_like(l_b[cls_to_obtain], dtype=l_b.dtype)
+                        torch.zeros_like(l_b[cls_to_obtain], dtype=l_b.dtype).to(l_b.device)
                         - extra_info["feat_value"] * multiplier * db_flip
                         + extra_b
                     )
-                    l_b.copy_(masked_param.to(**self.setup))
+                    l_b.copy_(masked_param.to(l_b.device))
 
         if model_state == "db_attack" and "cls_to_obtain" in extra_info:
             cls_to_obtain = extra_info["cls_to_obtain"]
@@ -502,21 +510,21 @@ class ClassParameterServer(HonestServer):
 
                 # batch norm weight
                 masked_param = bn_w
-                bn_w.copy_(masked_param.to(**self.setup))
+                bn_w.copy_(masked_param.to(bn_w.device))
 
                 # batch norm bias
                 masked_param = bn_b + l_w[cls_to_obtain[0]] * db_multiplier
-                bn_b.copy_(masked_param.to(**self.setup))
+                bn_b.copy_(masked_param.to(bn_b.device))
 
                 # linear weight
-                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype)
+                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype).to(l_w.device)
                 masked_param[cls_to_obtain] = l_w[cls_to_obtain] * multiplier * db_flip
-                l_w.copy_(masked_param.to(**self.setup))
+                l_w.copy_(masked_param.to(l_w.device))
 
                 # linear bias
-                masked_param = torch.zeros_like(l_b, dtype=l_b.dtype)
+                masked_param = torch.zeros_like(l_b, dtype=l_b.dtype).to(l_b.device)
                 masked_param[cls_to_obtain] = l_b[cls_to_obtain] * db_flip
-                l_b.copy_(masked_param.to(**self.setup))
+                l_b.copy_(masked_param.to(l_b.device))
 
     def binary_attack(self, user, extra_info):
         # now: naive version for two imgs, to be recursively recovering all gradients
@@ -525,15 +533,15 @@ class ClassParameterServer(HonestServer):
         shared_data, _ = user.compute_local_updates(server_payload)
         cls_to_obtain = extra_info["cls_to_obtain"]
         feat_to_obtain = extra_info["feat_to_obtain"]
-        num_target_data = np.count_nonzero(shared_data["metadata"]["labels"].cpu().detach().numpy() == cls_to_obtain)
+        num_target_data = int(torch.count_nonzero((shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int)))
 
         extra_info["multiplier"] = 1
         self.reset_model()
         self.reconfigure_model("cls_attack", extra_info=extra_info)
         server_payload = self.distribute_payload()
         shared_data, _ = user.compute_local_updates(server_payload)
-        avg_feature = np.array(torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu())
-        feat_value = avg_feature[feat_to_obtain]
+        avg_feature = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
+        feat_value = float(avg_feature[feat_to_obtain])
 
         # get filter feature points first
         extra_info["multiplier"] = 300
@@ -582,8 +590,8 @@ class ClassParameterServer(HonestServer):
         self.reconfigure_model("feature_attack", extra_info=extra_info)
         server_payload = self.distribute_payload()
         shared_data, _ = user.compute_local_updates(server_payload)
-        feat_0 = np.array(torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu())
-        feat_0_value = feat_0[feat_to_obtain]  # the middle includes left hand side
+        feat_0 = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
+        feat_0_value = float(feat_0[feat_to_obtain])  # the middle includes left hand side
         feat_0_value = (feat_0_value * (curr_num + left_num - target_num) - left_feat_value * left_num) / target_num
         feat_1_value = (feat_01_value * curr_num - feat_0_value * target_num) / target_num
 
@@ -686,7 +694,7 @@ class ClassParameterServer(HonestServer):
             losses.append(float(single_losses[i]))
 
         if return_results:
-            return np.array(grad_norm), np.array(losses)
+            return torch.stack(grad_norm), torch.stack(losses)
 
     def random_transoformation(self, img):
         import torchvision.transforms as transforms
@@ -703,7 +711,8 @@ class ClassParameterServer(HonestServer):
         return transform(img)
 
     class pseudo_dataset:
-        def __init__(self, target_img, dataset_len=2000, num_classes=1000, target_cls=0, prob=2):
+        def __init__(self, outer_instance, target_img, dataset_len=2000, num_classes=1000, target_cls=0, prob=4):
+            self.outer_instance = outer_instance
             self.target_img = target_img
             self.img_size = tuple(target_img.shape[-2:])
             self.dataset_len = dataset_len
@@ -719,14 +728,14 @@ class ClassParameterServer(HonestServer):
 
             if idx % self.prob == 0:
                 target_img = self.target_img
-                prob_label[self.target_cls] = -5
+                prob_label[self.target_cls] = -10
             else:
                 target_img = torch.rand(self.target_img.shape) * 2 - 1
-                prob_label[self.target_cls] = 5
+                prob_label[self.target_cls] = 0
                 # prob_label += 1
                 # prob_label[self.target_cls + 1] = 1
 
-            return target_img, prob_label
+            return target_img.to(**self.outer_instance.setup), prob_label.to(**self.outer_instance.setup)
 
     def fishing_attack_retrain(self, target_img, target_cls=0, dataset_len=2000):
         import torch.optim as optim
@@ -735,6 +744,7 @@ class ClassParameterServer(HonestServer):
         from torch.utils.data import DataLoader
 
         # only retraining on the last linear layer
+        self.model = self.model.to(**self.setup)
         for param in self.model.parameters():
             param.requires_grad = False
 
@@ -743,8 +753,8 @@ class ClassParameterServer(HonestServer):
         l_b.requires_grad = True
 
         # prepare for training
-        dataset = self.pseudo_dataset(target_img, target_cls=target_cls, dataset_len=dataset_len)
-        dataloader = DataLoader(dataset, batch_size=8, num_workers=4)
+        dataset = self.pseudo_dataset(self, target_img, target_cls=target_cls, dataset_len=dataset_len)
+        dataloader = DataLoader(dataset, batch_size=8, num_workers=0)
         # criterion = nn.CrossEntropyLoss()
         criterion = nn.MSELoss()
         optimizer = optim.SGD(self.model.parameters(), lr=0.001, momentum=0.9)

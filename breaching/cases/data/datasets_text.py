@@ -38,13 +38,18 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
     elif cfg_data.name == "shakespeare":
         raw_texts = load_shakespeare(cache_dir=cfg_data.path, user_idx=user_idx, split=split)
         raw_dataset = Dataset.from_dict(dict(text=raw_texts))
+    elif cfg_data.name == "cola":
+        raw_datapoint = load_dataset("glue", "cola")[split][user_idx]
+        raw_dataset = Dataset.from_dict({k: [v] for k, v in raw_datapoint.items()})
     else:
         raise ValueError(f"Invalid text dataset {cfg_data.name} provided.")
 
     columns = raw_dataset.column_names
+    if "label" in columns:
+        columns.remove("label")
+        raw_dataset = raw_dataset.rename_column("label", "labels")
     tokenizer = _get_tokenizer(cfg_data.tokenizer, cache_dir=cfg_data.path)
     tokenize, group_texts, collate_fn = _get_preprocessing(tokenizer, cfg_data)
-    tokenizer.model_max_length = 1e10  # Only for batched pre-processing
 
     tokenized_dataset = raw_dataset.map(tokenize, batched=True, remove_columns=columns, load_from_cache_file=True)
     tokenized_dataset = tokenized_dataset.map(group_texts, batched=True, load_from_cache_file=True)
@@ -62,7 +67,6 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
     #     sample = tokenized_dataset[index.item()]
     #     sentence = tokenizer.decode(sample["inputs"])
     #     log.info(f"Sample {index} of the training set: {sample} is sentence: {sentence}.")
-
     return tokenized_dataset, collate_fn
 
 
@@ -77,6 +81,7 @@ def _get_preprocessing(tokenizer, cfg_data):
 
     if cfg_data.task in ["causal-lm", "masked-lm"]:
         block_size = cfg_data.shape[0]
+        tokenizer.model_max_length = 1e10  # Only for batched pre-processing
 
         def group_texts(examples):
             # Concatenate all texts.
@@ -101,6 +106,14 @@ def _get_preprocessing(tokenizer, cfg_data):
         else:
             # This collate_fn generates "labels" automatically after masking
             collate_fn = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm_probability=cfg_data.mlm_probability)
+    elif cfg_data.task == "classification":
+        tokenizer.model_max_length = cfg_data.shape[0]
+
+        def tokenize(examples):  # noqa F811
+            return tokenizer(examples["sentence"], padding="max_length", truncation=True)
+
+        group_texts = None
+        collate_fn = default_data_collator
     else:
         raise ValueError(f"Invalid task {cfg_data.task}")
 

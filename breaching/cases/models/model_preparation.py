@@ -65,10 +65,17 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
         model = LinearModel(cfg_data.vocab_size, embedding_size=200)
     else:
         try:
-            from transformers import AutoModelForMaskedLM, AutoModelForPreTraining, AutoConfig
-            
+            from transformers import (
+                AutoModelForMaskedLM,
+                AutoModelForPreTraining,
+                AutoModelForSequenceClassification,
+                AutoConfig,
+            )
+
             if cfg_data.task == "masked-lm":
                 auto_class = AutoModelForMaskedLM
+            elif cfg_data.task == "classification":
+                auto_class = AutoModelForSequenceClassification
             else:
                 auto_class = AutoModelForPreTraining
             # Make sure to use the matching tokenizer and vocab_size!

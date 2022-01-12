@@ -22,6 +22,7 @@ optim:
   boxed: False
   max_iterations: 1000
   grad_clip: 1.0
+  # Next two settings are guesses but seem to improve the baseline:
   warmup: 50 # # This is a guess, they might be using a bert-adam optimization implementation including this
   step_size_decay: linear # This is a guess, they might be using a bert-adam optimization implementation including this
 

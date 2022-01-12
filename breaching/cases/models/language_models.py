@@ -144,12 +144,14 @@ class LearnablePositionalEmbedding(torch.nn.Module):
 class TransformerModel(nn.Module):
     """Container module with an encoder, a recurrent or transformer module, and a decoder."""
 
-    def __init__(self, ntokens, ninp, nhead, nhid, nlayers, dropout=0.5):
+    def __init__(self, ntokens, ninp, nhead, nhid, nlayers, dropout=0.5, positional_embedding="fixed"):
         super(TransformerModel, self).__init__()
         self.model_type = "Transformer"
         self.src_mask = None
-        self.pos_encoder = PositionalEncoding(ninp, dropout)
-        # self.pos_encoder = LearnablePositionalEmbedding(ninp, dropout=dropout)
+        if positional_embedding == "fixed":
+            self.pos_encoder = PositionalEncoding(ninp, dropout)
+        else:
+            self.pos_encoder = LearnablePositionalEmbedding(ninp, dropout=dropout)
         encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid, dropout, batch_first=True)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.encoder = nn.Embedding(ntokens, ninp)

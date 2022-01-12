@@ -49,6 +49,17 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
         # For simplicity the dropout is disabled for now
         # the 12-dim query is 96/8 = 12
         model = TransformerModel(ntokens=cfg_data.vocab_size, ninp=96, nhead=8, nhid=1536, nlayers=3, dropout=0)
+    elif cfg_model == "transformer3p":
+        # Same as above but with learnable positional embeddings
+        model = TransformerModel(
+            ntokens=cfg_data.vocab_size,
+            ninp=96,
+            nhead=8,
+            nhid=1536,
+            nlayers=3,
+            dropout=0,
+            positional_embedding="learnable",
+        )
     elif cfg_model == "transformer1":
         # This is our initial sanity check transformer:
         model = TransformerModel(ntokens=cfg_data.vocab_size, ninp=200, nhead=2, nhid=200, nlayers=1, dropout=0)

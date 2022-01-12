@@ -12,7 +12,7 @@ from ..common import optimizer_lookup
 import logging
 
 log = logging.getLogger(__name__)
-embedding_layer_names = ["encoder.weight", "word_embeddings.weight"]
+embedding_layer_names = ["encoder.weight", "word_embeddings.weight", "transformer.wte"]
 
 
 class _BaseAttacker:

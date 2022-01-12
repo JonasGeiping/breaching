@@ -211,7 +211,7 @@ class _BaseAttacker:
         init_type = self.cfg.init
         if init_type == "randn":
             candidate = torch.randn(data_shape, **self.setup)
-        if init_type == "randn-trunc":
+        elif init_type == "randn-trunc":
             candidate = (torch.randn(data_shape, **self.setup) * 0.1).clamp(-0.1, 0.1)
         elif init_type == "rand":
             candidate = (torch.rand(data_shape, **self.setup) * 2) - 1.0

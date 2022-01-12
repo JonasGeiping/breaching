@@ -15,13 +15,13 @@ class CausalLoss(torch.nn.Module):
         """If no labels are given, then the same sequence is re-used."""
         # Based on https://github.com/huggingface/transformers/blob/master/src/transformers/models/gpt2/modeling_gpt2.py#L1069
         # Shift so that tokens < n predict n
-        shift_logits = outputs[..., :-1, :].contiguous()
+        shift_logits = outputs[:, :-1, :].contiguous()
         if labels is None:
-            shift_labels = outputs[..., 1:].contiguous()
+            shift_labels = outputs[:, 1:].contiguous()
         elif labels.dtype == torch.long:
-            shift_labels = labels[..., 1:].contiguous().view(-1)
+            shift_labels = labels[:, 1:].contiguous().view(-1)
         else:
-            shift_labels = labels[..., 1:, :].contiguous().view(-1, labels.shape[-1])
+            shift_labels = labels[:, 1:, :].contiguous().view(-1, labels.shape[-1])
         # Flatten the tokens
         return self.loss_fct(shift_logits.view(-1, shift_logits.shape[-1]), shift_labels)
 

@@ -101,6 +101,17 @@ def _split_dataset_vision(dataset, cfg_data, user_idx=None, return_full_dataset=
         elif cfg_data.partition == "unique-class":
             data_ids = [idx for (idx, label) in dataset.lookup.items() if label == user_idx]
             dataset = Subset(dataset, data_ids)
+        elif cfg_data.partition == "mixup":
+            data_per_class_per_user = len(dataset) // (len(dataset.classes) // 2) // cfg_data.default_clients
+            if data_per_class_per_user < 1:
+                raise ValueError("Too many clients for a balanced dataset.")
+            data_ids = []
+            for class_idx, _ in enumerate(dataset.classes):
+                data_with_class = [idx for (idx, label) in dataset.lookup.items() if label == class_idx]
+                data_ids += data_with_class[
+                    user_idx * data_per_class_per_user : data_per_class_per_user * (user_idx + 1)
+                ]
+            dataset = Subset(dataset, data_ids)
         elif cfg_data.partition == "none":  # Replicate on all users for a sanity check!
             pass
         else:

@@ -13,7 +13,7 @@ import torch
 
 def construct_case(cfg_case, setup=dict(dtype=torch.float, device=torch.device("cpu"))):
     """This is a helper function that summarizes the startup, but I find the full protocol to often be clearer."""
-    model, loss_fn = construct_model(cfg_case.model, cfg_case.data, pretrained=cfg_case.server.model_state == "trained")
+    model, loss_fn = construct_model(cfg_case.model, cfg_case.data, pretrained=cfg_case.server.pretrained)
     # Server:
     server = construct_server(model, loss_fn, cfg_case, setup)
     model = server.vet_model(model)

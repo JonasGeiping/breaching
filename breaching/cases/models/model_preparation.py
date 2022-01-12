@@ -47,7 +47,7 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
         on 12-dimensional (query, key, value) vectors. We use ReLU activation and set dropout rate to 0.1.
         """
         # For simplicity the dropout is disabled for now
-        # I also have no idea what is meant with the 12-dim query comment
+        # the 12-dim query is 96/8 = 12
         model = TransformerModel(ntokens=cfg_data.vocab_size, ninp=96, nhead=8, nhid=1536, nlayers=3, dropout=0)
     elif cfg_model == "transformer1":
         # This is our initial sanity check transformer:

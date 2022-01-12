@@ -74,9 +74,10 @@ def report(
         m = modality_metrics
         test_word_acc = count_integer_overlap(reconstructed_user_data["data"].view(-1), true_user_data["data"].view(-1))
         log.info(
-            f"METRICS: | Accuracy: {m['accuracy']:2.4f} | BLEU: {m['bleu']:4.2f} | FMSE: {feat_mse:2.4e} | " + "\n"
+            f"METRICS: | Accuracy: {m['accuracy']:2.4f} | S-BLEU: {m['sacrebleu']:4.2f} | FMSE: {feat_mse:2.4e} | "
+            + "\n"
             f" G-BLEU: {m['google_bleu']:4.2f} | ROUGE1: {m['rouge1']:4.2f}| ROUGE2: {m['rouge2']:4.2f} "
-            f"| Word Acc: {test_word_acc:2.2%} | Label Acc: {test_label_acc:2.2%}"
+            f"| Token Acc: {test_word_acc:2.2%} | Label Acc: {test_label_acc:2.2%}"
         )
     else:
         m = modality_metrics

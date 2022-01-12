@@ -45,7 +45,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     """This function controls the central routine."""
     local_time = time.time()
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
-    model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data)
+    model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data, cfg.case.server.pretrained)
 
     server = breaching.cases.construct_server(model, loss_fn, cfg.case, setup)
     model = server.vet_model(model)

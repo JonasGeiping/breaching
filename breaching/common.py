@@ -27,6 +27,12 @@ def optimizer_lookup(params, optim_name, step_size, scheduler=None, warmup=0, ma
         )
     elif scheduler == "cosine-decay":
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, max_iterations, eta_min=0.0)
+    elif scheduler == "linear":
+
+        def lr_lambda(current_step: int):
+            return max(0.0, float(max_iterations - current_step) / float(max(1, max_iterations)))
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     else:
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[], gamma=1)
 

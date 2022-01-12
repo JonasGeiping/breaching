@@ -40,18 +40,9 @@ def report(
             setup,
         )
     if reconstructed_user_data["labels"] is not None:
-        if any(reconstructed_user_data["labels"].view(-1).sort()[0] != true_user_data["labels"].view(-1)):
-            found_labels = 0
-            label_pool = true_user_data["labels"].view(-1).clone().tolist()
-            for label in reconstructed_user_data["labels"].view(-1):
-                if label in label_pool:
-                    found_labels += 1
-                    label_pool.remove(label)
-
-            log.info(f"Label recovery was sucessfull in {found_labels} cases.")
-            test_label_acc = found_labels / len(true_user_data["labels"])
-        else:
-            test_label_acc = 1
+        test_label_acc = count_integer_overlap(
+            reconstructed_user_data["labels"].view(-1), true_user_data["labels"].view(-1)
+        )
     else:
         test_label_acc = 0
 
@@ -81,10 +72,11 @@ def report(
 
     if metadata["modality"] == "text":
         m = modality_metrics
+        test_word_acc = count_integer_overlap(reconstructed_user_data["data"].view(-1), true_user_data["data"].view(-1))
         log.info(
             f"METRICS: | Accuracy: {m['accuracy']:2.4f} | BLEU: {m['bleu']:4.2f} | FMSE: {feat_mse:2.4e} | " + "\n"
             f" G-BLEU: {m['google_bleu']:4.2f} | ROUGE1: {m['rouge1']:4.2f}| ROUGE2: {m['rouge2']:4.2f} "
-            f"| Word Acc: {test_label_acc:2.2%}"
+            f"| Word Acc: {test_word_acc:2.2%} | Label Acc: {test_label_acc:2.2%}"
         )
     else:
         m = modality_metrics
@@ -215,6 +207,23 @@ def _run_vision_metrics(
         **{f"IIP-{k}": v for k, v in iip_scores.items()},
     )
     return vision_metrics
+
+
+def count_integer_overlap(rec_labels, true_labels):
+    if rec_labels is not None:
+        if any(rec_labels.sort()[0] != true_labels):
+            found_labels = 0
+            label_pool = true_labels.clone().tolist()
+            for label in rec_labels:
+                if label in label_pool:
+                    found_labels += 1
+                    label_pool.remove(label)
+            test_label_acc = found_labels / len(true_labels)
+        else:
+            test_label_acc = 1
+    else:
+        test_label_acc = 0
+    return test_label_acc
 
 
 def compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalized, setup):

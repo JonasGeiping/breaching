@@ -138,7 +138,7 @@ class _BaseAttacker:
             recovered_tokens = _max_similarity(recovered_embeddings, true_embeddings).view(*base_shape)
 
         elif self.cfg.token_recovery == "from-labels":
-            # Only works well in causal-lm
+            # Only works well in causal-lm?
             recovered_tokens = reconstructed_user_data["labels"]
         elif self.cfg.token_recovery == "from-limited-embedding":
             # Retrieve possible embeddings from gradient data

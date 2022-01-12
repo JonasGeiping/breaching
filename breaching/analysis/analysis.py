@@ -76,7 +76,7 @@ def report(
         log.info(
             f"METRICS: | Accuracy: {m['accuracy']:2.4f} | S-BLEU: {m['sacrebleu']:4.2f} | FMSE: {feat_mse:2.4e} | "
             + "\n"
-            f" G-BLEU: {m['google_bleu']:4.2f} | ROUGE1: {m['rouge1']:4.2f}| ROUGE2: {m['rouge2']:4.2f} "
+            f" G-BLEU: {m['google_bleu']:4.2f} | ROUGE1: {m['rouge1']:4.2f}| ROUGE2: {m['rouge2']:4.2f} | ROUGE-L: {m['rougeL']:4.2f}"
             f"| Token Acc: {test_word_acc:2.2%} | Label Acc: {test_label_acc:2.2%}"
         )
     else:
@@ -130,6 +130,7 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
         else:
             text_metrics["rouge1"] = score["rouge1"].mid.fmeasure
             text_metrics["rouge2"] = score["rouge2"].mid.fmeasure
+            text_metrics["rougeL"] = score["rougeL"].mid.fmeasure
     return text_metrics
 
 

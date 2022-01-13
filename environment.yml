@@ -2,7 +2,7 @@
 # You only need to install this if you are using every part of this module.
 # Most optional packages are imported latily.
 # Usually you will notice if you're missing a specific package.
-name: dl
+name: breaching
 channels:
   - pytorch
   - huggingface
@@ -24,11 +24,12 @@ dependencies:
   - datasets
   - tensorflow
   - nltk
+  - pip
   - pip:
       - hydra-core
       - kornia
       - lpips
-      - pytorch-wavelets
+      - git+https://github.com/fbcotter/pytorch_wavelets
       - rouge-score
       - sacrebleu
       - timm

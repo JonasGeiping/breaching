@@ -13,7 +13,7 @@ def construct_server(model, loss_fn, cfg_case, setup, external_dataloader=None):
     """Interface function."""
     if external_dataloader is None and cfg_case.server.has_external_data:
         user_split = cfg_case.data.examples_from_split
-        cfg_case.data.examples_from_split = "train" if user_split in ["validation", "test"] else "test"
+        cfg_case.data.examples_from_split = "training" if "validation" in user_split else "validation"
         dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=None, return_full_dataset=True)
         cfg_case.data.examples_from_split = user_split
     else:

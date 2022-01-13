@@ -1,0 +1,34 @@
+# Full environment
+# You only need to install this if you are using every part of this module.
+# Most optional packages are imported latily.
+# Usually you will notice if you're missing a specific package.
+name: dl
+channels:
+  - pytorch
+  - huggingface
+  - defaults
+dependencies:
+  - python=3.9
+  - cudatoolkit=11.3
+  - pytorch=1.10.1
+  - torchvision
+  - notebook
+  - jupyter
+  - matplotlib
+  - python-lmdb
+  - scikit-learn
+  - scikit-image
+  - tensorboard
+  - torchtext
+  - transformers
+  - datasets
+  - tensorflow
+  - nltk
+  - pip:
+      - hydra-core
+      - kornia
+      - lpips
+      - pytorch-wavelets
+      - rouge-score
+      - sacrebleu
+      - timm

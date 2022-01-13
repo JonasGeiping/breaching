@@ -12,7 +12,7 @@ from ..common import optimizer_lookup
 import logging
 
 log = logging.getLogger(__name__)
-embedding_layer_names = ["encoder.weight", "word_embeddings.weight"]
+embedding_layer_names = ["encoder.weight", "word_embeddings.weight", "transformer.wte"]
 
 
 class _BaseAttacker:
@@ -211,6 +211,8 @@ class _BaseAttacker:
         init_type = self.cfg.init
         if init_type == "randn":
             candidate = torch.randn(data_shape, **self.setup)
+        elif init_type == "randn-trunc":
+            candidate = (torch.randn(data_shape, **self.setup) * 0.1).clamp(-0.1, 0.1)
         elif init_type == "rand":
             candidate = (torch.rand(data_shape, **self.setup) * 2) - 1.0
         elif init_type == "zeros":

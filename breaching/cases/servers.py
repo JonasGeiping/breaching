@@ -534,6 +534,7 @@ class ClassParameterServer(HonestServer):
         cls_to_obtain = extra_info["cls_to_obtain"]
         feat_to_obtain = extra_info["feat_to_obtain"]
         num_target_data = int(torch.count_nonzero((shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int)))
+        self.num_target_data = num_target_data
 
         extra_info["multiplier"] = 1
         self.reset_model()
@@ -545,15 +546,21 @@ class ClassParameterServer(HonestServer):
 
         # get filter feature points first
         extra_info["multiplier"] = 300
-        all_feat_value = self.binary_attack_helper(user, extra_info, feat_value, 0, num_target_data, 0)
+        self.all_feat_value = []
+        self.visited = []
+        num_data_points = len(shared_data["metadata"]["labels"])
+        self.binary_attack_helper(user, extra_info, feat_value)
+        if len(self.all_feat_value) != num_target_data:
+            self.all_feat_value.append(1000)
+        self.all_feat_value.sort()
 
         # recover gradients
+        import copy
         single_gradients = []
         prev_grad = None
-        num_data_points = len(shared_data["metadata"]["labels"])
         extra_info["multiplier"] = 300
 
-        for feat_value in all_feat_value:
+        for feat_value in self.all_feat_value:
             extra_info["feat_value"] = feat_value
             self.reset_model()
             self.reconfigure_model("cls_attack", extra_info=extra_info)
@@ -569,17 +576,15 @@ class ClassParameterServer(HonestServer):
             else:
                 single_gradients.append(curr_grad)
 
-            prev_grad = curr_grad
+            prev_grad = copy.deepcopy(curr_grad)
 
         return single_gradients
 
-    def binary_attack_helper(self, user, extra_info, feat_01_value, left_feat_value, curr_num, left_num):
+    def binary_attack_helper(self, user, extra_info, feat_01_value):
         # now: naive binarily cut the feature, might be smarter to predict the number of datapoints?
         # on the left hand side
-        target_num = int(curr_num / 2)
-
-        if target_num == 0:
-            return [feat_01_value]
+        if len(self.all_feat_value) == self.num_target_data:
+            return
 
         # get left and right mid point
         cls_to_obtain = extra_info["cls_to_obtain"]
@@ -592,31 +597,42 @@ class ClassParameterServer(HonestServer):
         shared_data, _ = user.compute_local_updates(server_payload)
         feat_0 = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
         feat_0_value = float(feat_0[feat_to_obtain])  # the middle includes left hand side
-        feat_0_value = (feat_0_value * (curr_num + left_num - target_num) - left_feat_value * left_num) / target_num
-        feat_1_value = (feat_01_value * curr_num - feat_0_value * target_num) / target_num
+        feat_1_value = 2 * feat_01_value - feat_0_value
+        # print(feat_01_value, feat_0_value, feat_1_value)
+        # from IPython import embed; embed()
 
         # call left
-        if feat_0_value == 0:
-            final_left = []
-        elif feat_0_value == feat_01_value:
-            return [feat_0_value]
+        if self.check_with_tolerance(feat_0_value, self.all_feat_value):
+            return
+        elif self.check_with_tolerance(feat_0_value, self.visited):
+            return
+        elif not self.check_with_tolerance(feat_0_value, self.visited):
+            self.all_feat_value.append(feat_01_value)
+            self.visited.append(feat_0_value)
+            self.binary_attack_helper(user, extra_info, feat_0_value)
+        elif abs(feat_0_value - feat_01_value) < 0.01:
+            self.all_feat_value.append(feat_0_value)
+            self.visited.append(feat_01_value)
+            return
         else:
-            final_left = self.binary_attack_helper(
-                user, extra_info, feat_0_value, left_feat_value, target_num, left_num
-            )
+            self.visited.append(feat_01_value)
+            self.binary_attack_helper(user, extra_info, feat_0_value)
 
         # call right
-        if feat_1_value == 0:
-            final_left = []
-        elif feat_1_value == feat_01_value:
-            return [feat_1_value]
+        if self.check_with_tolerance(feat_1_value, self.all_feat_value):
+            pass
+        elif self.check_with_tolerance(feat_1_value, self.visited):
+            return
         else:
-            new_left_feat_value = (left_feat_value * left_num + feat_0_value * target_num) / (left_num + target_num)
-            final_right = self.binary_attack_helper(
-                user, extra_info, feat_1_value, new_left_feat_value, target_num, left_num + target_num
-            )
+            self.visited.append(feat_01_value)
+            self.binary_attack_helper(user, extra_info, feat_1_value)
+    
+    def check_with_tolerance(self, value, list):
+        for i in list:
+            if abs(value - i) < 0.01:
+                return True
 
-        return final_left + final_right
+        return False
 
     def order_gradients(self, recovered_single_gradients, gt_single_gradients):
         from scipy.optimize import linear_sum_assignment
@@ -630,10 +646,10 @@ class ClassParameterServer(HonestServer):
         similarity_matrix = torch.zeros(num_data, num_data, **self.setup)
         for idx, x in enumerate(single_gradients):
             for idy, y in enumerate(gt_single_gradients):
-                similarity_matrix[idx, idy] = -torch.nn.CosineSimilarity(dim=0)(x, y).detach()
+                similarity_matrix[idy, idx] = torch.nn.CosineSimilarity(dim=0)(y, x).detach()
 
         try:
-            _, rec_assignment = linear_sum_assignment(similarity_matrix.cpu().numpy(), maximize=False)
+            _, rec_assignment = linear_sum_assignment(similarity_matrix.cpu().numpy(), maximize=True)
         except ValueError:
             print(f"ValueError from similarity matrix {similarity_matrix.cpu().numpy()}")
             print("Returning trivial order...")

@@ -390,6 +390,11 @@ class ClassParameterServer(HonestServer):
 
         self.model = copy.deepcopy(self.original_model)
 
+    def vet_model(self, model):
+        """This server is not honest, but the model architecture stays normal."""
+        model = self.model  # Re-reference this everywhere
+        return self.model
+
     def wrap_indices(self, indices):
         import numbers
 
@@ -458,6 +463,7 @@ class ClassParameterServer(HonestServer):
             with torch.no_grad():
                 *_, bn_w, bn_b, l_w, l_b = self.model.parameters()
 
+                # # batch norm part is only for recovering one img from feature attack
                 # # batch norm weight
                 # masked_param = torch.zeros_like(bn_w, dtype=bn_w.dtype)
                 # masked_param[feat_to_obtain] = bn_w[feat_to_obtain]

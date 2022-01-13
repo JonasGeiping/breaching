@@ -549,15 +549,7 @@ class ClassParameterServer(HonestServer):
         self.all_feat_value = []
         self.visited = []
         num_data_points = len(shared_data["metadata"]["labels"])
-        self.binary_attack_helper(user, extra_info, feat_value)
-
-        # automatically fill last two if not get
-        if len(self.all_feat_value) == num_target_data - 1:
-            self.all_feat_value.append(1000)
-        # elif len(self.all_feat_value) == num_target_data - 2:
-        #     tmp_val = feat_value * (num_target_data - 1) - sum(self.all_feat_value)
-        #     self.all_feat_value.append(tmp_val)
-        #     self.all_feat_value.append(1000)
+        self.binary_attack_helper(user, extra_info, [feat_value])
         self.all_feat_value.sort()
 
         # recover gradients
@@ -586,62 +578,56 @@ class ClassParameterServer(HonestServer):
 
         return single_gradients
 
-    def binary_attack_helper(self, user, extra_info, feat_01_value):
+    def binary_attack_helper(self, user, extra_info, feat_01_values):
         # now: naive binarily cut the feature, might be smarter to predict the number of datapoints?
         # on the left hand side
-        if len(self.all_feat_value) == self.num_target_data:
+        if len(self.all_feat_value) >= self.num_target_data:
             return
+
+        # print('new level')
+
+        new_feat_01_values = []
 
         # get left and right mid point
         cls_to_obtain = extra_info["cls_to_obtain"]
         feat_to_obtain = extra_info["feat_to_obtain"]
-        extra_info["feat_value"] = feat_01_value
-        self.reset_model()
-        self.reconfigure_model("cls_attack", extra_info=extra_info)
-        self.reconfigure_model("feature_attack", extra_info=extra_info)
-        server_payload = self.distribute_payload()
-        shared_data, _ = user.compute_local_updates(server_payload)
-        feat_0 = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
-        feat_0_value = float(feat_0[feat_to_obtain])  # the middle includes left hand side
-        feat_1_value = 2 * feat_01_value - feat_0_value
-        print(feat_01_value, feat_0_value, feat_1_value)
-        # from IPython import embed; embed()
 
-        # call left
-        if self.check_with_tolerance(feat_0_value, self.all_feat_value):
-            return
-        elif self.check_with_tolerance(feat_0_value, self.visited):
-            return
-        elif not self.check_with_tolerance(feat_0_value, self.visited):
-            self.all_feat_value.append(feat_01_value)
-            self.visited.append(feat_0_value)
-            self.binary_attack_helper(user, extra_info, feat_0_value)
-        elif abs(feat_0_value - feat_01_value) < 0.01:
-            self.all_feat_value.append(feat_0_value)
-            self.visited.append(feat_01_value)
-            return
-        else:
-            self.visited.append(feat_01_value)
-            self.binary_attack_helper(user, extra_info, feat_0_value)
+        for feat_01_value in feat_01_values:
+            extra_info["feat_value"] = feat_01_value
+            self.reset_model()
+            self.reconfigure_model("cls_attack", extra_info=extra_info)
+            self.reconfigure_model("feature_attack", extra_info=extra_info)
+            server_payload = self.distribute_payload()
+            shared_data, _ = user.compute_local_updates(server_payload)
+            feat_0 = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
+            feat_0_value = float(feat_0[feat_to_obtain])  # the middle includes left hand side
+            feat_1_value = 2 * feat_01_value - feat_0_value
+            # print(feat_01_value, feat_0_value, feat_1_value)
+            # from IPython import embed; embed()
 
-        # call right
-        if self.check_with_tolerance(feat_1_value, self.all_feat_value):
-            return
-        elif self.check_with_tolerance(feat_1_value, self.visited):
-            return
-        else:
-            self.visited.append(feat_01_value)
-            self.binary_attack_helper(user, extra_info, feat_1_value)
+            feat_candidates = [feat_0_value]
 
-        # one more call?
-        feat_3_value = (feat_01_value + feat_1_value) / 2
-        if self.check_with_tolerance(feat_3_value, self.all_feat_value):
-            pass
-        elif self.check_with_tolerance(feat_3_value, self.visited):
-            pass
-        else:
-            self.visited.append(feat_01_value)
-            self.binary_attack_helper(user, extra_info, feat_3_value)
+            for feat_cand in feat_candidates:
+                if self.check_with_tolerance(feat_cand, self.visited):
+                    pass
+                elif not self.check_with_tolerance(feat_cand, self.visited):
+                    if not self.check_with_tolerance(feat_01_value, self.all_feat_value):
+                        self.all_feat_value.append(feat_01_value)
+                        # print(len(self.all_feat_value))
+                    new_feat_01_values.append(feat_cand)
+                self.visited.append(feat_cand)
+                # elif abs(feat_cand - feat_01_value) < 0.01:
+                #     self.all_feat_value.append(feat_cand)
+                #     self.visited.append(feat_01_value)
+
+                if len(self.all_feat_value) >= self.num_target_data:
+                    return
+
+            new_feat_01_values.append(feat_1_value)
+            new_feat_01_values.append((feat_01_value + feat_1_value) / 2)
+            new_feat_01_values.append((feat_01_value + feat_0_value) / 2)
+
+        self.binary_attack_helper(user, extra_info, new_feat_01_values)
     
     def check_with_tolerance(self, value, list):
         for i in list:

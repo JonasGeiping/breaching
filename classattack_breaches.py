@@ -37,7 +37,7 @@ def main_launcher(cfg):
     # hardcoding for 
     with open_dict(cfg):
         cfg.case.server.name = 'class_malicious_parameters'
-        cfg.case.impl.sharing_strategy = 'file_system'
+        # cfg.case.impl.sharing_strategy = 'file_system'
         
         cfg.case.user.provide_labels = True
         cfg.case.user.provide_buffers = True

@@ -550,8 +550,14 @@ class ClassParameterServer(HonestServer):
         self.visited = []
         num_data_points = len(shared_data["metadata"]["labels"])
         self.binary_attack_helper(user, extra_info, feat_value)
-        if len(self.all_feat_value) != num_target_data:
+
+        # automatically fill last two if not get
+        if len(self.all_feat_value) == num_target_data - 1:
             self.all_feat_value.append(1000)
+        # elif len(self.all_feat_value) == num_target_data - 2:
+        #     tmp_val = feat_value * (num_target_data - 1) - sum(self.all_feat_value)
+        #     self.all_feat_value.append(tmp_val)
+        #     self.all_feat_value.append(1000)
         self.all_feat_value.sort()
 
         # recover gradients
@@ -598,7 +604,7 @@ class ClassParameterServer(HonestServer):
         feat_0 = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
         feat_0_value = float(feat_0[feat_to_obtain])  # the middle includes left hand side
         feat_1_value = 2 * feat_01_value - feat_0_value
-        # print(feat_01_value, feat_0_value, feat_1_value)
+        print(feat_01_value, feat_0_value, feat_1_value)
         # from IPython import embed; embed()
 
         # call left
@@ -620,12 +626,22 @@ class ClassParameterServer(HonestServer):
 
         # call right
         if self.check_with_tolerance(feat_1_value, self.all_feat_value):
-            pass
+            return
         elif self.check_with_tolerance(feat_1_value, self.visited):
             return
         else:
             self.visited.append(feat_01_value)
             self.binary_attack_helper(user, extra_info, feat_1_value)
+
+        # one more call?
+        feat_3_value = (feat_01_value + feat_1_value) / 2
+        if self.check_with_tolerance(feat_3_value, self.all_feat_value):
+            pass
+        elif self.check_with_tolerance(feat_3_value, self.visited):
+            pass
+        else:
+            self.visited.append(feat_01_value)
+            self.binary_attack_helper(user, extra_info, feat_3_value)
     
     def check_with_tolerance(self, value, list):
         for i in list:

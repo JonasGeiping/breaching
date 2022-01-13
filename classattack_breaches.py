@@ -5,7 +5,7 @@ The arguments from the default config carry over here.
 """
 
 import hydra
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, open_dict
 
 import datetime
 import time
@@ -34,8 +34,14 @@ def main_launcher(cfg):
     if cfg.seed is None:
         cfg.seed = 233  # The benchmark seed is fixed by default!
 
-    # hardcoding for now
-    cfg.case.server.name = 'class_malicious_parameters'
+    # hardcoding for 
+    with open_dict(cfg):
+        cfg.case.server.name = 'class_malicious_parameters'
+        cfg.case.impl.sharing_strategy = 'file_system'
+        
+        cfg.case.user.provide_labels = True
+        cfg.case.user.provide_buffers = True
+        cfg.case.user.provide_num_data_points = True
 
     log.info(OmegaConf.to_yaml(cfg))
     breaching.utils.initialize_multiprocess_log(cfg)  # manually save log configuration
@@ -95,10 +101,11 @@ def main_process(process_idx, local_group_size, cfg, num_trials=1):
                 reconstruction_data_i, stats = simple_cls_attack(user, server, attacker, tmp_shared_data, cfg)
             else:
                 raise NotImplementedError("Haven't implement cls collision now!")
-
+            
+            reconstruction_data_i = reconstruction_data_i["data"]
             reconstruction_data[target_indx] = reconstruction_data_i
 
-        reconstruction = {'data': reconstruction_data, 'labels': shared_data['metadata']['labels']}
+        reconstruction = {"data": reconstruction_data, "labels": shared_data["metadata"]["labels"]}
 
         # Run the full set of metrics:
         metrics = breaching.analysis.report(

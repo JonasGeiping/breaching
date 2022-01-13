@@ -60,6 +60,18 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
             dropout=0,
             positional_embedding="learnable",
         )
+    elif cfg_model == "transformer3t":
+        # Same as above but with learnable positional embeddings
+        model = TransformerModel(
+            ntokens=cfg_data.vocab_size,
+            ninp=96,
+            nhead=8,
+            nhid=1536,
+            nlayers=3,
+            dropout=0,
+            positional_embedding="learnable",
+            tie_weights=True,
+        )
     elif cfg_model == "transformer1":
         # This is our initial sanity check transformer:
         model = TransformerModel(ntokens=cfg_data.vocab_size, ninp=200, nhead=2, nhid=200, nlayers=1, dropout=0)
@@ -91,10 +103,13 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
                 auto_class = AutoModelForPreTraining
             # Make sure to use the matching tokenizer and vocab_size!
             if pretrained:
-                model = HuggingFaceContainer(auto_class.from_pretrained(cfg_model))
+                model = auto_class.from_pretrained(cfg_model)
             else:
                 hf_cfg = AutoConfig.from_pretrained(cfg_model)
-                model = HuggingFaceContainer(auto_class.from_config(hf_cfg))
+                model = auto_class.from_config(hf_cfg)
+            if model.vocab_size != cfg_data.vocab_size:
+                model.resize_token_embeddings(new_num_tokens=cfg_data.vocab_size)
+            model = HuggingFaceContainer(model)
         except OSError as error_msg:
             raise ValueError(f"Invalid huggingface model {cfg_model} given: {error_msg}")
     return model

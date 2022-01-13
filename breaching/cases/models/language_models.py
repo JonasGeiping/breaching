@@ -11,13 +11,17 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 class LinearModel(torch.nn.Module):
     """Container with just an encoder and a decoder."""
 
-    def __init__(self, vocab_size, embedding_size):
+    def __init__(self, vocab_size, embedding_size, tie_weights=True):
         super().__init__()
         self.encoder = torch.nn.Embedding(vocab_size, embedding_size)
         self.decoder = torch.nn.Linear(embedding_size, vocab_size)
+        if tie_weights:
+            self.decoder.weight = self.encoder.weight
 
-    def forward(self, input_ids, *args, **kwargs):
-        return self.decoder(self.encoder(input_ids))
+    def forward(self, input_ids, inputs_embeds=None, *args, **kwargs):
+        if inputs_embeds is None:
+            inputs_embeds = self.encoder(input_ids)
+        return self.decoder(inputs_embeds)
 
 
 class RNNModel(nn.Module):
@@ -144,7 +148,9 @@ class LearnablePositionalEmbedding(torch.nn.Module):
 class TransformerModel(nn.Module):
     """Container module with an encoder, a recurrent or transformer module, and a decoder."""
 
-    def __init__(self, ntokens, ninp, nhead, nhid, nlayers, dropout=0.5, positional_embedding="fixed"):
+    def __init__(
+        self, ntokens, ninp, nhead, nhid, nlayers, dropout=0.5, positional_embedding="fixed", tie_weights=False
+    ):
         super(TransformerModel, self).__init__()
         self.model_type = "Transformer"
         self.src_mask = None
@@ -157,6 +163,8 @@ class TransformerModel(nn.Module):
         self.encoder = nn.Embedding(ntokens, ninp)
         self.ninp = ninp
         self.decoder = nn.Linear(ninp, ntokens)
+        if tie_weights:
+            self.decoder.weight = self.encoder.weight
 
         self.init_weights()
 
@@ -171,7 +179,7 @@ class TransformerModel(nn.Module):
         nn.init.zeros_(self.decoder.weight)
         nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
-    def forward(self, input_ids, has_mask=False, input_embeds=None, **kwargs):
+    def forward(self, input_ids, has_mask=False, inputs_embeds=None, **kwargs):
         """Can utilize input embeddings directly instead of inputs."""
         if has_mask:
             device = input_ids.device
@@ -181,10 +189,10 @@ class TransformerModel(nn.Module):
         else:
             self.src_mask = None
 
-        if input_embeds is None:
+        if inputs_embeds is None:
             inputs = self.encoder(input_ids) * math.sqrt(self.ninp)
         else:
-            inputs = input_embeds * math.sqrt(self.ninp)
+            inputs = inputs_embeds * math.sqrt(self.ninp)
         inputs = self.pos_encoder(inputs)
         output = self.transformer_encoder(inputs, self.src_mask)
         output = self.decoder(output)

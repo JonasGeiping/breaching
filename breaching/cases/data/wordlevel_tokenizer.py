@@ -7,6 +7,7 @@ We'll use AG-News as a substitute public dataseet.
 
 
 """This is code from https://huggingface.co/robot-test/dummy-tokenizer-wordlevel."""
+import os
 
 from tokenizers import Tokenizer, normalizers, pre_tokenizers
 from tokenizers.models import WordLevel

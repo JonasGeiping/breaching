@@ -107,7 +107,7 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
             else:
                 hf_cfg = AutoConfig.from_pretrained(cfg_model)
                 model = auto_class.from_config(hf_cfg)
-            if model.vocab_size != cfg_data.vocab_size:
+            if model.config.vocab_size != cfg_data.vocab_size:
                 model.resize_token_embeddings(new_num_tokens=cfg_data.vocab_size)
             model = HuggingFaceContainer(model)
         except OSError as error_msg:

@@ -156,7 +156,7 @@ def simple_cls_attack(user, server, attacker, shared_data, cfg):
 
 
 def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_psnr, reconstruction_data):
-    log.info(f"There are total {len(shared_data['metadata']['labels'])} datapoints with label {shared_data['metadata']['labels'][0].item()} with binary attack.")
+    log.info(f"There are total {len(shared_data['metadata']['labels'])} datapoints with label {shared_data['metadata']['labels'][0].item()}.")
 
     cls_to_obtain = int(shared_data["metadata"]["labels"][0])
     extra_info = {"cls_to_obtain": cls_to_obtain}
@@ -187,7 +187,7 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
 
     # recover image by image
     for i, grad_i in enumerate(recovered_single_gradients):
-        log.info(f"Start recovering datapoint {i} of label {shared_data['metadata']['labels'].item()}.")
+        log.info(f"Start recovering datapoint {i} of label {shared_data['metadata']['labels'][0].item()}.")
 
         tmp_share_data = copy.deepcopy(shared_data)
         tmp_share_data["metadata"]["num_data_points"] = 1

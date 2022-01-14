@@ -15,9 +15,9 @@ log = logging.getLogger(__name__)
 def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_dataset=False):
     # os.environ["TOKENIZERS_PARALLELISM"] = "false"
     cfg_data.path = os.path.expanduser(cfg_data.path)
-    from datasets import load_dataset, Dataset #, set_progress_bar_enabled
+    from datasets import load_dataset, Dataset, set_progress_bar_enabled
 
-    #set_progress_bar_enabled(False)
+    set_progress_bar_enabled(False)
 
     if user_idx is None:
         user_idx = torch.randint(0, cfg_data.default_clients, (1,))

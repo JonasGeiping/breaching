@@ -4,7 +4,6 @@
 The arguments from the default config carry over here.
 """
 
-import enum
 import hydra
 from omegaconf import OmegaConf
 
@@ -96,8 +95,15 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
             else:
                 # send several queries because of cls collision
                 log.info(f"Attacking label {tmp_shared_data['metadata']['labels'][0].item()} with binary attack.")
-                reconstruction_data_i, stats = cls_collision_attack(user, server, attacker, tmp_shared_data, 
-                                                                    cfg, target_max_psnr, copy.deepcopy(reconstruction_data[target_indx]))
+                reconstruction_data_i, stats = cls_collision_attack(
+                    user,
+                    server,
+                    attacker,
+                    tmp_shared_data,
+                    cfg,
+                    target_max_psnr,
+                    copy.deepcopy(reconstruction_data[target_indx]),
+                )
 
             reconstruction_data_i = reconstruction_data_i["data"]
             reconstruction_data[target_indx] = reconstruction_data_i
@@ -156,7 +162,9 @@ def simple_cls_attack(user, server, attacker, shared_data, cfg):
 
 
 def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_psnr, reconstruction_data):
-    log.info(f"There are total {len(shared_data['metadata']['labels'])} datapoints with label {shared_data['metadata']['labels'][0].item()}.")
+    log.info(
+        f"There are total {len(shared_data['metadata']['labels'])} datapoints with label {shared_data['metadata']['labels'][0].item()}."
+    )
 
     cls_to_obtain = int(shared_data["metadata"]["labels"][0])
     extra_info = {"cls_to_obtain": cls_to_obtain}
@@ -179,11 +187,11 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
 
     # return to the model with multiplier=1
     server.reset_model()
-    extra_info['multiplier'] = 1
-    extra_info['feat_value'] = feat_value
-    server.reconfigure_model('cls_attack', extra_info=extra_info)
-    server.reconfigure_model('feature_attack', extra_info=extra_info)
-    server_payload = server.distribute_payload()   
+    extra_info["multiplier"] = 1
+    extra_info["feat_value"] = feat_value
+    server.reconfigure_model("cls_attack", extra_info=extra_info)
+    server.reconfigure_model("feature_attack", extra_info=extra_info)
+    server_payload = server.distribute_payload()
 
     # recover image by image
     for i, grad_i in enumerate(recovered_single_gradients):
@@ -199,10 +207,10 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
         )
 
         reconstruction_data[[i]] = reconstructed_user_data["data"]
-    
+
         if target_max_psnr:
             break
-        
+
     return dict(data=reconstruction_data, labels=shared_data["metadata"]["labels"]), stats
 
 

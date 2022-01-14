@@ -40,7 +40,7 @@ def _build_dataset_vision(cfg_data, split, can_download=True):
             root=cfg_data.path, split="train" if "train" in split else "val", transform=_default_t,
         )
         dataset.lookup = dict(zip(list(range(len(dataset))), [label for (_, label) in dataset.samples]))
-        indices = [idx for (idx, label) in dataset.lookup.items() if label < 398]
+        indices = [idx for (idx, label) in dataset.lookup.items() if label < 397]
         dataset.classes = dataset.classes[:397]
         dataset.samples = [dataset.samples[i] for i in indices]  # Manually remove samples instead of using a Subset
         dataset.lookup = dict(zip(list(range(len(dataset))), [label for (_, label) in dataset.samples]))
@@ -111,6 +111,17 @@ def _split_dataset_vision(dataset, cfg_data, user_idx=None, return_full_dataset=
                 data_ids += data_with_class[
                     user_idx * data_per_class_per_user : data_per_class_per_user * (user_idx + 1)
                 ]
+            dataset = Subset(dataset, data_ids)
+        elif cfg_data.partition == "random-full":  # Data might be repeated across users (e.g. meme images)
+            data_per_user = len(dataset) // cfg_data.default_clients
+            data_ids = torch.randperm(len(dataset))[:data_per_user]
+            dataset = Subset(dataset, data_ids)
+        elif cfg_data.partition == "random":  # Data not replicated across users. Split is deterministic over reruns!
+            data_per_user = len(dataset) // cfg_data.default_clients
+
+            generator = torch.Generator()
+            generator.manual_seed(233)
+            data_ids = torch.randperm(len(dataset))[user_idx * data_per_user : data_per_user * (user_idx + 1)]
             dataset = Subset(dataset, data_ids)
         elif cfg_data.partition == "none":  # Replicate on all users for a sanity check!
             pass

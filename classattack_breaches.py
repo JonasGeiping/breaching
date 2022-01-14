@@ -45,10 +45,14 @@ def main_launcher(cfg):
     log.info("-----------------Job finished.-------------------------------")
 
 
-def main_process(process_idx, local_group_size, cfg, num_trials=100):
+def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_psnr=True):
     """This function controls the central routine."""
     local_time = time.time()
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
+
+    if cfg.num_trials is not None:
+        num_trials = cfg.num_trials
+
     model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data, cfg.case.server.pretrained)
 
     server = breaching.cases.construct_server(model, loss_fn, cfg.case, setup)
@@ -56,19 +60,17 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     attacker = breaching.attacks.prepare_attack(model, loss_fn, cfg.attack, setup)
     if cfg.case.user.user_idx is not None:
         print("The argument user_idx is disregarded during the benchmark. Data selection is fixed.")
+    log.info(
+        f"Partitioning is set to {cfg.case.data.partition}. Make sure there exist {num_trials} users in this scheme."
+    )
 
-    if cfg.case.user.num_data_points == 1:
-        cfg.case.data.partition = "unique-class"  # Different label per user
-    else:
-        cfg.case.data.partition = "balanced"  # Balanced partition of labels
-
-    cfg.case.user.user_idx = 0
+    cfg.case.user.user_idx = -1
     overall_metrics = []
     for run in range(num_trials):
         # Select data that has not been seen before:
         cfg.case.user.user_idx += 1
         user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
-        log.info(f"Now evaluating indices {user.user_idx} in trial {run}.")
+        log.info(f"Now evaluating user with idx {user.user_idx} in trial {run}.")
 
         attacker = breaching.attacks.prepare_attack(server.model, server.loss, cfg.attack, setup)
 
@@ -76,7 +78,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         server_payload = server.distribute_payload()
         shared_data, true_user_data = user.compute_local_updates(server_payload)
         t_labels = shared_data["metadata"]["labels"].detach().cpu().numpy()
-
+        log.info(f"Found labels {t_labels} in first query.")
         reconstruction_data = torch.zeros_like(true_user_data["data"])
 
         # attack cls by cls
@@ -88,12 +90,16 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
 
             if len(target_indx) == 1:
                 # simple cls attack if there is no cls collision
+                log.info(f"Attacking label {tmp_shared_data['metadata']['labels'].item()} with cls attack.")
                 reconstruction_data_i, stats = simple_cls_attack(user, server, attacker, tmp_shared_data, cfg)
             else:
-                raise NotImplementedError("Haven't implement cls collision now!")
+                log.info("Haven't implement cls collision now!")
+                reconstruction_data_i = dict(data=torch.zeros_like(true_user_data["data"]), labels=None)
 
             reconstruction_data_i = reconstruction_data_i["data"]
             reconstruction_data[target_indx] = reconstruction_data_i
+            if target_max_psnr:
+                break
 
         reconstruction = {"data": reconstruction_data, "labels": shared_data["metadata"]["labels"]}
 

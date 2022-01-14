@@ -52,13 +52,11 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     attacker = breaching.attacks.prepare_attack(model, loss_fn, cfg.attack, setup)
     if cfg.case.user.user_idx is not None:
         print("The argument user_idx is disregarded during the benchmark. Data selection is fixed.")
+    log.info(
+        f"Partitioning is set to {cfg.case.data.partition}. Make sure there exist {num_trials} users in this scheme."
+    )
 
-    if cfg.case.user.num_data_points == 1:
-        cfg.case.data.partition = "unique-class"  # Different label per user
-    else:
-        cfg.case.data.partition = "balanced"  # Balanced partition of labels
-
-    cfg.case.user.user_idx = 0
+    cfg.case.user.user_idx = -1
     overall_metrics = []
     for run in range(num_trials):
         # Select data that has not been seen before:

@@ -54,9 +54,9 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         print("The argument user_idx is disregarded during the benchmark. Data selection is fixed.")
 
     if cfg.case.user.num_data_points == 1:
-        cfg.case.data.partition == "unique-class"  # Different label per user
+        cfg.case.data.partition = "unique-class"  # Different label per user
     else:
-        cfg.case.data.partition == "balanced"  # Balanced partition of labels
+        cfg.case.data.partition = "balanced"  # Balanced partition of labels
 
     cfg.case.user.user_idx = 0
     overall_metrics = []

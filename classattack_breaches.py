@@ -58,9 +58,9 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         print("The argument user_idx is disregarded during the benchmark. Data selection is fixed.")
 
     if cfg.case.user.num_data_points == 1:
-        cfg.case.data.partition == "unique-class"  # Different label per user
+        cfg.case.data.partition = "unique-class"  # Different label per user
     else:
-        cfg.case.data.partition == "balanced"  # Balanced partition of labels
+        cfg.case.data.partition = "balanced"  # Balanced partition of labels
 
     cfg.case.user.user_idx = 0
     overall_metrics = []
@@ -70,7 +70,6 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
         log.info(f"Now evaluating indices {user.user_idx} in trial {run}.")
 
-        user, server, model, loss_fn = breaching.cases.construct_case(cfg.case, setup)
         attacker = breaching.attacks.prepare_attack(server.model, server.loss, cfg.attack, setup)
 
         # get info first (not count as one attack?)

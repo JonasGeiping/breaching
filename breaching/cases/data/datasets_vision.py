@@ -102,7 +102,12 @@ def _split_dataset_vision(dataset, cfg_data, user_idx=None, return_full_dataset=
             data_ids = [idx for (idx, label) in dataset.lookup.items() if label == user_idx]
             dataset = Subset(dataset, data_ids)
         elif cfg_data.partition == "mixup":
-            data_per_class_per_user = len(dataset) // (len(dataset.classes) // 2) // cfg_data.default_clients
+            if "mixup_freq" in cfg_data:
+                mixup_freq = cfg_data.mixup_freq
+            else:
+                # use default mixup_freq=2
+                mixup_freq = 2
+            data_per_class_per_user = len(dataset) // (len(dataset.classes) // mixup_freq) // cfg_data.default_clients
             if data_per_class_per_user < 1:
                 raise ValueError("Too many clients for a balanced dataset.")
             data_ids = []

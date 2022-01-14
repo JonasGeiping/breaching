@@ -5,7 +5,7 @@ The arguments from the default config carry over here.
 """
 
 import hydra
-from omegaconf import OmegaConf, open_dict
+from omegaconf import OmegaConf
 
 import datetime
 import time
@@ -33,15 +33,6 @@ def main_launcher(cfg):
     launch_time = time.time()
     if cfg.seed is None:
         cfg.seed = 233  # The benchmark seed is fixed by default!
-
-    # hardcoding for 
-    with open_dict(cfg):
-        cfg.case.server.name = 'class_malicious_parameters'
-        # cfg.case.impl.sharing_strategy = 'file_system'
-        
-        cfg.case.user.provide_labels = True
-        cfg.case.user.provide_buffers = True
-        cfg.case.user.provide_num_data_points = True
 
     log.info(OmegaConf.to_yaml(cfg))
     breaching.utils.initialize_multiprocess_log(cfg)  # manually save log configuration
@@ -93,15 +84,15 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         for target_cls in np.unique(t_labels):
             target_indx = np.where(t_labels == target_cls)
             tmp_shared_data = copy.deepcopy(shared_data)
-            tmp_shared_data['metadata']['num_data_points'] = len(target_indx)
-            tmp_shared_data['metadata']['labels'] = shared_data['metadata']['labels'][target_indx]
+            tmp_shared_data["metadata"]["num_data_points"] = len(target_indx)
+            tmp_shared_data["metadata"]["labels"] = shared_data["metadata"]["labels"][target_indx]
 
             if len(target_indx) == 1:
                 # simple cls attack if there is no cls collision
                 reconstruction_data_i, stats = simple_cls_attack(user, server, attacker, tmp_shared_data, cfg)
             else:
                 raise NotImplementedError("Haven't implement cls collision now!")
-            
+
             reconstruction_data_i = reconstruction_data_i["data"]
             reconstruction_data[target_indx] = reconstruction_data_i
 
@@ -135,21 +126,25 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         cfg, average_metrics, stats, time.time() - local_time, original_cwd=True, table_name="CLASSATTACK_breach"
     )
 
+
 def simple_cls_attack(user, server, attacker, shared_data, cfg):
-    cls_to_obtain = int(shared_data['metadata']['labels'][0])
-    extra_info = {'cls_to_obtain': cls_to_obtain}
-    
+    cls_to_obtain = int(shared_data["metadata"]["labels"][0])
+    extra_info = {"cls_to_obtain": cls_to_obtain}
+
     # modify the parameters first
     server.reset_model()
-    server.reconfigure_model('cls_attack', extra_info=extra_info)
+    server.reconfigure_model("cls_attack", extra_info=extra_info)
 
     server_payload = server.distribute_payload()
     tmp_shared_data, _ = user.compute_local_updates(server_payload)
-    shared_data['gradients'] = tmp_shared_data['gradients']
+    shared_data["gradients"] = tmp_shared_data["gradients"]
 
-    reconstructed_user_data, stats = attacker.reconstruct([server_payload], [shared_data], server.secrets, dryrun=cfg.dryrun)
+    reconstructed_user_data, stats = attacker.reconstruct(
+        [server_payload], [shared_data], server.secrets, dryrun=cfg.dryrun
+    )
 
     return reconstructed_user_data, stats
+
 
 if __name__ == "__main__":
     main_launcher()

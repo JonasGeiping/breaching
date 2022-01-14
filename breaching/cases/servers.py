@@ -568,6 +568,7 @@ class ClassParameterServer(HonestServer):
 
         # recover gradients
         import copy
+
         single_gradients = []
         prev_grad = None
         extra_info["multiplier"] = 300
@@ -642,7 +643,7 @@ class ClassParameterServer(HonestServer):
             new_feat_01_values.append((feat_01_value + feat_0_value) / 2)
 
         self.binary_attack_helper(user, extra_info, new_feat_01_values)
-    
+
     def check_with_tolerance(self, value, list):
         for i in list:
             if abs(value - i) < 0.01:

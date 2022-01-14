@@ -95,7 +95,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
                 reconstruction_data_i, stats = simple_cls_attack(user, server, attacker, tmp_shared_data, cfg)
             else:
                 # send several queries because of cls collision
-                log.info(f"Attacking label {tmp_shared_data['metadata']['labels'].item()} with binary attack.")
+                log.info(f"Attacking label {tmp_shared_data['metadata']['labels'][0].item()} with binary attack.")
                 reconstruction_data_i, stats = cls_collision_attack(user, server, attacker, tmp_shared_data, 
                                                                     cfg, target_max_psnr, copy.deepcopy(reconstruction_data[target_indx]))
 
@@ -199,7 +199,7 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
         if target_max_psnr:
             break
         
-    return dict(data=reconstruction_data, labels=shared_data["metadata"]["labels"])
+    return dict(data=reconstruction_data, labels=shared_data["metadata"]["labels"]), stats
 
 
 if __name__ == "__main__":

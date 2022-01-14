@@ -128,9 +128,9 @@ def _get_tokenizer(tokenizer_name, cache_dir=None):
 
     if tokenizer_name == "word-level":
         path = os.path.join(get_base_cwd(), "cache", "word-tokenizer.json")
-        try:
+        if os.path.isfile(path):
             tokenizer = PreTrainedTokenizerFast(tokenizer_file=path)
-        except (FileNotFoundError, OSError):
+        else:
             from .wordlevel_tokenizer import generate_word_level_tokenizer
 
             generate_word_level_tokenizer()

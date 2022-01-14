@@ -106,7 +106,7 @@ def _get_preprocessing(tokenizer, cfg_data):
         else:
             # This collate_fn generates "labels" automatically after masking
             collate_fn = DataCollatorForLanguageModeling(
-                tokenizer=tokenizer, mlm=True, mlm_probability=cfg_data.mlm_probability
+                tokenizer=tokenizer, mlm=not cfg_data.disable_mlm, mlm_probability=cfg_data.mlm_probability
             )
     elif cfg_data.task == "classification":
         tokenizer.model_max_length = cfg_data.shape[0]

@@ -1,7 +1,10 @@
 name: stackoverflow
 modality: text
 task: causal-lm
-mlm_probability: 1 # only used when task=masked-lm
+
+# only used when task=masked-lm:
+mlm_probability: 1
+disable_mlm: False
 
 path: "~/data"
 size: 135_818_730

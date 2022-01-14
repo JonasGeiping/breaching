@@ -20,7 +20,7 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
     set_progress_bar_enabled(False)
 
     if user_idx is None:
-        user_idx = torch.randint(0, cfg_data.default_clients, (1,))
+        user_idx = torch.randint(0, cfg_data.default_clients, (1,)).item()
     else:
         if user_idx > cfg_data.default_clients:
             raise ValueError("This user index exceeds the maximal number of clients.")
@@ -33,13 +33,16 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
         raw_dataset = load_dataset("wikitext", "wikitext-103-v1", cache_dir=cfg_data.path, split=split)
         raw_dataset = _split_wikipedia_into_articles(raw_dataset, user_idx, return_full_dataset, min_length=25)
     elif cfg_data.name == "stackoverflow":
-        raw_texts = load_stackoverflow(cache_dir=cfg_data.path, user_idx=user_idx, split=split)
+        raw_texts = load_stackoverflow(cfg_data.path, user_idx, return_full_dataset, split=split)
         raw_dataset = Dataset.from_dict(dict(text=raw_texts))
     elif cfg_data.name == "shakespeare":
-        raw_texts = load_shakespeare(cache_dir=cfg_data.path, user_idx=user_idx, split=split)
+        raw_texts = load_shakespeare(cfg_data.path, user_idx, return_full_dataset, split=split)
         raw_dataset = Dataset.from_dict(dict(text=raw_texts))
     elif cfg_data.name == "cola":
-        raw_datapoint = load_dataset("glue", "cola")[split][user_idx]
+        if return_full_dataset:
+            raw_datapoint = load_dataset("glue", "cola")[split]
+        else:
+            raw_datapoint = load_dataset("glue", "cola")[split][user_idx]
         raw_dataset = Dataset.from_dict({k: [v] for k, v in raw_datapoint.items()})
     else:
         raise ValueError(f"Invalid text dataset {cfg_data.name} provided.")
@@ -179,33 +182,49 @@ def _split_wikipedia_into_articles(dataset, user_idx=0, return_full_dataset=Fals
     return dataset
 
 
-def load_stackoverflow(cache_dir="~/data", user_idx=0, split="train"):
-    path = os.path.join(get_base_cwd(), "cache", f"stackoverflow_cache_{user_idx}.txt")
-    try:
-        with open(path, "r") as file:
-            raw_texts = list(file)
-    except FileNotFoundError:
-        raw_texts = load_stackoverflow_tff(cache_dir=cache_dir, user_idx=user_idx, split=split)
-        with open(path, "w") as file:
-            for text in raw_texts:
-                file.write(text)
-    return raw_texts
+def load_stackoverflow(cache_dir="~/data", user_idx=0, return_full_dataset=False, split="train"):
+    """Return the first 250 users if "return_full_dataset=True" ..."""
+    if not return_full_dataset:
+        path = os.path.join(get_base_cwd(), "cache", f"stackoverflow_cache_{user_idx}.txt")
+        try:
+            with open(path, "r") as file:
+                raw_texts = list(file)
+        except FileNotFoundError:
+            raw_texts = load_stackoverflow_tff(cache_dir=cache_dir, user_idx=user_idx, split=split)
+            with open(path, "w") as file:
+                for text in raw_texts:
+                    file.write(text)
+        return raw_texts
+    else:
+        text_collection = []
+        for user_idx in range(250):
+            raw_texts = load_stackoverflow_tff(cache_dir=cache_dir, user_idx=user_idx, split=split)
+            text_collection += raw_texts
+        return text_collection
 
 
-def load_shakespeare(cache_dir="~/data", user_idx=0, split="train"):
-    path = os.path.join(get_base_cwd(), "cache", f"shakespeare_cache_{user_idx}.txt")
-    try:
-        with open(path, "r") as file:
-            raw_texts = list(file)
-    except FileNotFoundError:
-        raw_texts = load_shakespeare_tff(cache_dir=cache_dir, user_idx=user_idx, split=split)
-        with open(path, "w") as file:
-            for text in raw_texts:
-                file.write(text)
-    return raw_texts
+def load_shakespeare(cache_dir="~/data", user_idx=0, return_full_dataset=False, split="train"):
+    """Return the first 250 users if "return_full_dataset=True" ..."""
+    if not return_full_dataset:
+        path = os.path.join(get_base_cwd(), "cache", f"shakespeare_cache_{user_idx}.txt")
+        try:
+            with open(path, "r") as file:
+                raw_texts = list(file)
+        except FileNotFoundError:
+            raw_texts = load_shakespeare_tff(cache_dir=cache_dir, user_idx=user_idx, split=split)
+            with open(path, "w") as file:
+                for text in raw_texts:
+                    file.write(text)
+        return raw_texts
+    else:
+        text_collection = []
+        for user_idx in range(250):
+            raw_texts = load_shakespeare_tff(cache_dir=cache_dir, user_idx=user_idx, split=split)
+            text_collection += raw_texts
+        return text_collection
 
 
-"""The following functions are from tff at
+"""The following functions are adapted from tff at
 https://github.com/tensorflow/federated/blob/610843c724740e1b041837cc93501b609fb05d8f/tensorflow_federated/python/simulation/datasets/download.py#L31
 and
 https://github.com/tensorflow/federated/blob/610843c724740e1b041837cc93501b609fb05d8f/tensorflow_federated/python/simulation/datasets/sql_client_data.py#L65
@@ -311,7 +330,7 @@ def load_stackoverflow_tff(cache_dir="~/data", user_idx=0, split="train"):
     cursor = sqlite3.connect(db_name)
     result = cursor.execute(query)
     data = list(result)
-    log.info(f"Now processing user {client_id}.")
+    log.info(f"Now processing user {client_id} from tff database.")
 
     def parse_proto(tensor_proto):
         import tensorflow as tf  # wanted to circumvent this, but parsing the serialized data cleanly was difficult
@@ -349,7 +368,7 @@ def load_shakespeare_tff(cache_dir="~/data", user_idx=0, split="train"):
     cursor = sqlite3.connect(db_name)
     result = cursor.execute(query)
     data = list(result)
-    log.info(f"Now processing user {client_id}.")
+    log.info(f"Now processing user {client_id} from tff database.")
 
     def parse_proto(serialized_proto_tensor):
         import tensorflow as tf  # wanted to circumvent this, but parsing the serialized data cleanly was difficult

@@ -123,11 +123,9 @@ class OptimizationJointAttacker(OptimizationBasedAttacker):
                 if iteration + 1 == self.cfg.optim.max_iterations or iteration % self.cfg.optim.callback == 0:
                     timestamp = time.time()
                     p = candidate_labels.softmax(dim=-1)
-                    label_entropy = torch.where(
-                        p > 0,
-                        -p * torch.log(p),
-                        torch.zeros_like(p),
-                    ).sum(dim=-1).mean() / torch.log(torch.as_tensor(p.shape[-1], dtype=torch.float))
+                    label_entropy = torch.where(p > 0, -p * torch.log(p), torch.zeros_like(p),).sum(
+                        dim=-1
+                    ).mean() / torch.log(torch.as_tensor(p.shape[-1], dtype=torch.float))
                     log.info(
                         f"| It: {iteration + 1} | Rec. loss: {objective_value.item():2.4f} | "
                         f" Task loss: {task_loss.item():2.4f} | T: {timestamp - current_wallclock:4.2f}s | "

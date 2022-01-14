@@ -1,7 +1,10 @@
 name: wikitext
 modality: text
 task: causal-lm # masked-lm / causal-lm
-mlm_probability: 1 # only used when task=masked-lm
+
+# only used when task=masked-lm:
+mlm_probability: 1
+disable_mlm: False
 
 path: "~/data"
 size: 1_801_350

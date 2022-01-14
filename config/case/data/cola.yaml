@@ -1,7 +1,10 @@
 name: cola
 modality: text
 task: classification
-mlm_probability: 1 # only used when task=masked-lm
+
+# only used when task=masked-lm:
+mlm_probability: 1
+disable_mlm: False
 
 path: "~/data"
 size: 8551 # rows in training

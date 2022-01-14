@@ -15,6 +15,10 @@ import breaching
 
 import os
 
+import numpy as np
+import torch
+import copy
+
 os.environ["HYDRA_FULL_ERROR"] = "0"
 log = logging.getLogger(__name__)
 
@@ -41,10 +45,14 @@ def main_launcher(cfg):
     log.info("-----------------Job finished.-------------------------------")
 
 
-def main_process(process_idx, local_group_size, cfg, num_trials=100):
+def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_psnr=True):
     """This function controls the central routine."""
     local_time = time.time()
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
+
+    if cfg.num_trials is not None:
+        num_trials = cfg.num_trials
+
     model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data, cfg.case.server.pretrained)
 
     server = breaching.cases.construct_server(model, loss_fn, cfg.case, setup)
@@ -62,17 +70,44 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         # Select data that has not been seen before:
         cfg.case.user.user_idx += 1
         user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
-        log.info(f"Now evaluating indices {user.user_idx} in trial {run}.")
-        # Run exchange
-        shared_user_data, payloads, true_user_data = server.run_protocol(user)
-        # Evaluate attack:
-        reconstruction, stats = attacker.reconstruct(payloads, shared_user_data, server.secrets, dryrun=cfg.dryrun)
+        log.info(f"Now evaluating user with idx {user.user_idx} in trial {run}.")
+
+        attacker = breaching.attacks.prepare_attack(server.model, server.loss, cfg.attack, setup)
+
+        # get info first (not count as one attack?)
+        server_payload = server.distribute_payload()
+        shared_data, true_user_data = user.compute_local_updates(server_payload)
+        t_labels = shared_data["metadata"]["labels"].detach().cpu().numpy()
+        log.info(f"Found labels {t_labels} in first query.")
+        reconstruction_data = torch.zeros_like(true_user_data["data"])
+
+        # attack cls by cls
+        for target_cls in np.unique(t_labels):
+            target_indx = np.where(t_labels == target_cls)
+            tmp_shared_data = copy.deepcopy(shared_data)
+            tmp_shared_data["metadata"]["num_data_points"] = len(target_indx)
+            tmp_shared_data["metadata"]["labels"] = shared_data["metadata"]["labels"][target_indx]
+
+            if len(target_indx) == 1:
+                # simple cls attack if there is no cls collision
+                log.info(f"Attacking label {tmp_shared_data['metadata']['labels'].item()} with cls attack.")
+                reconstruction_data_i, stats = simple_cls_attack(user, server, attacker, tmp_shared_data, cfg)
+            else:
+                log.info("Haven't implement cls collision now!")
+                reconstruction_data_i = dict(data=torch.zeros_like(true_user_data["data"]), labels=None)
+
+            reconstruction_data_i = reconstruction_data_i["data"]
+            reconstruction_data[target_indx] = reconstruction_data_i
+            if target_max_psnr:
+                break
+
+        reconstruction = {"data": reconstruction_data, "labels": shared_data["metadata"]["labels"]}
 
         # Run the full set of metrics:
         metrics = breaching.analysis.report(
             reconstruction,
             true_user_data,
-            payloads,
+            [server_payload],
             server.model,
             order_batch=True,
             compute_full_iip=True,
@@ -93,8 +128,27 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
 
     # Save global summary:
     breaching.utils.save_summary(
-        cfg, average_metrics, stats, time.time() - local_time, original_cwd=True, table_name="BENCHMARK_breach"
+        cfg, average_metrics, stats, time.time() - local_time, original_cwd=True, table_name="CLASSATTACK_breach"
     )
+
+
+def simple_cls_attack(user, server, attacker, shared_data, cfg):
+    cls_to_obtain = int(shared_data["metadata"]["labels"][0])
+    extra_info = {"cls_to_obtain": cls_to_obtain}
+
+    # modify the parameters first
+    server.reset_model()
+    server.reconfigure_model("cls_attack", extra_info=extra_info)
+
+    server_payload = server.distribute_payload()
+    tmp_shared_data, _ = user.compute_local_updates(server_payload)
+    shared_data["gradients"] = tmp_shared_data["gradients"]
+
+    reconstructed_user_data, stats = attacker.reconstruct(
+        [server_payload], [shared_data], server.secrets, dryrun=cfg.dryrun
+    )
+
+    return reconstructed_user_data, stats
 
 
 if __name__ == "__main__":

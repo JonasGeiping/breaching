@@ -3,6 +3,10 @@ import torch
 from functools import partial
 import warnings
 
+warnings.filterwarnings(
+    "ignore", message=".*torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument.*",
+)  # this is kornia's problem
+
 
 def cw_ssim(img_batch, ref_batch, scales=5, skip_scales=None, K=1e-6, reduction="mean"):
     """Batched complex wavelet structural similarity.

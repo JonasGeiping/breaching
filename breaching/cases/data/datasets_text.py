@@ -105,7 +105,9 @@ def _get_preprocessing(tokenizer, cfg_data):
             collate_fn = default_data_collator
         else:
             # This collate_fn generates "labels" automatically after masking
-            collate_fn = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm_probability=cfg_data.mlm_probability)
+            collate_fn = DataCollatorForLanguageModeling(
+                tokenizer=tokenizer, mlm=not cfg_data.disable_mlm, mlm_probability=cfg_data.mlm_probability
+            )
     elif cfg_data.task == "classification":
         tokenizer.model_max_length = cfg_data.shape[0]
 
@@ -126,9 +128,9 @@ def _get_tokenizer(tokenizer_name, cache_dir=None):
 
     if tokenizer_name == "word-level":
         path = os.path.join(get_base_cwd(), "cache", "word-tokenizer.json")
-        try:
+        if os.path.isfile(path):
             tokenizer = PreTrainedTokenizerFast(tokenizer_file=path)
-        except FileNotFoundError:
+        else:
             from .wordlevel_tokenizer import generate_word_level_tokenizer
 
             generate_word_level_tokenizer()

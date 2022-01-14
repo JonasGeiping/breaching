@@ -56,7 +56,7 @@ def construct_dataloader(cfg_data, cfg_impl, user_idx=0, return_full_dataset=Fal
         batch_size=min(cfg_data.batch_size, len(dataset)),
         sampler=data_sampler,
         collate_fn=collate_fn,
-        drop_last=True,  # just throw these images away :> :>
+        drop_last=False,
         num_workers=num_workers,
         pin_memory=cfg_impl.pin_memory,
         persistent_workers=cfg_impl.persistent_workers if num_workers > 0 else False,

@@ -644,9 +644,9 @@ class ClassParameterServer(HonestServer):
 
         self.binary_attack_helper(user, extra_info, new_feat_01_values)
 
-    def check_with_tolerance(self, value, list):
+    def check_with_tolerance(self, value, list, threshold=0.05):
         for i in list:
-            if abs(value - i) < 0.01:
+            if abs(value - i) < threshold:
                 return True
 
         return False

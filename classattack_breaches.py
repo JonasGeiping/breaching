@@ -4,6 +4,7 @@
 The arguments from the default config carry over here.
 """
 
+import enum
 import hydra
 from omegaconf import OmegaConf
 
@@ -74,7 +75,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
 
         attacker = breaching.attacks.prepare_attack(server.model, server.loss, cfg.attack, setup)
 
-        # get info first (not count as one attack?)
+        # get class info first (not count as one query?)
         server_payload = server.distribute_payload()
         shared_data, true_user_data = user.compute_local_updates(server_payload)
         t_labels = shared_data["metadata"]["labels"].detach().cpu().numpy()
@@ -83,7 +84,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
 
         # attack cls by cls
         for target_cls in np.unique(t_labels):
-            target_indx = np.where(t_labels == target_cls)
+            target_indx = np.where(t_labels == target_cls)[0]
             tmp_shared_data = copy.deepcopy(shared_data)
             tmp_shared_data["metadata"]["num_data_points"] = len(target_indx)
             tmp_shared_data["metadata"]["labels"] = shared_data["metadata"]["labels"][target_indx]
@@ -93,11 +94,14 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
                 log.info(f"Attacking label {tmp_shared_data['metadata']['labels'].item()} with cls attack.")
                 reconstruction_data_i, stats = simple_cls_attack(user, server, attacker, tmp_shared_data, cfg)
             else:
-                log.info("Haven't implement cls collision now!")
-                reconstruction_data_i = dict(data=torch.zeros_like(true_user_data["data"]), labels=None)
+                # send several queries because of cls collision
+                log.info(f"Attacking label {tmp_shared_data['metadata']['labels'][0].item()} with binary attack.")
+                reconstruction_data_i, stats = cls_collision_attack(user, server, attacker, tmp_shared_data, 
+                                                                    cfg, target_max_psnr, copy.deepcopy(reconstruction_data[target_indx]))
 
             reconstruction_data_i = reconstruction_data_i["data"]
             reconstruction_data[target_indx] = reconstruction_data_i
+
             if target_max_psnr:
                 break
 
@@ -149,6 +153,57 @@ def simple_cls_attack(user, server, attacker, shared_data, cfg):
     )
 
     return reconstructed_user_data, stats
+
+
+def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_psnr, reconstruction_data):
+    log.info(f"There are total {len(shared_data['metadata']['labels'])} datapoints with label {shared_data['metadata']['labels'][0].item()}.")
+
+    cls_to_obtain = int(shared_data["metadata"]["labels"][0])
+    extra_info = {"cls_to_obtain": cls_to_obtain}
+
+    # find the starting point and the feature entry gives the max avg value
+    server.reset_model()
+    server.reconfigure_model("cls_attack", extra_info=extra_info)
+    server_payload = server.distribute_payload()
+    tmp_shared_data, _ = user.compute_local_updates(server_payload)
+    avg_feature = torch.flatten(server.reconstruct_feature(tmp_shared_data, cls_to_obtain))
+    feat_to_obtain = int(torch.argmax(avg_feature))
+    feat_value = float(avg_feature[feat_to_obtain])
+
+    # binary attack to recover all single gradients
+    extra_info["feat_to_obtain"] = feat_to_obtain
+    extra_info["feat_value"] = feat_value
+    extra_info["multiplier"] = 1
+
+    recovered_single_gradients = server.binary_attack(user, extra_info)
+
+    # return to the model with multiplier=1
+    server.reset_model()
+    extra_info['multiplier'] = 1
+    extra_info['feat_value'] = feat_value
+    server.reconfigure_model('cls_attack', extra_info=extra_info)
+    server.reconfigure_model('feature_attack', extra_info=extra_info)
+    server_payload = server.distribute_payload()   
+
+    # recover image by image
+    for i, grad_i in enumerate(recovered_single_gradients):
+        log.info(f"Start recovering datapoint {i} of label {shared_data['metadata']['labels'][0].item()}.")
+
+        tmp_share_data = copy.deepcopy(shared_data)
+        tmp_share_data["metadata"]["num_data_points"] = 1
+        tmp_share_data["metadata"]["labels"] = shared_data["metadata"]["labels"][0:1]
+        tmp_share_data["gradients"] = grad_i
+
+        reconstructed_user_data, stats = attacker.reconstruct(
+            [server_payload], [tmp_share_data], server.secrets, dryrun=cfg.dryrun
+        )
+
+        reconstruction_data[[i]] = reconstructed_user_data["data"]
+    
+        if target_max_psnr:
+            break
+        
+    return dict(data=reconstruction_data, labels=shared_data["metadata"]["labels"]), stats
 
 
 if __name__ == "__main__":

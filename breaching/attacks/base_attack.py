@@ -125,7 +125,7 @@ class _BaseAttacker:
         def _max_similarity(recovered_embeddings, true_embeddings):
             norm_rec = recovered_embeddings.pow(2).sum(dim=-1)
             norm_true = true_embeddings.pow(2).sum(dim=-1)
-            cosim = recovered_embeddings.matmul(true_embeddings.T) / norm_rec / norm_true
+            cosim = recovered_embeddings.matmul(true_embeddings.T) / norm_rec[:, None] / norm_true[None,:]
             return cosim.argmax(dim=1)
 
         if self.cfg.token_recovery == "from-embedding":

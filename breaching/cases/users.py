@@ -48,6 +48,8 @@ class UserSingleStep(torch.nn.Module):
         self.dataloader = dataloader
         self.loss = copy.deepcopy(loss)  # Just in case the loss contains state
 
+        self.counted_queries = 0  # Count queries to this user
+
     def __repr__(self):
         n = "\n"
         return f"""User (of type {self.__class__.__name__}) with settings:
@@ -106,7 +108,7 @@ class UserSingleStep(torch.nn.Module):
         Otherwise the user is in training mode and sends back buffer based on .provide_buffers.
 
         Shared labels are canonically sorted for simplicity."""
-
+        self.counted_queries += 1
         data = self._load_data()
         B = data["labels"].shape[0]
         # Compute local updates
@@ -284,7 +286,7 @@ class UserMultiStep(UserSingleStep):
 
     def compute_local_updates(self, server_payload):
         """Compute local updates to the given model based on server payload."""
-
+        self.counted_queries += 1
         user_data = self._load_data()
 
         # Compute local updates
@@ -392,6 +394,7 @@ class MultiUserAggregate(UserMultiStep):
 
     def compute_local_updates(self, server_payload):
         """Compute local updates to the given model based on server payload."""
+        self.counted_queries += 1
         # Compute local updates
 
         server_parameters = server_payload["parameters"]

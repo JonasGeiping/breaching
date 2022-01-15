@@ -128,7 +128,9 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
         )
 
         # Save local summary:
-        breaching.utils.save_summary(cfg, metrics, stats, time.time() - local_time, original_cwd=False)
+        breaching.utils.save_summary(
+            cfg, metrics, stats, user.counted_queries, time.time() - local_time, original_cwd=False
+        )
         overall_metrics.append(metrics)
         # Save recovered data:
         if cfg.save_reconstruction:
@@ -147,7 +149,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
 
     # Save global summary:
     breaching.utils.save_summary(
-        cfg, average_metrics, stats, time.time() - local_time, original_cwd=True, table_name="CLASSATTACK_breach"
+        cfg, average_metrics, stats, time.time() - local_time, None, original_cwd=True, table_name="CLASSATTACK_breach"
     )
 
 

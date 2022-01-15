@@ -78,7 +78,7 @@ def main_process(process_idx, local_group_size, cfg):
     )
 
     # Save to summary
-    breaching.utils.save_summary(cfg, metrics, stats, time.time() - local_time)
+    breaching.utils.save_summary(cfg, metrics, stats, user.counted_queries, time.time() - local_time)
     # Save to output folder:
     breaching.utils.dump_metrics(cfg, metrics)
     if cfg.save_reconstruction:

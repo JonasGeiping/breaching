@@ -77,7 +77,7 @@ def initialize_multiprocess_log(cfg):
         cfg.original_cwd = hydra.utils.get_original_cwd()
 
 
-def save_summary(cfg, metrics, stats, local_time, original_cwd=True, table_name="breach"):
+def save_summary(cfg, metrics, stats, local_time, counted_queries=0, original_cwd=True, table_name="breach"):
     """Save two summary tables. A detailed table of iterations/loss+acc and a summary of the end results."""
     # 1) detailed table:
     for step in range(len(stats["train_loss"])):
@@ -85,12 +85,6 @@ def save_summary(cfg, metrics, stats, local_time, original_cwd=True, table_name=
         for key in stats:
             iteration[key] = stats[key][step] if step < len(stats[key]) else None
         save_to_table(".", f"{cfg.attack.type}_convergence_results", dryrun=cfg.dryrun, **iteration)
-
-    def _maybe_record(key):
-        if len(stats[key]) > 0:
-            return stats[key][-1]
-        else:
-            return ""
 
     try:
         local_folder = os.getcwd().split("outputs/")[1]
@@ -106,6 +100,7 @@ def save_summary(cfg, metrics, stats, local_time, original_cwd=True, table_name=
         model_state=cfg.case.server.model_state,
         attack=cfg.attack.type,
         attacktype=cfg.attack.attack_type,
+        counted_queries=counted_queries,
         **{k: v for k, v in metrics.items() if k != "order"},
         score=stats["opt_value"],
         total_time=str(datetime.timedelta(seconds=local_time)).replace(",", ""),

@@ -7,11 +7,12 @@ defaults:
   - _self_
   - override hydra/job_logging: custom
 
+base_dir: outputs
 hydra:
   sweep:
-    dir: outputs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ${base_dir}/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
   run:
-    dir: outputs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ${base_dir}/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
 # To change output folder location:
 # Set hydra.output_subdir=something
 

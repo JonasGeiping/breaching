@@ -125,15 +125,15 @@ class _BaseAttacker:
         def _max_similarity(recovered_embeddings, true_embeddings):
             norm_rec = recovered_embeddings.pow(2).sum(dim=-1)
             norm_true = true_embeddings.pow(2).sum(dim=-1)
-            cosim = (true_embeddings * recovered_embeddings).sum(dim=-1) / norm_rec / norm_true
+            cosim = recovered_embeddings.matmul(true_embeddings.T) / norm_rec / norm_true
             return cosim.argmax(dim=1)
 
         if self.cfg.token_recovery == "from-embedding":
             # This is the DLG strategy. Look up all inputs in embedding space.
             recovered_embeddings = reconstructed_user_data["data"]
             base_shape = recovered_embeddings.shape[0:2]
-            recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])[:, None, :]
-            true_embeddings = self.embeddings[0]["weight"][None]
+            recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])
+            true_embeddings = self.embeddings[0]["weight"]
 
             recovered_tokens = _max_similarity(recovered_embeddings, true_embeddings).view(*base_shape)
 
@@ -144,9 +144,9 @@ class _BaseAttacker:
             # Retrieve possible embeddings from gradient data
             recovered_embeddings = reconstructed_user_data["data"]
             base_shape = recovered_embeddings.shape[0:2]
-            recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])[:, None, :]
+            recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])
             active_embedding_ids = self.embeddings[0]["grads"].norm(dim=1).nonzero().squeeze()
-            true_embeddings = self.embeddings[0]["weight"][None, active_embedding_ids, :]
+            true_embeddings = self.embeddings[0]["weight"][active_embedding_ids, :]
             matches = _max_similarity(recovered_embeddings, true_embeddings)
             recovered_tokens = active_embedding_ids[matches].view(*base_shape)
 

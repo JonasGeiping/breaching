@@ -21,12 +21,9 @@ class OptimizationPermutationAttacker(OptimizationBasedAttacker):
 
     TODO: Cut down on the terrible amount of code overlap between this class and OptimizationBasedAttacker"""
 
-    def _recover_label_information(self, user_data, server_payload, rec_models):
-        """Recover label information.
-
-        This method runs under the assumption that the last two entries in the gradient vector
-        correpond to the weight and bias of the last layer (mapping to num_classes).
-        For non-classification tasks this has to be modified.
+    def _recover_token_information(self, user_data, server_payload, rec_models):
+        """Recover token information. This is a variation of previous attacks on label recovery, but can abuse
+        the embeddings layer in addition to the decoder layer.
 
         The behavior with respect to multiple queries is work in progress and subject of debate.
         """
@@ -40,6 +37,7 @@ class OptimizationPermutationAttacker(OptimizationBasedAttacker):
             # This is slightly modified analytic label recovery in the style of Wainakh
             # have to assert that this is the decoder bias:
             bias_per_query = [shared_data["gradients"][-1] for shared_data in user_data]
+            assert len(bias_per_query[0]) == server_payload[0]["metadata"]["vocab_size"]
 
             token_list = []
             # Stage 1
@@ -64,6 +62,8 @@ class OptimizationPermutationAttacker(OptimizationBasedAttacker):
         elif self.cfg.label_strategy == "embedding-norm":
             # This works decently well for GPT which has no decoder bias
             wte_per_query = [shared_data["gradients"][0] for shared_data in user_data]
+            assert wte_per_query[0].shape[0] == server_payload[0]["metadata"]["vocab_size"]
+
             token_list = []
             # Stage 1
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
@@ -85,6 +85,33 @@ class OptimizationPermutationAttacker(OptimizationBasedAttacker):
                 token_list.append(selected_idx)
                 # print(selected_idx, average_wte_norm_log[selected_idx])
                 average_wte_norm[selected_idx] -= m_impact
+            tokens = torch.stack(token_list).view(num_data_points, data_shape[0])
+
+        elif self.cfg.label_strategy == "mixed":
+            # Can improve performance for tied embeddings over just decoder-bias
+            # as unique token extraction is slightly more exact from the embedding layer
+            wte_per_query = [shared_data["gradients"][0]]
+            assert wte_per_query[0].shape[0] == server_payload[0]["metadata"]["vocab_size"]
+            average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
+
+            bias_per_query = [shared_data["gradients"][-1]]
+            assert len(bias_per_query[0]) == server_payload[0]["metadata"]["vocab_size"]
+            average_bias = torch.stack(bias_per_query).mean(dim=0)
+
+            token_list = []
+            # Stage 1
+            std, mean = torch.std_mean(average_wte_norm.log())
+            cutoff = mean + 2.5 * std
+            valid_classes = (average_wte_norm.log() > cutoff).nonzero()
+            token_list += [*valid_classes.squeeze(dim=-1)]
+
+            m_impact = average_bias[valid_classes].sum() / num_missing_tokens
+            average_bias[valid_classes] = average_bias[valid_classes] - m_impact
+            # Stage 2
+            while len(token_list) < num_missing_tokens:
+                selected_idx = valid_classes[average_bias[valid_classes].argmin()].squeeze()
+                token_list.append(selected_idx)
+                average_bias[selected_idx] -= m_impact
             tokens = torch.stack(token_list).view(num_data_points, data_shape[0])
 
         else:

@@ -85,6 +85,9 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         # Save local summary:
         breaching.utils.save_summary(cfg, metrics, stats, time.time() - local_time, original_cwd=False)
         overall_metrics.append(metrics)
+        # Save recovered data:
+        if cfg.save_reconstruction:
+            breaching.utils.save_reconstruction(reconstruction, payloads, true_user_data, cfg, side_by_side=False)
         if cfg.dryrun:
             break
 

@@ -101,6 +101,9 @@ class HonestServer:
                 if "conv" in name or "linear" in name:
                     torch.nn.init.orthogonal_(module.weight, gain=1)
 
+    def reset_model(self):
+        pass
+
     def distribute_payload(self, query_id=0):
         """Server payload to send to users. These are only references to simplfiy the simulation."""
 

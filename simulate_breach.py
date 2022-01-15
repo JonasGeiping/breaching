@@ -77,9 +77,12 @@ def main_process(process_idx, local_group_size, cfg):
         reconstructed_user_data, true_user_data, payloads, model, cfg_case=cfg.case, setup=setup
     )
 
-    # Save a summary
+    # Save to summary
     breaching.utils.save_summary(cfg, metrics, stats, time.time() - local_time)
-    # breach.utils.save_image()
+    # Save to output folder:
+    breaching.utils.dump_metrics(cfg, metrics)
+    if cfg.save_reconstruction:
+        breaching.utils.save_reconstruction(reconstructed_user_data, payloads, true_user_data, cfg, side_by_side=False)
 
 
 if __name__ == "__main__":

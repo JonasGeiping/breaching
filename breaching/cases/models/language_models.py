@@ -190,9 +190,9 @@ class TransformerModel(nn.Module):
             self.src_mask = None
 
         if inputs_embeds is None:
-            inputs = self.encoder(input_ids) * math.sqrt(self.ninp)
+            inputs = self.encoder(input_ids)  # * math.sqrt(self.ninp) # this scaling is just a needless complication
         else:
-            inputs = inputs_embeds * math.sqrt(self.ninp)
+            inputs = inputs_embeds  # * math.sqrt(self.ninp)
         inputs = self.pos_encoder(inputs)
         output = self.transformer_encoder(inputs, self.src_mask)
         output = self.decoder(output)

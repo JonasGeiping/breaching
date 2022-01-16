@@ -231,10 +231,7 @@ class _BaseAttacker:
                 candidate = (candidate - self.dm) / self.ds
         elif "patterned" in init_type:  # Look for init_type=rand-patterned-4
             pattern_width = int("".join(filter(str.isdigit, init_type)))
-            if "rand" in init_type:
-                seed = (torch.rand([data_shape[0], 3, pattern_width, pattern_width], **self.setup) * 2) - 1.0
-            else:
-                seed = torch.randn([data_shape[0], 3, pattern_width, pattern_width], **self.setup)
+            seed = (torch.rand([data_shape[0], 3, pattern_width, pattern_width], **self.setup) * 2) - 1.0
             # Shape expansion:
             x_factor, y_factor = (
                 torch.as_tensor(data_shape[2] / pattern_width).ceil(),

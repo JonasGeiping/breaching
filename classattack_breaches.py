@@ -45,13 +45,16 @@ def main_launcher(cfg):
     log.info("-----------------Job finished.-------------------------------")
 
 
-def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_psnr=True):
+def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_psnr=True, opt_on_avg_grad=False):
     """This function controls the central routine."""
     local_time = time.time()
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
 
     if cfg.num_trials is not None:
         num_trials = cfg.num_trials
+
+    if "opt_on_avg_grad" in cfg:
+        opt_on_avg_grad = cfg.opt_on_avg_grad
 
     model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data, cfg.case.server.pretrained)
 
@@ -79,39 +82,54 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
         shared_data, true_user_data = user.compute_local_updates(server_payload)
         t_labels = shared_data["metadata"]["labels"].detach().cpu().numpy()
         log.info(f"Found labels {t_labels} in first query.")
-        reconstruction_data = torch.zeros_like(true_user_data["data"])
 
-        # attack cls by cls
-        for target_cls in np.unique(t_labels):
-            target_indx = np.where(t_labels == target_cls)[0]
-            tmp_shared_data = copy.deepcopy(shared_data)
-            tmp_shared_data["metadata"]["num_data_points"] = len(target_indx)
-            tmp_shared_data["metadata"]["labels"] = shared_data["metadata"]["labels"][target_indx]
+        if opt_on_avg_grad:
+            # optimize on averaged gradient with cls attack
+            log.info("Optimize on averaged gradient with cls attack.")
 
-            if len(target_indx) == 1:
-                # simple cls attack if there is no cls collision
-                log.info(f"Attacking label {tmp_shared_data['metadata']['labels'].item()} with cls attack.")
-                reconstruction_data_i, stats = simple_cls_attack(user, server, attacker, tmp_shared_data, cfg)
-            else:
-                # send several queries because of cls collision
-                log.info(f"Attacking label {tmp_shared_data['metadata']['labels'][0].item()} with binary attack.")
-                reconstruction_data_i, stats = cls_collision_attack(
-                    user,
-                    server,
-                    attacker,
-                    tmp_shared_data,
-                    cfg,
-                    target_max_psnr,
-                    copy.deepcopy(reconstruction_data[target_indx]),
-                )
+            # cls attack on all labels in the batch
+            extra_info = {'cls_to_obtain': t_labels}
+            server.reconfigure_model('cls_attack', extra_info=extra_info)
+            server_payload = server.distribute_payload()
+            shared_data, true_user_data = user.compute_local_updates(server_payload)
 
-            reconstruction_data_i = reconstruction_data_i["data"]
-            reconstruction_data[target_indx] = reconstruction_data_i
+            reconstruction, stats = attacker.reconstruct(
+                [server_payload], [shared_data], server.secrets, dryrun=cfg.dryrun
+            ) 
+        else:
+            # attack cls by cls
+            log.info("Attack cls by cls cls attack.")
+            reconstruction_data = torch.zeros_like(true_user_data["data"])
+            for target_cls in np.unique(t_labels):
+                target_indx = np.where(t_labels == target_cls)[0]
+                tmp_shared_data = copy.deepcopy(shared_data)
+                tmp_shared_data["metadata"]["num_data_points"] = len(target_indx)
+                tmp_shared_data["metadata"]["labels"] = shared_data["metadata"]["labels"][target_indx]
 
-            if target_max_psnr:
-                break
+                if len(target_indx) == 1:
+                    # simple cls attack if there is no cls collision
+                    log.info(f"Attacking label {tmp_shared_data['metadata']['labels'].item()} with cls attack.")
+                    reconstruction_data_i, stats = simple_cls_attack(user, server, attacker, tmp_shared_data, cfg)
+                else:
+                    # send several queries because of cls collision
+                    log.info(f"Attacking label {tmp_shared_data['metadata']['labels'][0].item()} with binary attack.")
+                    reconstruction_data_i, stats = cls_collision_attack(
+                        user,
+                        server,
+                        attacker,
+                        tmp_shared_data,
+                        cfg,
+                        target_max_psnr,
+                        copy.deepcopy(reconstruction_data[target_indx]),
+                    )
 
-        reconstruction = {"data": reconstruction_data, "labels": shared_data["metadata"]["labels"]}
+                reconstruction_data_i = reconstruction_data_i["data"]
+                reconstruction_data[target_indx] = reconstruction_data_i
+
+                if target_max_psnr:
+                    break
+
+            reconstruction = {"data": reconstruction_data, "labels": shared_data["metadata"]["labels"]}
 
         # Run the full set of metrics:
         metrics = breaching.analysis.report(

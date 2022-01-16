@@ -235,6 +235,7 @@ class _BaseAttacker:
                 seed = torch.rand([data_shape[0], 3, pattern_width, pattern_width], **self.setup)
             else:
                 seed = torch.rand([data_shape[0], 3, pattern_width, pattern_width], **self.setup)
+            seed = seed * 2 - 1.0
             # Shape expansion:
             x_factor, y_factor = (
                 torch.as_tensor(data_shape[2] / pattern_width).ceil(),

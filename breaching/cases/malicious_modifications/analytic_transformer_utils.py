@@ -1,5 +1,5 @@
 import torch
-
+from statistics import NormalDist
 import logging
 
 log = logging.getLogger(__name__)
@@ -52,7 +52,16 @@ def compute_feature_distribution(model, server, measurement):
     return std, mu
 
 
-def set_MHA(attention_layer, norm_layer, pos_encoder, embedding_dim, data_shape, sequence_token_weight=0.075, pos=0):
+def set_MHA(
+    attention_layer,
+    norm_layer,
+    pos_encoder,
+    embedding_dim,
+    data_shape,
+    sequence_token_weight=0.075,
+    pos=0,
+    softmax_skew=1000,
+):
     """Questions for Liam.
     I killed math.sqrt(model.d_model) was that part necessary?
     """
@@ -60,13 +69,13 @@ def set_MHA(attention_layer, norm_layer, pos_encoder, embedding_dim, data_shape,
     qkv_shape = attention_layer.in_proj_weight.data.shape[0]
 
     dummy_data = torch.zeros([1, *data_shape, embedding_dim])
-    just_positions = torch.stack([norm_layer(pos_encoder(dummy_data))]).squeeze()
+    just_positions = norm_layer(pos_encoder(dummy_data))
 
     # Q matrix setup
     # We make the weight 0, and the bias some (large multiple of) positional encoding
     # Only coded here for one MHA layer at the beginning of the model...
     # Make the position super super large to skew softmax
-    attention_layer.in_proj_bias.data[: qkv_shape // 3] = 1000 * just_positions[0, pos, :]
+    attention_layer.in_proj_bias.data[: qkv_shape // 3] = softmax_skew * just_positions[0, pos, :]
     attention_layer.in_proj_weight.data[: qkv_shape // 3] = torch.zeros((qkv_shape // 3, qkv_shape // 3))
 
     # K matrix setup (identity)
@@ -86,7 +95,6 @@ def make_imprint_layer(first_linear_layer, measurement, mean, std):
     measurement is the Gaussian vector we take inner product w.r.t.
     mean, std = mean, std of features from feature_distribution
     """
-    from statistics import NormalDist
 
     def _get_bins(mean, std, num_bins):
         bins = []
@@ -102,6 +110,8 @@ def make_imprint_layer(first_linear_layer, measurement, mean, std):
             new_biases[i] = -bins[i]
         return new_biases
 
-    bins = _get_bins(mean, std, model.d_model)
-    first_linear_layer.weight.data = measurement.repeat(model.d_model, 1)
+    hidden_dim, embedding_dim = first_linear_layer.weight.shape
+    bins = _get_bins(mean, std, hidden_dim)
+
+    first_linear_layer.weight.data = measurement.repeat(hidden_dim, 1)
     first_linear_layer.bias.data = _make_biases(first_linear_layer.bias, bins)

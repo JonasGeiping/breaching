@@ -384,9 +384,9 @@ class MaliciousTransformerServer(HonestServer):
             hidden_dim, embedding_dim = first_linear_layer.weight.shape
 
         # Define "probe" function / measurement vector:
-        weights = torch.randn(hidden_dim, **self.setup)
+        weights = torch.randn(embedding_dim, **self.setup)
         std, mu = torch.std_mean(weights)  # correct sample toward perfect mean and std
-        measurement = (weights - mu) / std / torch.as_tensor(hidden_dim, **self.setup).sqrt()
+        measurement = (weights - mu) / std / torch.as_tensor(embedding_dim, **self.setup).sqrt()
 
         # Modify the first attention mechanism in the model:
         if "transformer" in self.model.name:  # These are our implementations from model/language_models.py
@@ -401,8 +401,9 @@ class MaliciousTransformerServer(HonestServer):
             pos_encoder,
             embedding_dim,
             self.cfg_data.shape,
-            sequence_token_weight=0.075,
-            pos=0,
+            sequence_token_weight=self.cfg_server.param_modification.sequence_token_weight,
+            pos=self.cfg_server.param_modification.pos,
+            softmax_skew=self.cfg_server.param_modification.softmax_skew,
         )
 
         # Set the second linear layer to zeros:
@@ -414,10 +415,19 @@ class MaliciousTransformerServer(HonestServer):
         second_linear_layer.bias.data.zero_()
 
         # Evaluate feature distribution of this model
-        std, mu = compute_feature_distribution(model, server, measurement)
+        std, mu = compute_feature_distribution(self.model, self, measurement)
         # And add imprint modification to the first linear layer
-        make_imprint_layer(first_linear_layer, measurement, mean, std)
+        make_imprint_layer(first_linear_layer, measurement, mu, std)
         # This should be all for the attack :>
+
+        # We save secrets for the attack later on:
+        for idx, param in enumerate(self.model.parameters()):
+            if param is first_linear_layer.weight:
+                weight_idx = idx
+            if param is first_linear_layer.bias:
+                bias_idx = idx
+        details = dict(weight_idx=weight_idx, bias_idx=bias_idx, data_shape=self.cfg_data.shape, structure="cumulative")
+        self.secrets["ImprintBlock"] = details
 
 
 class MaliciousParameterOptimizationServer(HonestServer):

@@ -1,9 +1,12 @@
 name: malicious_transformer_parameters
 pretrained: True
-model_initialization: default
+model_state: default
 provide_public_buffers: False # Send public buffers to users (this is batch norm specific)
 
 has_external_data: True
 num_queries: 1
 
 param_modification:
+  sequence_token_weight: 0.075
+  pos: 0
+  softmax_skew: 1000

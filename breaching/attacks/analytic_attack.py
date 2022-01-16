@@ -183,6 +183,7 @@ class DecepticonAttacker(AnalyticAttacker):
         # Getting multiple user's sentences back
         sentences = self._match_words_to_sentences(estimated_pos, just_pos, new_with_pos, len_data, sorted_tokens)
 
+        # Pad recovered sentences:
         PAD_token = 220
         final_tokens = torch.ones([len_data, *data_shape], dtype=torch.long) * PAD_token
         for idx, sentence in enumerate(sentences):

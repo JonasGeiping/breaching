@@ -98,7 +98,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
 
     # Save global summary:
     breaching.utils.save_summary(
-        cfg, average_metrics, stats, None, time.time() - local_time, original_cwd=True, table_name="BENCHMARK_breach"
+        cfg, average_metrics, stats, time.time() - local_time, None, original_cwd=True, table_name="BENCHMARK_breach"
     )
 
 

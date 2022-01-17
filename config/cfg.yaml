@@ -7,18 +7,21 @@ defaults:
   - _self_
   - override hydra/job_logging: custom
 
+base_dir: outputs
 hydra:
   sweep:
-    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M}/${name}
+    dir: ${base_dir}/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
   run:
-    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M}/${name}
+    dir: ${base_dir}/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+# To change output folder location:
+# Set hydra.output_subdir=something
 
 seed: # Optional: Set initial seed
-name: default # A name for this run [will be used for the summary table]
+name: default # A name for this run [will be used for the summary table and outputs folder]
 
-# debug implementation by running every loop just once.
-# This is even allowed on CPU.
+# debug implementation by running every loop just once:
 dryrun: False
 
 # When benchmarking:
-num_trials:
+num_trials: 100
+save_reconstruction: False

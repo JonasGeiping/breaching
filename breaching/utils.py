@@ -5,8 +5,11 @@ import sys
 
 import os
 import csv
+import yaml
 
 import torch
+import torchvision
+
 import random
 import numpy as np
 import datetime
@@ -74,7 +77,7 @@ def initialize_multiprocess_log(cfg):
         cfg.original_cwd = hydra.utils.get_original_cwd()
 
 
-def save_summary(cfg, metrics, stats, local_time, original_cwd=True, table_name="breach"):
+def save_summary(cfg, metrics, stats, local_time, counted_queries=0, original_cwd=True, table_name="breach"):
     """Save two summary tables. A detailed table of iterations/loss+acc and a summary of the end results."""
     # 1) detailed table:
     for step in range(len(stats["train_loss"])):
@@ -82,12 +85,6 @@ def save_summary(cfg, metrics, stats, local_time, original_cwd=True, table_name=
         for key in stats:
             iteration[key] = stats[key][step] if step < len(stats[key]) else None
         save_to_table(".", f"{cfg.attack.type}_convergence_results", dryrun=cfg.dryrun, **iteration)
-
-    def _maybe_record(key):
-        if len(stats[key]) > 0:
-            return stats[key][-1]
-        else:
-            return ""
 
     try:
         local_folder = os.getcwd().split("outputs/")[1]
@@ -103,6 +100,7 @@ def save_summary(cfg, metrics, stats, local_time, original_cwd=True, table_name=
         model_state=cfg.case.server.model_state,
         attack=cfg.attack.type,
         attacktype=cfg.attack.attack_type,
+        counted_queries=counted_queries,
         **{k: v for k, v in metrics.items() if k != "order"},
         score=stats["opt_value"],
         total_time=str(datetime.timedelta(seconds=local_time)).replace(",", ""),
@@ -209,3 +207,58 @@ def overview(server, user, attacker):
     print(user)
     print(server)
     print(attacker)
+
+
+def save_reconstruction(
+    reconstructed_user_data, server_payload, true_user_data, cfg, side_by_side=False, target_indx=None
+):
+    """If target_indx is not None, only the datapoints at target_indx will be saved to file."""
+    os.makedirs("reconstructions", exist_ok=True)
+    metadata = server_payload[0]["metadata"]
+    if metadata["modality"] == "text":
+        from breaching.cases.data.datasets_text import _get_tokenizer
+
+        tokenizer = _get_tokenizer(server_payload[0]["metadata"]["tokenizer"], cache_dir=cfg.case.data.path)
+        text_rec = tokenizer.batch_decode(reconstructed_user_data["data"])
+        text_ref = tokenizer.batch_decode(true_user_data["data"])
+        if target_indx is not None:
+            text_rec = text_rec[target_indx]
+            text_ref = text_ref[target_indx]
+        filepath = os.path.join(
+            "reconstructions", f"text_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.txt"
+        )
+        with open(filepath, "w") as f:
+            f.writelines(text_rec)
+            if side_by_side:
+                f.write("\n")
+                f.write("========== GROUND TRUTH TEXT ===========")
+                f.write("\n")
+                f.writelines(text_ref)
+    else:
+        if hasattr(metadata, "mean"):
+            dm = torch.as_tensor(metadata.mean)[None, :, None, None]
+            ds = torch.as_tensor(metadata.std)[None, :, None, None]
+        else:
+            dm, ds = torch.tensor(0,), torch.tensor(1)
+
+        rec_denormalized = torch.clamp(reconstructed_user_data["data"].cpu() * ds + dm, 0, 1)
+        ground_truth_denormalized = torch.clamp(true_user_data["data"].cpu() * ds + dm, 0, 1)
+        if target_indx is not None:
+            rec_denormalized = rec_denormalized[target_indx]
+            ground_truth_denormalized = ground_truth_denormalized[target_indx]
+
+        filepath = os.path.join(
+            "reconstructions", f"img_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.png"
+        )
+        if not side_by_side:
+            torchvision.utils.save_image(rec_denormalized, filepath)
+        else:
+            torchvision.utils.save_image(torch.cat([rec_denormalized, ground_truth_denormalized]), filepath)
+
+
+def dump_metrics(cfg, metrics):
+    """Simple yaml dump of metric values."""
+    filepath = f"metrics_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.yaml"
+    sanitized_metrics = {metric: np.asarray(val).item() for metric, val in metrics.items()}
+    with open(filepath, "w") as yaml_file:
+        yaml.dump(sanitized_metrics, yaml_file, default_flow_style=False)

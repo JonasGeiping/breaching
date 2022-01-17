@@ -6,7 +6,7 @@ objective:
   type: cosine-similarity
   scale: 1.0 # need to have a much smaller scale like 0.0001 for euclidean objectives
 
-init: zeros
+init: patterned-4
 
 restarts:
   num_trials: 1
@@ -19,6 +19,7 @@ optim:
   boxed: True
   max_iterations: 24_000
   step_size_decay: cosine-decay
+  warmup: 50
 
   callback: 1000 # Print objective value every callback many iterations
 
@@ -31,4 +32,4 @@ regularization:
   features:
     scale: 0.1
   deep_inversion:
-    scale: 0.00005
+    scale: 0.0

@@ -31,7 +31,7 @@ class RNNModel(nn.Module):
         super(RNNModel, self).__init__()
         self.ntoken = ntokens
         self.drop = nn.Dropout(dropout)
-        self.encoder = nn.Embedding(ntoken, ninp)
+        self.encoder = nn.Embedding(ntokens, ninp)
         if rnn_type in ["LSTM", "GRU"]:
             self.rnn = getattr(nn, rnn_type)(ninp, nhid, nlayers, dropout=dropout, batch_first=True)
         else:
@@ -43,7 +43,7 @@ class RNNModel(nn.Module):
                                  options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']"""
                 )
             self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout, batch_first=True)
-        self.decoder = nn.Linear(nhid, ntoken)
+        self.decoder = nn.Linear(nhid, ntokens)
 
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -151,7 +151,7 @@ class TransformerModel(nn.Module):
     def __init__(
         self, ntokens, ninp, nhead, nhid, nlayers, dropout=0.5, positional_embedding="fixed", tie_weights=False
     ):
-        super(TransformerModel, self).__init__()
+        super().__init__()
         self.model_type = "Transformer"
         self.src_mask = None
         if positional_embedding == "fixed":
@@ -190,9 +190,9 @@ class TransformerModel(nn.Module):
             self.src_mask = None
 
         if inputs_embeds is None:
-            inputs = self.encoder(input_ids) * math.sqrt(self.ninp)
+            inputs = self.encoder(input_ids)  # * math.sqrt(self.ninp) # this scaling is just a needless complication
         else:
-            inputs = inputs_embeds * math.sqrt(self.ninp)
+            inputs = inputs_embeds  # * math.sqrt(self.ninp)
         inputs = self.pos_encoder(inputs)
         output = self.transformer_encoder(inputs, self.src_mask)
         output = self.decoder(output)

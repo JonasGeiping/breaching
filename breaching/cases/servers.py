@@ -1,8 +1,14 @@
 """Implement server code. This will be short, if the server is honest."""
 
 import torch
+
 from .malicious_modifications import ImprintBlock, RecoveryOptimizer, SparseImprintBlock, OneShotBlock
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
+from .malicious_modifications.analytic_transformer_utils import (
+    compute_feature_distribution,
+    set_MHA,
+    make_imprint_layer,
+)
 
 from .aux_training import train_encoder_decoder
 from .malicious_modifications.feat_decoders import generate_decoder
@@ -22,10 +28,12 @@ def construct_server(model, loss_fn, cfg_case, setup, external_dataloader=None):
         server = HonestServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
     elif cfg_case.server.name == "malicious_model":
         server = MaliciousModelServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
-    elif cfg_case.server.name == "malicious_parameters":
-        server = MaliciousParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
+    elif cfg_case.server.name == "malicious_optimized_parameters":
+        server = MaliciousParameterOptimizationServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
     elif cfg_case.server.name == "class_malicious_parameters":
         server = ClassParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
+    elif cfg_case.server.name == "malicious_transformer_parameters":
+        server = MaliciousTransformerServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
     else:
         raise ValueError(f"Invalid server type {cfg_case.server} given.")
     return server
@@ -54,9 +62,8 @@ class HonestServer:
 
         self.num_queries = cfg_case.server.num_queries
 
-        self.cfg_data = (
-            cfg_case.data
-        )  # Data configuration has to be shared across all parties to keep preprocessing consistent
+        # Data configuration has to be shared across all parties to keep preprocessing consistent:
+        self.cfg_data = cfg_case.data
         self.cfg_server = cfg_case.server
 
         self.external_dataloader = external_dataloader
@@ -100,6 +107,9 @@ class HonestServer:
                     module.reset_parameters()
                 if "conv" in name or "linear" in name:
                     torch.nn.init.orthogonal_(module.weight, gain=1)
+
+    def reset_model(self):
+        pass
 
     def distribute_payload(self, query_id=0):
         """Server payload to send to users. These are only references to simplfiy the simulation."""
@@ -341,7 +351,86 @@ class MaliciousModelServer(HonestServer):
         return modified_model, decoder
 
 
-class MaliciousParameterServer(HonestServer):
+class MaliciousTransformerServer(HonestServer):
+    """Implement a malicious server protocol.
+
+    This server cannot modify the 'honest' model architecture posed by an analyst,
+    but may modify the model parameters freely.
+    This variation is designed to leak token information from transformer models for language modelling.
+    """
+
+    THREAT = "Malicious (Parameters)"
+
+    def __init__(
+        self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device("cpu")), external_dataloader=None
+    ):
+        """Inialize the server settings."""
+        super().__init__(model, loss, cfg_case, setup, external_dataloader)
+        self.secrets = dict()
+
+    def vet_model(self, model):
+        """This server is not honest, but the model architecture stays unchanged."""
+        model = self.model  # Re-reference this everywhere
+        return self.model
+
+    def reconfigure_model(self, model_state, query_id=0):
+        """Reinitialize, continue training or otherwise modify model parameters."""
+        super().reconfigure_model(model_state)  # Load the benign model state first
+
+        # Figure out the hidden dimension:
+        # For now this is non-automated.
+        if "transformer" in self.model.name:  # These are our implementations from model/language_models.py
+            first_linear_layer = self.model.transformer_encoder.layers[0].linear1
+            hidden_dim, embedding_dim = first_linear_layer.weight.shape
+
+        # Define "probe" function / measurement vector:
+        weights = torch.randn(embedding_dim, **self.setup)
+        std, mu = torch.std_mean(weights)  # correct sample toward perfect mean and std
+        measurement = (weights - mu) / std / torch.as_tensor(embedding_dim, **self.setup).sqrt()
+
+        # Modify the first attention mechanism in the model:
+        if "transformer" in self.model.name:  # These are our implementations from model/language_models.py
+            attention_layer = self.model.transformer_encoder.layers[0].self_attn
+            norm_layer = self.model.transformer_encoder.layers[0].norm1
+            pos_encoder = self.model.pos_encoder
+
+        # Set QKV modifications in-place:
+        set_MHA(
+            attention_layer,
+            norm_layer,
+            pos_encoder,
+            embedding_dim,
+            self.cfg_data.shape,
+            sequence_token_weight=self.cfg_server.param_modification.sequence_token_weight,
+            pos=self.cfg_server.param_modification.pos,
+            softmax_skew=self.cfg_server.param_modification.softmax_skew,
+        )
+
+        # Set the second linear layer to zeros:
+        if "transformer" in self.model.name:
+            second_linear_layer = self.model.transformer_encoder.layers[0].linear2
+
+        second_linear_layer.weight.data.zero_()
+        second_linear_layer.weight.data[0] = 1
+        second_linear_layer.bias.data.zero_()
+
+        # Evaluate feature distribution of this model
+        std, mu = compute_feature_distribution(self.model, self, measurement)
+        # And add imprint modification to the first linear layer
+        make_imprint_layer(first_linear_layer, measurement, mu, std)
+        # This should be all for the attack :>
+
+        # We save secrets for the attack later on:
+        for idx, param in enumerate(self.model.parameters()):
+            if param is first_linear_layer.weight:
+                weight_idx = idx
+            if param is first_linear_layer.bias:
+                bias_idx = idx
+        details = dict(weight_idx=weight_idx, bias_idx=bias_idx, data_shape=self.cfg_data.shape, structure="cumulative")
+        self.secrets["ImprintBlock"] = details
+
+
+class MaliciousParameterOptimizationServer(HonestServer):
     """Implement a malicious server protocol.
 
     This server cannot modify the 'honest' model architecture posed by an analyst,
@@ -382,6 +471,10 @@ class MaliciousParameterServer(HonestServer):
 
 
 class ClassParameterServer(HonestServer):
+    """Modify parameters for the "class attack" which can pick out a subset of image data from a larger batch."""
+
+    THREAT = "Malicious (Parameters)"
+
     def __init__(
         self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device("cpu")), external_dataloader=None
     ):
@@ -644,9 +737,9 @@ class ClassParameterServer(HonestServer):
 
         self.binary_attack_helper(user, extra_info, new_feat_01_values)
 
-    def check_with_tolerance(self, value, list):
+    def check_with_tolerance(self, value, list, threshold=0.05):
         for i in list:
-            if abs(value - i) < 0.01:
+            if abs(value - i) < threshold:
                 return True
 
         return False
@@ -709,14 +802,14 @@ class ClassParameterServer(HonestServer):
 
         return single_gradients, single_losses
 
-    def print_gradients_norm(self, singl_gradients, single_losses, which_to_recover=-1, return_results=False):
+    def print_gradients_norm(self, single_gradients, single_losses, which_to_recover=-1, return_results=False):
         grad_norm = []
         losses = []
 
         if not return_results:
             print("grad norm         loss")
 
-        for i, gradient_ii in enumerate(singl_gradients):
+        for i, gradient_ii in enumerate(single_gradients):
             if not return_results:
                 if i == which_to_recover:
                     print(float(torch.norm(gradient_ii)), float(single_losses[i]), "   target")
@@ -810,3 +903,6 @@ class ClassParameterServer(HonestServer):
 
         for param in self.model.parameters():
             param.requires_grad = True
+
+    def estimate_feat(self):
+        pass

@@ -3,7 +3,7 @@ user_range: [0, 1000]
 num_data_points: 1000
 
 provide_buffers: False
-provide_labels: False # not actually used
+provide_labels: False
 provide_num_data_points: True
 
 # Local differential privacy:

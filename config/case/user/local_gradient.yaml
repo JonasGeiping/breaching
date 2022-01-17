@@ -12,9 +12,6 @@ local_diff_privacy:
   input_noise: 0.0
   distribution: laplacian
   per_example_clipping: 0.0
-
-data_with_labels: unique # unique/same/random can choose data with unique labels, or all from the same class or entirely at random
-
 # Specific to this user type:
 
 # This user can also be used to simulate a larger silo over which the gradient is aggregated.

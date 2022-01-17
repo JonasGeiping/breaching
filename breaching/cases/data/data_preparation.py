@@ -30,6 +30,9 @@ def construct_dataloader(cfg_data, cfg_impl, user_idx=0, return_full_dataset=Fal
     else:
         raise ValueError(f"Unknown data modality {cfg_data.modality}.")
 
+    if len(dataset) == 0:
+        raise ValueError("This user would have no data under the chosen partition, user id and number of clients.")
+
     if cfg_data.db.name == "LMDB":
         from .lmdb_datasets import LMDBDataset  # this also depends on py-lmdb, that's why it's a lazy import
 

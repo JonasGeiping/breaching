@@ -1,0 +1,435 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "3ebef44a",
+   "metadata": {},
+   "source": [
+    "# Breaching privacy"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "a756fc5f",
+   "metadata": {},
+   "source": [
+    "This notebook does the same job as the cmd-line tool `simulate_breach.py`, but also directly visualizes the user data and reconstruction"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "b850eabf",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "The autoreload extension is already loaded. To reload it, use:\n",
+      "  %reload_ext autoreload\n"
+     ]
+    }
+   ],
+   "source": [
+    "import torch\n",
+    "import hydra\n",
+    "from omegaconf import OmegaConf\n",
+    "%load_ext autoreload\n",
+    "%autoreload 2\n",
+    "\n",
+    "import breaching\n",
+    "import logging, sys\n",
+    "logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)], format='%(message)s')\n",
+    "logger = logging.getLogger()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "88d5e214",
+   "metadata": {},
+   "source": [
+    "### Initialize cfg object and system setup:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "56bd663b",
+   "metadata": {},
+   "source": [
+    "This will print out all configuration options. \n",
+    "There are a lot of possible configurations, but there is usually no need to worry about most of these. Below, a few options are printed."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "26070d66",
+   "metadata": {},
+   "source": [
+    "Choose `case/data=` `shakespeare`, `wikitext`over `stackoverflow` here:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "a7dc3a48",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Investigating use case single_imagenet with server type honest_but_curious.\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "{'device': device(type='cpu'), 'dtype': torch.float32}"
+      ]
+     },
+     "execution_count": 10,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "with hydra.initialize(config_path=\"config\"):\n",
+    "    cfg = hydra.compose(config_name='cfg', overrides=['case/data=shakespeare', \n",
+    "                                                      'case.model=transformer1'])\n",
+    "    print(f'Investigating use case {cfg.case.name} with server type {cfg.case.server.name}.')\n",
+    "          \n",
+    "device = torch.device(f'cuda:0') if torch.cuda.is_available() else torch.device('cpu')\n",
+    "torch.backends.cudnn.benchmark = cfg.case.impl.benchmark\n",
+    "setup = dict(device=device, dtype=torch.float)\n",
+    "setup"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "203c5fb1",
+   "metadata": {},
+   "source": [
+    "### Modify config options here"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "6e0764ef",
+   "metadata": {},
+   "source": [
+    "You can use `.attribute` access to modify any of these configurations:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "ac118ea0",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "cfg.case.user.num_data_points = 21 # How many sentences?\n",
+    "cfg.case.user.user_idx = 0 # From which user?\n",
+    "cfg.case.data.shape = [32] # This is the sequence length"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "76f64389",
+   "metadata": {},
+   "source": [
+    "### Instantiate all parties"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "id": "30235b0c",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data, pretrained=True)\n",
+    "# Server:\n",
+    "server = breaching.cases.construct_server(model, loss_fn, cfg.case, setup)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "433a6ef7",
+   "metadata": {},
+   "source": [
+    "## Modify the model here:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "c3f415bb",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "id": "a0fe7540",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Finalize changes:\n",
+    "model = server.vet_model(model)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "id": "9d6666e4",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Construct the user here:\n",
+    "user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "id": "b48250c5",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Server (of type HonestServer) with settings:\n",
+      "    Threat model: Honest-but-curious\n",
+      "    Number of planned queries: 1\n",
+      "    Has external/public data: False\n",
+      "\n",
+      "    Model:\n",
+      "        model specification: transformer1\n",
+      "        model state: default\n",
+      "        public buffers: True\n",
+      "\n",
+      "    Secrets: {}\n",
+      "    \n",
+      "User (of type UserSingleStep) with settings:\n",
+      "    Number of data points: 21\n",
+      "\n",
+      "    Threat model:\n",
+      "    User provides labels: False\n",
+      "    User provides buffers: False\n",
+      "    User provides number of data points: True\n",
+      "\n",
+      "    Data:\n",
+      "    Dataset: shakespeare\n",
+      "    user: 0\n",
+      "    \n",
+      "        \n"
+     ]
+    }
+   ],
+   "source": [
+    "print(server)\n",
+    "print(user)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "548c0ad6",
+   "metadata": {},
+   "source": [
+    "### Simulate an attacked FL protocol"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "2058bcc2",
+   "metadata": {},
+   "source": [
+    "True user data is returned only for analysis"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "id": "3f2a2e33",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "server_payload = server.distribute_payload()\n",
+    "shared_data, true_user_data = user.compute_local_updates(server_payload)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "id": "69c6ff1f",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Yonder comes my master, your brother.But do not so. I have five hundred crowns,I scarce can speak to thank you for myself.\n",
+      "\n",
+      "[Coming forward] Sweet masters, be patient; for your father'sremembrance, be at accord.\n",
+      "Is 'old dog' my reward? Most\n",
+      " true, I have lost my teeth inCome not within these doors; within this roof\n",
+      "The enemy of all your graces lives.\n",
+      "Your brother- no\n",
+      ", no brother; yet the son-\n",
+      "Yet not the son; I will not call him son\n",
+      "Of him I was about to call his father-\n",
+      "\n",
+      "Hath heard your praises; and this night he means\n",
+      "To burn the lodging where you use to lie,\n",
+      "And you within it. If he fail of\n",
+      " that,\n",
+      "He will have other means to cut you off;\n",
+      "I overheard him and his practices.\n",
+      "This is no place; this house is but a\n",
+      " butchery;\n",
+      "Abhor it, fear it, do not enter it.\n",
+      "No matter whither, so you come not here.O my sweet master\n",
+      "! O you memory\n",
+      "Of old Sir Rowland! Why, what make you here?\n",
+      "Why are you virtuous? Why do people love you?\n",
+      "And\n",
+      " wherefore are you gentle, strong, and valiant?\n",
+      "Why would you be so fond to overcome\n",
+      "The bonny prizer of the humorous Duke?\n",
+      "\n",
+      "Your praise is come too swiftly home before you.\n",
+      "Know you not, master, to some kind of men\n",
+      "Their graces serve them but as enemies?\n",
+      "\n",
+      "No more do yours. Your virtues, gentle master,\n",
+      "Are sanctified and holy traitors to you.\n",
+      "O, what a world is this,\n",
+      " when what is comely\n",
+      "Envenoms him that bears it!\n",
+      "O unhappy youth!The thrifty hire I sav'd under your father,\n",
+      "Which\n",
+      " I did store to be my foster-nurse,\n",
+      "When service should in my old limbs lie lame,\n",
+      "And unregarded age in corners thrown.\n",
+      "\n",
+      "Take that, and He that doth the ravens feed,\n",
+      "Yea, providently caters for the sparrow,\n",
+      "Be comfort to my\n",
+      " age! Here is the gold;\n",
+      "All this I give you. Let me be your servant;\n",
+      "Though I look old, yet I am strong and lust\n",
+      "y;\n",
+      "For in my youth I never did apply\n",
+      "Hot and rebellious liquors in my blood,\n",
+      "Nor did not with unbashful forehead woo\n",
+      "\n",
+      "The means of weakness and debility;\n",
+      "Therefore my age is as a lusty winter,\n",
+      "Frosty, but kindly. Let me go with you\n",
+      ";\n",
+      "I'll do the service of a younger man\n",
+      "In all your business and necessities.\n",
+      "Master, go on; and I will follow theTo the\n",
+      " last gasp, with truth and loyalty.\n",
+      "From seventeen years till now almost four-score\n",
+      "Here lived I, but now live here no more.\n",
+      "At\n",
+      " seventeen years many their fortunes seek,\n",
+      "But at fourscore it is too late a week;\n",
+      "Yet fortune cannot recompense me better\n",
+      "Than to die\n",
+      " well and not my master's debtor.          Exeunt\n",
+      "Dear master, I can go no further. O,\n"
+     ]
+    }
+   ],
+   "source": [
+    "user.print(true_user_data)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "f2867bcc",
+   "metadata": {},
+   "source": [
+    "# Reconstruct user data"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "04521004",
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "# Recover data "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "17c4ffdf",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Finally return a dict with keys data and labels\n",
+    "reconstructed_user_data = dict(data=None, labels=None)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "33b7388d",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "user.print(reconstructed_user_data)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "27fdbf58",
+   "metadata": {},
+   "source": [
+    "### Check metrics:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "7a2b4750",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "metrics = breaching.analysis.report(reconstructed_user_data, true_user_data, [server_payload], \n",
+    "                                    server.model, cfg_case=cfg.case, setup=setup)"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.9.2"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

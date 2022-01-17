@@ -92,8 +92,6 @@ class HonestServer:
                     module.reset_parameters()
             elif model_state == "trained":
                 pass  # model was already loaded as pretrained model
-            elif model_state == "moco":
-                pass  # will be loaded below
             elif model_state == "linearized":
                 with torch.no_grad():
                     if isinstance(module, torch.nn.BatchNorm2d):

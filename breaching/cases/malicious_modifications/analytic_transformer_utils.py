@@ -22,7 +22,6 @@ def compute_feature_distribution(model, server, measurement):
     feature_layer_name = name
 
     feats = []
-    feats_before = []
     model.train()
     model.to(**server.setup)
 
@@ -44,7 +43,7 @@ def compute_feature_distribution(model, server, measurement):
             model(inputs)
             feats.append(features[name].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone().cpu())
 
-    std, mu = torch.std_mean(torch.mm(torch.cat(feats), measurement.unsqueeze(1)).squeeze())
+    std, mu = torch.std_mean(torch.matmul(torch.cat(feats), measurement))
     model.eval()
     model.cpu()
     hook.remove()
@@ -62,12 +61,10 @@ def set_MHA(
     pos=0,
     softmax_skew=1000,
 ):
-    """Questions for Liam.
-    I killed math.sqrt(model.d_model) was that part necessary?
-    """
     # Let's set the query matrix to produce just the first positional encoding (or could be any index - might want last index)
     qkv_shape = attention_layer.in_proj_weight.data.shape[0]
 
+    # These are the positional embeddings after layer normalization:
     dummy_data = torch.zeros([1, *data_shape, embedding_dim])
     just_positions = norm_layer(pos_encoder(dummy_data))
 

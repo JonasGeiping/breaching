@@ -906,3 +906,13 @@ class ClassParameterServer(HonestServer):
 
     def estimate_feat(self):
         pass
+
+    def closed_form_april(self, shared_data):
+        qkv_w = self.model.model.blocks[0].attn.qkv.weight.detach()
+        q_w, k_w, v_w = qkv_w.reshape(3, -1, qkv_w.shape[-1]).unbind()
+        qkv_g = shared_data["gradients"][4]
+        q_g, k_g, v_g = qkv_g.reshape(3, -1, qkv_g.shape[-1]).unbind()
+        z_g = shared_data["gradients"][3]
+
+        b = torch.matmul(q_w.T, q_g) + torch.matmul(k_w.T, k_g) + torch.matmul(v_w.T, v_g)
+        

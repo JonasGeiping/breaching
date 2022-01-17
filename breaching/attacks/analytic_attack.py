@@ -8,6 +8,11 @@ from collections import defaultdict
 from .base_attack import _BaseAttacker
 
 
+import logging
+
+log = logging.getLogger(__name__)
+
+
 class AnalyticAttacker(_BaseAttacker):
     """Implements a sanity-check analytic inversion
 
@@ -123,8 +128,8 @@ class ImprintAttacker(AnalyticAttacker):
 class DecepticonAttacker(AnalyticAttacker):
     """An analytic attack against transformer models in language."""
 
-    def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
-        """This is somewhat hard-coded for images, but that is not a necessity."""
+    def reconstruct2(self, server_payload, shared_data, server_secrets=None, dryrun=False):
+        """Reconstruct both positions and token ids from the input sentence."""
         # Initialize stats module for later usage:
         rec_models, tokens, stats = self.prepare_attack(server_payload, shared_data)
         len_data = shared_data[0]["metadata"]["num_data_points"]  # Could be guessed as well
@@ -164,10 +169,11 @@ class DecepticonAttacker(AnalyticAttacker):
             embedding = rec_models[0].encoder
         no_pos = norm_layer(embedding(leaked_tokens)).cpu().view(-1, embedding.weight.shape[1])
         with_pos = recs  # Here are those same features, but with positional encodings (stuff we reconstructed)
-        if with_pos.shape[0] < len_data:
-            # Some positional tokens are missing, we substitute with random vectors:
-            random_embeds = torch.zeros(len_data - with_pos.shape[0], with_pos.shape[1])
-            with_pos = torch.cat([with_pos, random_embeds])
+        log.info(f"Recovered {len(with_pos)} tokens with positional data from imprinted layer.")
+        # if with_pos.shape[0] < len_data:
+        #     # Some positional tokens are missing, we substitute with random vectors:
+        #     random_embeds = torch.zeros(len_data - with_pos.shape[0], with_pos.shape[1])
+        #     with_pos = torch.cat([with_pos, random_embeds])
 
         sorted_tokens, order = self._match_positions_with_tokens(no_pos, with_pos, leaked_tokens)
         # ### Now let's get each token's position, as well as splitting sequences
@@ -199,7 +205,6 @@ class DecepticonAttacker(AnalyticAttacker):
         # ### We need to find out what word led to what positionally encoded representation.
         # Let's try the naive greedy search for correlations between no_pos and with_pos as defined above
         for i, no_p in enumerate(no_pos):
-            max_corr = 0
             for j, with_p in enumerate(with_pos):
                 val = np.corrcoef(np.array([no_p.detach().numpy(), with_p.detach().numpy()]))[0, 1]
                 corrs[i, j] = val
@@ -254,3 +259,151 @@ class DecepticonAttacker(AnalyticAttacker):
                 sentences[n].append(sorted_tokens[w[m]])
 
         return sentences
+
+    @torch.inference_mode()
+    def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
+        """Reconstruct both positions and token ids from the input sentence."""
+        # Initialize stats module for later usage:
+        rec_models, tokens, stats = self.prepare_attack(server_payload, shared_data)
+        len_data = shared_data[0]["metadata"]["num_data_points"]  # Could be guessed as well
+
+        if "transformer" in rec_models[0].name:  # These are our implementations from model/language_models.py
+            norm_layer = rec_models[0].transformer_encoder.layers[0].norm1
+            pos_encoder = rec_models[0].pos_encoder
+            embedding = rec_models[0].encoder
+
+        if "ImprintBlock" in server_secrets.keys():
+            weight_idx = server_secrets["ImprintBlock"]["weight_idx"]
+            bias_idx = server_secrets["ImprintBlock"]["bias_idx"]
+            data_shape = server_secrets["ImprintBlock"]["data_shape"]
+        else:
+            raise ValueError(f"No imprint hidden in model {rec_models[0]} according to server.")
+
+        leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models).view(-1)
+        leaked_embeddings = norm_layer(embedding(leaked_tokens)).cpu().view(-1, embedding.weight.shape[1])
+
+        bias_grad = shared_data[0]["gradients"][bias_idx].clone()
+        weight_grad = shared_data[0]["gradients"][weight_idx].clone()
+
+        if self.cfg.sort_by_bias:
+            # This variant can recover from shuffled rows under the assumption that biases would be ordered
+            _, order = server_payload[0]["parameters"][1].sort(descending=True)
+            bias_grad = bias_grad[order]
+            weight_grad = weight_grad[order]
+
+        if server_secrets["ImprintBlock"]["structure"] == "cumulative":
+            for i in reversed(list(range(1, weight_grad.shape[0]))):
+                weight_grad[i] -= weight_grad[i - 1]
+                bias_grad[i] -= bias_grad[i - 1]
+
+        # Here are our reconstructed positionally encoded embeddings:
+        valid_classes = bias_grad != 0
+        breached_embeddings = weight_grad[valid_classes, :] / bias_grad[valid_classes, None]
+        log.info(f"Recovered {len(breached_embeddings)} embeddings with positional data from imprinted layer.")
+        # Get an estimation of the positional embeddings:
+        dummy_inputs = torch.zeros([len_data, *data_shape], dtype=torch.long, device=self.setup["device"])
+        pure_positions = pos_encoder(torch.zeros_like(embedding(dummy_inputs)))
+        positional_embeddings = norm_layer(pure_positions).cpu().view(-1, embedding.weight.shape[1])
+        # First, match breached embeddings to positions:
+        order_breach_to_positions, costs = self._match_embeddings(positional_embeddings, breached_embeddings)
+        if len(order_breach_to_positions) < len(positional_embeddings):
+            # First fill up found positions:
+            ordered_breached_embeddings = torch.zeros_like(positional_embeddings)
+            ordered_breached_embeddings[order_breach_to_positions] = breached_embeddings
+            # Then dredge for other hits from rows that do not correlate well
+            positions_to_breach = torch.arange(0, len(positional_embeddings))[order_breach_to_positions]
+            free_positions = list(set(range(0, len(positional_embeddings))) - set(positions_to_breach.tolist()))
+            # _, indices = costs.topk(len(free_positions), largest=False)
+            miss_to_pos, costs = self._match_embeddings(breached_embeddings, positional_embeddings[free_positions])
+            ordered_breached_embeddings[free_positions] = breached_embeddings[miss_to_pos]
+            # ordered_breached_embeddings[free_positions] -= breached_embeddings[indices]  # remove overlapping positions
+        else:  # Match 1-to-1:
+            ordered_breached_embeddings = breached_embeddings[order_breach_to_positions]
+
+        # These are already in the right position, but which token do they belong to?
+        breached_without_positions = ordered_breached_embeddings - positional_embeddings
+        order_leaked_to_breached, _ = self._match_embeddings(leaked_embeddings, breached_without_positions)
+        recovered_tokens = leaked_tokens[order_leaked_to_breached].view([len_data, *data_shape])
+
+        reconstructed_data = dict(data=recovered_tokens, labels=recovered_tokens)
+        return reconstructed_data, stats
+
+    @torch.inference_mode()
+    def reconstruct3(self, server_payload, shared_data, server_secrets=None, dryrun=False):
+        """Reconstruct both positions and token ids from the input sentence."""
+        # Initialize stats module for later usage:
+        rec_models, tokens, stats = self.prepare_attack(server_payload, shared_data)
+        len_data = shared_data[0]["metadata"]["num_data_points"]  # Could be guessed as well
+
+        if "transformer" in rec_models[0].name:  # These are our implementations from model/language_models.py
+            norm_layer = rec_models[0].transformer_encoder.layers[0].norm1
+            pos_encoder = rec_models[0].pos_encoder
+            embedding = rec_models[0].encoder
+
+        if "ImprintBlock" in server_secrets.keys():
+            weight_idx = server_secrets["ImprintBlock"]["weight_idx"]
+            bias_idx = server_secrets["ImprintBlock"]["bias_idx"]
+            data_shape = server_secrets["ImprintBlock"]["data_shape"]
+        else:
+            raise ValueError(f"No imprint hidden in model {rec_models[0]} according to server.")
+
+        leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models).view(-1)
+        leaked_embeddings = norm_layer(embedding(leaked_tokens)).cpu().view(-1, embedding.weight.shape[1])
+
+        bias_grad = shared_data[0]["gradients"][bias_idx].clone()
+        weight_grad = shared_data[0]["gradients"][weight_idx].clone()
+
+        if self.cfg.sort_by_bias:
+            # This variant can recover from shuffled rows under the assumption that biases would be ordered
+            _, order = server_payload[0]["parameters"][1].sort(descending=True)
+            bias_grad = bias_grad[order]
+            weight_grad = weight_grad[order]
+
+        if server_secrets["ImprintBlock"]["structure"] == "cumulative":
+            for i in reversed(list(range(1, weight_grad.shape[0]))):
+                weight_grad[i] -= weight_grad[i - 1]
+                bias_grad[i] -= bias_grad[i - 1]
+
+        # Here are our reconstructed positionally encoded embeddings:
+        valid_classes = bias_grad != 0
+        breached_embeddings = weight_grad[valid_classes, :] / bias_grad[valid_classes, None]
+        log.info(f"Recovered {len(breached_embeddings)} embeddings with positional data from imprinted layer.")
+        # Get an estimation of the positional embeddings:
+        dummy_inputs = torch.zeros([len_data, *data_shape], dtype=torch.long, device=self.setup["device"])
+        pure_positions = pos_encoder(torch.zeros_like(embedding(dummy_inputs)))
+        positional_embeddings = norm_layer(pure_positions).cpu().view(-1, embedding.weight.shape[1])
+        # First, match breached embeddings to positions:
+        assign_breach_to_positions, costs = self._match_frequency_estimation(positional_embeddings, breached_embeddings)
+        ordered_breached_embeddings = breached_embeddings[assign_breach_to_positions]
+
+        # These are already in the right position, but which token do they belong to?
+        breached_without_positions = ordered_breached_embeddings - positional_embeddings
+        order_leaked_to_breached, _ = self._match_embeddings(leaked_embeddings, breached_without_positions)
+        recovered_tokens = leaked_tokens[order_leaked_to_breached].view([len_data, *data_shape])
+
+        reconstructed_data = dict(data=recovered_tokens, labels=recovered_tokens)
+        return reconstructed_data, stats
+
+    def _match_frequency_estimation(self, positional_embeddings, breached_embeddings):
+        """Match multiple rows to single positions, based on their norm."""
+        breaches = breached_embeddings.clone()
+        matches = []
+        while len(matches) < len(positional_embeddings):
+            bnorm = breaches.norm(dim=-1)[:, None]
+            pnorm = positional_embeddings.norm(dim=-1)[None, :]
+            cosim = breaches.matmul(positional_embeddings.T) / bnorm / pnorm
+            row_ind, col_ind = (cosim == torch.max(cosim)).nonzero()[0].squeeze()
+
+            matches.append(row_ind)
+            breaches[row_ind] -= positional_embeddings[col_ind]
+
+        order_tensor = torch.as_tensor(matches, device=positional_embeddings.device, dtype=torch.long)
+        return order_tensor, None
+
+    def _match_embeddings(self, inputs, references):
+        cosim = references.matmul(inputs.T) / references.norm(dim=-1)[:, None] / inputs.norm(dim=-1)[None, :]
+        row_ind, col_ind = linear_sum_assignment(cosim.detach().numpy(), maximize=True)
+
+        order_tensor = torch.as_tensor(col_ind, device=inputs.device, dtype=torch.long)
+        costs = torch.as_tensor(cosim[row_ind, col_ind], device=inputs.device, dtype=torch.float)
+        return order_tensor, costs

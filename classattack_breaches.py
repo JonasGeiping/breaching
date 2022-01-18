@@ -153,7 +153,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
         # Save recovered data:
         if cfg.save_reconstruction:
             if target_max_psnr:
-                sorted_indx = (metrics["order"] == torch.as_tensor(target_indx)).nonzero().squeeze()
+                sorted_indx = (metrics["order"].cpu() == torch.as_tensor(target_indx)).nonzero().squeeze()
             else:
                 sorted_indx = None
             breaching.utils.save_reconstruction(

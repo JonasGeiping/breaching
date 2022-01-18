@@ -655,6 +655,7 @@ class ClassParameterServer(HonestServer):
         extra_info["multiplier"] = 300
         self.all_feat_value = []
         self.visited = []
+        self.counter = 0
         num_data_points = len(shared_data["metadata"]["labels"])
         self.binary_attack_helper(user, extra_info, [feat_value])
         self.all_feat_value.sort()
@@ -692,6 +693,9 @@ class ClassParameterServer(HonestServer):
         if len(self.all_feat_value) >= self.num_target_data:
             return
 
+        if self.counter >= (self.num_target_data) ** 2:
+            raise Exception("too many attempts!")
+
         # print('new level')
 
         new_feat_01_values = []
@@ -710,6 +714,7 @@ class ClassParameterServer(HonestServer):
             feat_0 = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
             feat_0_value = float(feat_0[feat_to_obtain])  # the middle includes left hand side
             feat_1_value = 2 * feat_01_value - feat_0_value
+            self.counter += 1
             # print(feat_01_value, feat_0_value, feat_1_value)
             # from IPython import embed; embed()
 
@@ -915,4 +920,3 @@ class ClassParameterServer(HonestServer):
         z_g = shared_data["gradients"][3]
 
         b = torch.matmul(q_w.T, q_g) + torch.matmul(k_w.T, k_g) + torch.matmul(v_w.T, v_g)
-        

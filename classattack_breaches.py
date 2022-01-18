@@ -88,14 +88,14 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
             log.info("Optimize on averaged gradient with cls attack.")
 
             # cls attack on all labels in the batch
-            extra_info = {'cls_to_obtain': t_labels}
-            server.reconfigure_model('cls_attack', extra_info=extra_info)
+            extra_info = {"cls_to_obtain": t_labels}
+            server.reconfigure_model("cls_attack", extra_info=extra_info)
             server_payload = server.distribute_payload()
             shared_data, true_user_data = user.compute_local_updates(server_payload)
 
             reconstruction, stats = attacker.reconstruct(
                 [server_payload], [shared_data], server.secrets, dryrun=cfg.dryrun
-            ) 
+            )
         else:
             # attack cls by cls
             log.info("Attack cls by cls cls attack.")
@@ -153,11 +153,11 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
         # Save recovered data:
         if cfg.save_reconstruction:
             if target_max_psnr:
-                target_indx = target_indx
+                sorted_indx = (metrics["order"] == torch.as_tensor(target_indx)).nonzero().squeeze()
             else:
-                target_indx = None
+                sorted_indx = None
             breaching.utils.save_reconstruction(
-                reconstruction, [server_payload], true_user_data, cfg, side_by_side=False, target_indx=target_indx
+                reconstruction, [server_payload], true_user_data, cfg, target_indx=sorted_indx
             )
         if cfg.dryrun:
             break

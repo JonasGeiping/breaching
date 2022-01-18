@@ -74,7 +74,10 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
         )
     elif cfg_model == "transformer1":
         # This is our initial sanity check transformer:
-        model = TransformerModel(ntokens=cfg_data.vocab_size, ninp=200, nhead=2, nhid=200, nlayers=1, dropout=0)
+        model = TransformerModel(ntokens=cfg_data.vocab_size, ninp=200, nhead=1, nhid=200, nlayers=1, dropout=0)
+    elif cfg_model == "transformerS":
+        # A wide sanity-check transformer
+        model = TransformerModel(ntokens=cfg_data.vocab_size, ninp=512, nhead=1, nhid=512, nlayers=1, dropout=0)
     elif cfg_model == "LSTM":
         # This is the LSTM from "LEARNING DIFFERENTIALLY PRIVATE RECURRENT LANGUAGE MODELS"
         """

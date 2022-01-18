@@ -6,6 +6,7 @@ from .malicious_modifications import ImprintBlock, RecoveryOptimizer, SparseImpr
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
 from .malicious_modifications.analytic_transformer_utils import (
     compute_feature_distribution,
+    partially_disable_embedding,
     set_MHA,
     make_imprint_layer,
 )
@@ -92,8 +93,6 @@ class HonestServer:
                     module.reset_parameters()
             elif model_state == "trained":
                 pass  # model was already loaded as pretrained model
-            elif model_state == "moco":
-                pass  # will be loaded below
             elif model_state == "linearized":
                 with torch.no_grad():
                     if isinstance(module, torch.nn.BatchNorm2d):
@@ -380,20 +379,31 @@ class MaliciousTransformerServer(HonestServer):
         # Figure out the hidden dimension:
         # For now this is non-automated.
         if "transformer" in self.model.name:  # These are our implementations from model/language_models.py
-            first_linear_layer = self.model.transformer_encoder.layers[0].linear1
-            hidden_dim, embedding_dim = first_linear_layer.weight.shape
-
-        # Define "probe" function / measurement vector:
-        weights = torch.randn(embedding_dim, **self.setup)
-        std, mu = torch.std_mean(weights)  # correct sample toward perfect mean and std
-        measurement = (weights - mu) / std / torch.as_tensor(embedding_dim, **self.setup).sqrt()
-
-        # Modify the first attention mechanism in the model:
-        if "transformer" in self.model.name:  # These are our implementations from model/language_models.py
-            attention_layer = self.model.transformer_encoder.layers[0].self_attn
-            norm_layer = self.model.transformer_encoder.layers[0].norm1
+            embedding = self.model.encoder
             pos_encoder = self.model.pos_encoder
 
+            norm_layer = self.model.transformer_encoder.layers[0].norm1
+            attention_layer = self.model.transformer_encoder.layers[0].self_attn
+            first_linear_layer = self.model.transformer_encoder.layers[0].linear1
+            second_linear_layer = self.model.transformer_encoder.layers[0].linear2
+
+        hidden_dim, embedding_dim = first_linear_layer.weight.shape
+
+        # Define "probe" function / measurement vector:
+        # Probe Length is embedding_dim minus v_proportion minus skip node
+        v_length = self.cfg_server.param_modification.v_length
+        probe_dim = embedding_dim - v_length - 1
+        weights = torch.randn(probe_dim, **self.setup)
+        std, mu = torch.std_mean(weights)  # correct sample toward perfect mean and std
+        probe = (weights - mu) / std / torch.as_tensor(probe_dim, **self.setup).sqrt()
+
+        measurement = torch.zeros(embedding_dim, **self.setup)
+        measurement[v_length:-1] = probe
+
+        # Disable these parts of the embedding:
+        partially_disable_embedding(embedding, v_length)
+
+        # Modify the first attention mechanism in the model:
         # Set QKV modifications in-place:
         set_MHA(
             attention_layer,
@@ -402,16 +412,13 @@ class MaliciousTransformerServer(HonestServer):
             embedding_dim,
             self.cfg_data.shape,
             sequence_token_weight=self.cfg_server.param_modification.sequence_token_weight,
-            pos=self.cfg_server.param_modification.pos,
+            imprint_sentence_position=self.cfg_server.param_modification.imprint_sentence_position,
             softmax_skew=self.cfg_server.param_modification.softmax_skew,
+            v_length=v_length,
         )
 
-        # Set the second linear layer to zeros:
-        if "transformer" in self.model.name:
-            second_linear_layer = self.model.transformer_encoder.layers[0].linear2
-
         second_linear_layer.weight.data.zero_()
-        second_linear_layer.weight.data[0] = 1
+        second_linear_layer.weight.data[-1] = 1
         second_linear_layer.bias.data.zero_()
 
         # Evaluate feature distribution of this model
@@ -426,7 +433,13 @@ class MaliciousTransformerServer(HonestServer):
                 weight_idx = idx
             if param is first_linear_layer.bias:
                 bias_idx = idx
-        details = dict(weight_idx=weight_idx, bias_idx=bias_idx, data_shape=self.cfg_data.shape, structure="cumulative")
+        details = dict(
+            weight_idx=weight_idx,
+            bias_idx=bias_idx,
+            data_shape=self.cfg_data.shape,
+            structure="cumulative",
+            v_length=v_length,
+        )
         self.secrets["ImprintBlock"] = details
 
 

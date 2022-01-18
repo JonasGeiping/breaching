@@ -22,7 +22,6 @@ def compute_feature_distribution(model, server, measurement):
     feature_layer_name = name
 
     feats = []
-    feats_before = []
     model.train()
     model.to(**server.setup)
 
@@ -44,12 +43,17 @@ def compute_feature_distribution(model, server, measurement):
             model(inputs)
             feats.append(features[name].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone().cpu())
 
-    std, mu = torch.std_mean(torch.mm(torch.cat(feats), measurement.unsqueeze(1)).squeeze())
+    std, mu = torch.std_mean(torch.matmul(torch.cat(feats), measurement))
     model.eval()
     model.cpu()
     hook.remove()
     print(f"Feature mean is {mu.item()}, feature std is {std.item()}.")
     return std, mu
+
+
+def partially_disable_embedding(embedding_layer, v_length):
+    """Disable the first v_proportion rows of all embeddings."""
+    embedding_layer.weight.data[:, :v_length] = 0
 
 
 def set_MHA(
@@ -58,36 +62,71 @@ def set_MHA(
     pos_encoder,
     embedding_dim,
     data_shape,
-    sequence_token_weight=0.075,
-    pos=0,
-    softmax_skew=1000,
+    sequence_token_weight=100,
+    imprint_sentence_position=0,  # This position will be imprinted onto the sentence via attention
+    softmax_skew=1000000,
+    v_length=8,
 ):
-    """Questions for Liam.
-    I killed math.sqrt(model.d_model) was that part necessary?
-    """
     # Let's set the query matrix to produce just the first positional encoding (or could be any index - might want last index)
     qkv_shape = attention_layer.in_proj_weight.data.shape[0]
 
+    # These are the positional embeddings after layer normalization:
     dummy_data = torch.zeros([1, *data_shape, embedding_dim])
-    just_positions = norm_layer(pos_encoder(dummy_data))
+    just_positions = norm_layer(pos_encoder(dummy_data)).cpu()
 
     # Q matrix setup
     # We make the weight 0, and the bias some (large multiple of) positional encoding
     # Only coded here for one MHA layer at the beginning of the model...
     # Make the position super super large to skew softmax
-    attention_layer.in_proj_bias.data[: qkv_shape // 3] = softmax_skew * just_positions[0, pos, :]
+    attention_layer.in_proj_bias.data[: qkv_shape // 3] = softmax_skew * just_positions[0, imprint_sentence_position, :]
     attention_layer.in_proj_weight.data[: qkv_shape // 3] = torch.zeros((qkv_shape // 3, qkv_shape // 3))
 
     # K matrix setup (identity)
     attention_layer.in_proj_weight.data[qkv_shape // 3 : 2 * (qkv_shape // 3)] = torch.eye(qkv_shape // 3)
 
-    # V matrix setup (identity)
-    attention_layer.in_proj_weight.data[2 * (qkv_shape // 3) :] = torch.eye(qkv_shape // 3)
+    # V matrix setup (truncated shifted identity block)
+    if v_length == qkv_shape // 3:  # Do not modify:
+        v_data = torch.eye(qkv_shape // 3)
+    else:
+        v_data = torch.zeros((qkv_shape // 3, qkv_shape // 3))
+        v_data[:v_length, v_length : (2 * v_length)] = torch.eye(v_length)
+    attention_layer.in_proj_weight.data[2 * (qkv_shape // 3) :] = v_data
 
     # So, (QK^T)V just adds the same vector (first word embedding) to each word in the sequence.
 
     # Linear layer at the end of MHA - set to small value to not 'skew' embeddings too much
     attention_layer.out_proj.weight.data = sequence_token_weight * torch.eye(qkv_shape // 3)
+
+
+def make_forward_passing_imprint_layer(first_linear_layer, second_linear_layer, measurement, mean, std):
+    """
+    measurement is the Gaussian vector we take inner product w.r.t.
+    mean, std = mean, std of features from feature_distribution
+    """
+
+    def _get_bins(mean, std, num_bins):
+        bins = []
+        mass_per_bin = 1 / (num_bins)
+        bins.append(-10)  # -Inf is not great here, but NormalDist(mu=0, sigma=1).cdf(10) approx 1
+        for i in range(1, num_bins):
+            bins.append(NormalDist().inv_cdf(i * mass_per_bin) * std + mean)
+        return bins
+
+    def _make_biases(bias_layer, bins):
+        new_biases = torch.zeros_like(bias_layer.data)
+        for i in range(new_biases.shape[0]):
+            new_biases[i] = -bins[i]
+        return new_biases
+
+    bin_dim = first_linear_layer.weight.data.shape[0]
+    bins = _get_bins(mean, std, bin_dim)
+    first_linear_layer.weight.data = measurement.repeat(bin_dim, 1)
+    first_linear_layer.bias.data = _make_biases(first_linear_layer.bias, bins)
+
+    # We set the second linear layer in the ff to minimally modify (b/c skip connection)
+    second_linear_layer.weight.data.zero_()
+    second_linear_layer.weight.data[-1] = 0.001 * torch.ones_like(second_linear_layer.weight.data[0])
+    second_linear_layer.bias.data.zero_()
 
 
 def make_imprint_layer(first_linear_layer, measurement, mean, std):

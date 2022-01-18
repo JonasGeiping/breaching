@@ -18,7 +18,7 @@ def prepare_attack(model, loss, cfg_attack, setup):
         attacker = AnalyticAttacker(model, loss, cfg_attack, setup)
     elif cfg_attack.attack_type == "imprint-readout":
         attacker = ImprintAttacker(model, loss, cfg_attack, setup)
-    elif cfg_attack.attack_type == "decepticon":
+    elif cfg_attack.attack_type == "decepticon-readout":
         attacker = DecepticonAttacker(model, loss, cfg_attack, setup)
     elif cfg_attack.attack_type == "recursive":
         attacker = RecursiveAttacker(model, loss, cfg_attack, setup)

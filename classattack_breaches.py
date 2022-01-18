@@ -204,15 +204,22 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
     server_payload = server.distribute_payload()
     tmp_shared_data, _ = user.compute_local_updates(server_payload)
     avg_feature = torch.flatten(server.reconstruct_feature(tmp_shared_data, cls_to_obtain))
-    feat_to_obtain = int(torch.argmax(avg_feature))
-    feat_value = float(avg_feature[feat_to_obtain])
+    
+    while 6 > 5:
+        feat_to_obtain = int(torch.argmax(avg_feature))
+        feat_value = float(avg_feature[feat_to_obtain])
 
-    # binary attack to recover all single gradients
-    extra_info["feat_to_obtain"] = feat_to_obtain
-    extra_info["feat_value"] = feat_value
-    extra_info["multiplier"] = 1
+        # binary attack to recover all single gradients
+        extra_info["feat_to_obtain"] = feat_to_obtain
+        extra_info["feat_value"] = feat_value
+        extra_info["multiplier"] = 1
 
-    recovered_single_gradients = server.binary_attack(user, extra_info)
+        try:
+            recovered_single_gradients = server.binary_attack(user, extra_info)
+            break
+        except Exception:
+            avg_feature[feat_to_obtain] = -1000
+            pass
 
     # return to the model with multiplier=1
     server.reset_model()
@@ -223,7 +230,8 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
     server_payload = server.distribute_payload()
 
     # recover image by image
-    for i, grad_i in enumerate(recovered_single_gradients):
+    # add reversed() because the ith is always more confident than i-1th
+    for i, grad_i in enumerate(reversed(recovered_single_gradients)):
         log.info(f"Start recovering datapoint {i} of label {shared_data['metadata']['labels'][0].item()}.")
 
         tmp_share_data = copy.deepcopy(shared_data)

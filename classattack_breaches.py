@@ -91,7 +91,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
             extra_info = {"cls_to_obtain": t_labels}
             server.reconfigure_model("cls_attack", extra_info=extra_info)
             server_payload = server.distribute_payload()
-            shared_data, true_user_data = user.compute_local_updates(server_payload)
+            shared_data, _ = user.compute_local_updates(server_payload)
 
             reconstruction, stats = attacker.reconstruct(
                 [server_payload], [shared_data], server.secrets, dryrun=cfg.dryrun

@@ -3,7 +3,6 @@
 import torch
 import numpy as np
 from scipy.optimize import linear_sum_assignment  # Better than greedy search
-from k_means_constrained import KMeansConstrained
 
 
 from collections import defaultdict
@@ -313,7 +312,10 @@ class DecepticonAttacker(AnalyticAttacker):
 
         # Step 0: Separate breached embeddings into separate sentences:
         sentence_id_components = breached_embeddings[:, :v_length]
+
         if len_data > 1:
+            from k_means_constrained import KMeansConstrained
+
             clustering = KMeansConstrained(
                 n_clusters=len_data,
                 size_min=0,

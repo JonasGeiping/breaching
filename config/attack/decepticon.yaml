@@ -1,6 +1,6 @@
 type: analytic
 
-attack_type: decepticon
+attack_type: decepticon-readout
 label_strategy: # Labels are not required for this attack, but see tokens on step below:
 token_strategy: decoder-bias # This is actually the "token" recovery strategy as labels~=tokens
 text_strategy: no-preprocessing # Do not cut off the embedding

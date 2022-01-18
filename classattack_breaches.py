@@ -132,6 +132,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
             reconstruction = {"data": reconstruction_data, "labels": shared_data["metadata"]["labels"]}
 
         # Run the full set of metrics:
+        log.info(f"Spent {user.counted_queries} user queries overall.")
         metrics = breaching.analysis.report(
             reconstruction,
             true_user_data,
@@ -204,8 +205,9 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
     server_payload = server.distribute_payload()
     tmp_shared_data, _ = user.compute_local_updates(server_payload)
     avg_feature = torch.flatten(server.reconstruct_feature(tmp_shared_data, cls_to_obtain))
-    
-    while 6 > 5:
+    single_gradient_recovered = False
+
+    while not single_gradient_recovered:
         feat_to_obtain = int(torch.argmax(avg_feature))
         feat_value = float(avg_feature[feat_to_obtain])
 
@@ -214,12 +216,13 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
         extra_info["feat_value"] = feat_value
         extra_info["multiplier"] = 1
 
-        try:
-            recovered_single_gradients = server.binary_attack(user, extra_info)
-            break
-        except Exception:
+        recovered_single_gradients = server.binary_attack(user, extra_info)
+        if recovered_single_gradients is not None:
+            single_gradient_recovered = True
+        else:
             avg_feature[feat_to_obtain] = -1000
-            pass
+
+        log.info(f"Spent {user.counted_queries} user queries so far.")
 
     # return to the model with multiplier=1
     server.reset_model()

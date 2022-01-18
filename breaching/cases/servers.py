@@ -670,7 +670,9 @@ class ClassParameterServer(HonestServer):
         self.visited = []
         self.counter = 0
         num_data_points = len(shared_data["metadata"]["labels"])
-        self.binary_attack_helper(user, extra_info, [feat_value])
+        retval = self.binary_attack_helper(user, extra_info, [feat_value])
+        if retval == 0:  # Stop early after too many attempts in binary search:
+            return None
         self.all_feat_value.sort()
 
         # recover gradients
@@ -704,10 +706,10 @@ class ClassParameterServer(HonestServer):
         # now: naive binarily cut the feature, might be smarter to predict the number of datapoints?
         # on the left hand side
         if len(self.all_feat_value) >= self.num_target_data:
-            return
-
+            return 1
         if self.counter >= (self.num_target_data) ** 2:
-            raise Exception("too many attempts!")
+            log.info(f"Too many attempts ({self.counter}) on this feature!")
+            return 0
 
         # print('new level')
 
@@ -753,7 +755,7 @@ class ClassParameterServer(HonestServer):
             new_feat_01_values.append((feat_01_value + feat_1_value) / 2)
             new_feat_01_values.append((feat_01_value + feat_0_value) / 2)
 
-        self.binary_attack_helper(user, extra_info, new_feat_01_values)
+        return self.binary_attack_helper(user, extra_info, new_feat_01_values)
 
     def check_with_tolerance(self, value, list, threshold=0.05):
         for i in list:

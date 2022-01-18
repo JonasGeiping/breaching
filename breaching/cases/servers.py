@@ -646,30 +646,47 @@ class ClassParameterServer(HonestServer):
                 masked_param[cls_to_obtain] = l_b[cls_to_obtain] * db_flip
                 l_b.copy_(masked_param.to(l_b.device))
 
-    def binary_attack(self, user, extra_info):
-        # now: naive version for two imgs, to be recursively recovering all gradients
-        # make everything neat?
-        server_payload = self.distribute_payload()
-        shared_data, _ = user.compute_local_updates(server_payload)
+    def one_shot_binary_attack(self, user, extra_info):
         cls_to_obtain = extra_info["cls_to_obtain"]
         feat_to_obtain = extra_info["feat_to_obtain"]
-        num_target_data = int(torch.count_nonzero((shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int)))
+        feat_value = extra_info["feat_value"]
+        num_target_data = extra_info["num_target_data"]
         self.num_target_data = num_target_data
+        self.all_feat_value = []
 
-        extra_info["multiplier"] = 1
-        self.reset_model()
-        self.reconfigure_model("cls_attack", extra_info=extra_info)
-        server_payload = self.distribute_payload()
-        shared_data, _ = user.compute_local_updates(server_payload)
-        avg_feature = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
-        feat_value = float(avg_feature[feat_to_obtain])
+        extra_info["multiplier"] = 300
+        while True:
+            self.all_feat_value.append(feat_value)
+            extra_info["feat_value"] = feat_value
+            self.reset_model()
+            self.reconfigure_model("cls_attack", extra_info=extra_info)
+            self.reconfigure_model("feature_attack", extra_info=extra_info)
+            server_payload = self.distribute_payload()
+            shared_data, _ = user.compute_local_updates(server_payload)
+            avg_feature = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
+            feat_value = float(avg_feature[feat_to_obtain])
+
+            if self.check_with_tolerance(feat_value, self.all_feat_value):
+                curr_grad = list(shared_data["gradients"])
+                break
+
+        num_data_points = len(shared_data["metadata"]["labels"])
+        curr_grad[:-1] = [grad_ii * num_data_points / extra_info["multiplier"] for grad_ii in curr_grad[:-1]]
+        self.all_feat_value.sort()
+
+        return [curr_grad]
+
+    def binary_attack(self, user, extra_info):
+        feat_value = extra_info["feat_value"]
+        num_target_data = extra_info["num_target_data"]
+        self.num_target_data = num_target_data
+        self.all_feat_value = []
 
         # get filter feature points first
         extra_info["multiplier"] = 300
         self.all_feat_value = []
         self.visited = []
         self.counter = 0
-        num_data_points = len(shared_data["metadata"]["labels"])
         retval = self.binary_attack_helper(user, extra_info, [feat_value])
         if retval == 0:  # Stop early after too many attempts in binary search:
             return None
@@ -689,6 +706,7 @@ class ClassParameterServer(HonestServer):
             self.reconfigure_model("feature_attack", extra_info=extra_info)
             server_payload = self.distribute_payload()
             shared_data, _ = user.compute_local_updates(server_payload)
+            num_data_points = len(shared_data["metadata"]["labels"])
             curr_grad = list(shared_data["gradients"])
             curr_grad[:-1] = [grad_ii * num_data_points / extra_info["multiplier"] for grad_ii in curr_grad[:-1]]
 
@@ -708,7 +726,8 @@ class ClassParameterServer(HonestServer):
         if len(self.all_feat_value) >= self.num_target_data:
             return 1
         if self.counter >= (self.num_target_data) ** 2:
-            log.info(f"Too many attempts ({self.counter}) on this feature!")
+            # log.info(f"Too many attempts ({self.counter}) on this feature!")
+            print(f"Too many attempts ({self.counter}) on this feature!")
             return 0
 
         # print('new level')

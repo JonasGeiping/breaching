@@ -235,9 +235,9 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
 
         log.info(f"Spent {user.counted_queries} user queries so far.")
 
-    # return to the model with multiplier=1
+    # return to the model with multiplier=5, (better with larger multiplier, but not optimizable if it is too large)
     server.reset_model()
-    extra_info["multiplier"] = 1
+    extra_info["multiplier"] = 5
     extra_info["feat_value"] = feat_value
     server.reconfigure_model("cls_attack", extra_info=extra_info)
     server.reconfigure_model("feature_attack", extra_info=extra_info)

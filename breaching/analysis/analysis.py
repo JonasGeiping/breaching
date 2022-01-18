@@ -123,10 +123,11 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
         # Metrics that operate on full sentences
         rec_sentence = tokenizer.batch_decode(reconstructed_user_data["data"])
         ref_sentence = tokenizer.batch_decode(true_user_data["data"])
+
         num_sentences = len(rec_sentence)
-        score = metrics[name].compute(predictions=rec_sentence, references=[ref_sent_words] * num_sentences)
+        score = metrics[name].compute(predictions=rec_sentence, references=[ref_sentence] * num_sentences)
         if name == "sacrebleu":
-            text_metrics[name] = score["score"]
+            text_metrics[name] = score["score"] / 100
         else:
             text_metrics["rouge1"] = score["rouge1"].mid.fmeasure
             text_metrics["rouge2"] = score["rouge2"].mid.fmeasure

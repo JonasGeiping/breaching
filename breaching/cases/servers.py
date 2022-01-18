@@ -928,4 +928,3 @@ class ClassParameterServer(HonestServer):
         z_g = shared_data["gradients"][3]
 
         b = torch.matmul(q_w.T, q_g) + torch.matmul(k_w.T, k_g) + torch.matmul(v_w.T, v_g)
-        

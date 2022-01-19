@@ -667,10 +667,11 @@ class ClassParameterServer(HonestServer):
         feat_to_obtain = extra_info["feat_to_obtain"]
         feat_value = extra_info["feat_value"]
         num_target_data = extra_info["num_target_data"]
+        num_data_points = extra_info["num_data_points"]
         self.num_target_data = num_target_data
         self.all_feat_value = []
 
-        extra_info["multiplier"] = 300
+        extra_info["multiplier"] = 1000
         while True:
             self.all_feat_value.append(feat_value)
             extra_info["feat_value"] = feat_value
@@ -686,62 +687,59 @@ class ClassParameterServer(HonestServer):
                 curr_grad = list(shared_data["gradients"])
                 break
 
-        num_data_points = len(shared_data["metadata"]["labels"])
+        curr_grad[-1] = curr_grad[-1] * num_data_points
         curr_grad[:-1] = [grad_ii * num_data_points / extra_info["multiplier"] for grad_ii in curr_grad[:-1]]
         self.all_feat_value.sort()
 
         return [curr_grad]
 
     def binary_attack(self, user, extra_info):
+        import numpy as np
         feat_value = extra_info["feat_value"]
         num_target_data = extra_info["num_target_data"]
+        num_data_points = extra_info["num_data_points"]
         self.num_target_data = num_target_data
         self.all_feat_value = []
 
         # get filter feature points first
-        extra_info["multiplier"] = 300
         self.all_feat_value = []
+        self.feat_grad = []
         self.visited = []
         self.counter = 0
+        extra_info["multiplier"] = 1000
         retval = self.binary_attack_helper(user, extra_info, [feat_value])
         if retval == 0:  # Stop early after too many attempts in binary search:
             return None
-        self.all_feat_value.sort()
+        self.all_feat_value = np.array(self.all_feat_value)
+        self.feat_grad = np.array(self.feat_grad, dtype=list)
+        sorted_inds = np.argsort(self.all_feat_value)
+        self.all_feat_value = self.all_feat_value[sorted_inds]
+        self.feat_grad = self.feat_grad[sorted_inds]
 
         # recover gradients
         import copy
-
-        single_gradients = []
-        prev_grad = None
-        extra_info["multiplier"] = 300
-
-        for feat_value in self.all_feat_value:
-            extra_info["feat_value"] = feat_value
-            self.reset_model()
-            self.reconfigure_model("cls_attack", extra_info=extra_info)
-            self.reconfigure_model("feature_attack", extra_info=extra_info)
-            server_payload = self.distribute_payload()
-            shared_data, _ = user.compute_local_updates(server_payload)
-            num_data_points = len(shared_data["metadata"]["labels"])
-            curr_grad = list(shared_data["gradients"])
+        curr_grad = copy.deepcopy(list(self.feat_grad[0]))
+        curr_grad[-1] = curr_grad[-1] * num_data_points
+        curr_grad[:-1] = [grad_ii * num_data_points / extra_info["multiplier"] for grad_ii in curr_grad[:-1]]
+        prev_grad = copy.deepcopy(curr_grad)
+        single_gradients = [curr_grad]
+        for i in range(1, len(self.all_feat_value)):
+            curr_grad = copy.deepcopy(list(self.feat_grad[i]))
+            curr_grad[-1] = curr_grad[-1] * num_data_points
             curr_grad[:-1] = [grad_ii * num_data_points / extra_info["multiplier"] for grad_ii in curr_grad[:-1]]
-
-            if prev_grad:
-                grad_i = [grad_ii - grad_jj for grad_ii, grad_jj in zip(curr_grad, prev_grad)]
-                single_gradients.append(grad_i)
-            else:
-                single_gradients.append(curr_grad)
-
+            grad_i = [grad_ii - grad_jj for grad_ii, grad_jj in zip(curr_grad, prev_grad)]
+            single_gradients.append(grad_i)
             prev_grad = copy.deepcopy(curr_grad)
 
         return single_gradients
 
     def binary_attack_helper(self, user, extra_info, feat_01_values):
-        # now: naive binarily cut the feature, might be smarter to predict the number of datapoints?
-        # on the left hand side
+        import math
+
         if len(self.all_feat_value) >= self.num_target_data:
             return 1
-        if self.counter >= (self.num_target_data) ** 2:
+        if self.counter >= math.log2(self.num_target_data) * self.num_target_data:
+        # if self.counter >= self.num_target_data ** 2:
             # log.info(f"Too many attempts ({self.counter}) on this feature!")
             print(f"Too many attempts ({self.counter}) on this feature!")
             return 0
@@ -756,6 +754,7 @@ class ClassParameterServer(HonestServer):
 
         for feat_01_value in feat_01_values:
             extra_info["feat_value"] = feat_01_value
+            extra_info["multiplier"] = 1000
             self.reset_model()
             self.reconfigure_model("cls_attack", extra_info=extra_info)
             self.reconfigure_model("feature_attack", extra_info=extra_info)
@@ -766,7 +765,6 @@ class ClassParameterServer(HonestServer):
             feat_1_value = 2 * feat_01_value - feat_0_value
             self.counter += 1
             # print(feat_01_value, feat_0_value, feat_1_value)
-            # from IPython import embed; embed()
 
             feat_candidates = [feat_0_value]
 
@@ -776,19 +774,21 @@ class ClassParameterServer(HonestServer):
                 elif not self.check_with_tolerance(feat_cand, self.visited):
                     if not self.check_with_tolerance(feat_01_value, self.all_feat_value):
                         self.all_feat_value.append(feat_01_value)
-                        # print(len(self.all_feat_value))
+                        self.feat_grad.append(list(shared_data["gradients"]))
                     new_feat_01_values.append(feat_cand)
-                self.visited.append(feat_cand)
-                # elif abs(feat_cand - feat_01_value) < 0.01:
-                #     self.all_feat_value.append(feat_cand)
-                #     self.visited.append(feat_01_value)
+                    self.visited.append(feat_cand)
 
                 if len(self.all_feat_value) >= self.num_target_data:
                     return
+                if self.counter >= math.log2(self.num_target_data) * self.num_target_data:
+                # if self.counter >= self.num_target_data ** 2:
+                    # log.info(f"Too many attempts ({self.counter}) on this feature!")
+                    print(f"Too many attempts ({self.counter}) on this feature!")
+                    return 0
 
             new_feat_01_values.append(feat_1_value)
-            new_feat_01_values.append((feat_01_value + feat_1_value) / 2)
-            new_feat_01_values.append((feat_01_value + feat_0_value) / 2)
+            # new_feat_01_values.append((feat_01_value + feat_1_value) / 2)
+            # new_feat_01_values.append((feat_01_value + feat_0_value) / 2)
 
         return self.binary_attack_helper(user, extra_info, new_feat_01_values)
 
@@ -823,7 +823,10 @@ class ClassParameterServer(HonestServer):
         return [recovered_single_gradients[i] for i in rec_assignment]
 
     def reconstruct_feature(self, shared_data, cls_to_obtain):
-        shared_grad = shared_data["gradients"]
+        if type(shared_data) is not list:
+            shared_grad = shared_data["gradients"]
+        else:
+            shared_grad = shared_data
 
         weights = shared_grad[-2]
         bias = shared_grad[-1]

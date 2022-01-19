@@ -30,7 +30,7 @@ def compute_feature_distribution(model, server, measurement):
         for i, batch in enumerate(server.external_dataloader):
             inputs = batch["input_ids"].to(device=server.setup["device"])
             model(inputs)
-            feats.append(features[name].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone().cpu())
+            feats.append(features[name].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone())
     else:
         log.info(f"Computing feature distribution before the {feature_layer_name} layer from random tokens.")
         cfg = server.cfg_data
@@ -41,8 +41,8 @@ def compute_feature_distribution(model, server, measurement):
             samples = list(iter(sampler))
             inputs = torch.as_tensor(samples, device=server.setup["device"]).view((cfg.batch_size, *cfg.shape))
             model(inputs)
-            feats.append(features[name].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone().cpu())
-
+            feats.append(features[name].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone())
+    
     std, mu = torch.std_mean(torch.matmul(torch.cat(feats), measurement))
     model.eval()
     model.cpu()
@@ -97,7 +97,6 @@ def set_MHA(
         v_data = torch.zeros((qkv_shape // 3, qkv_shape // 3))
         v_data[:v_length, v_length : (2 * v_length)] = torch.eye(v_length)
     attention_layer.in_proj_weight.data[2 * (qkv_shape // 3) :] = v_data
-
     # So, (QK^T)V just adds the same vector (first word embedding) to each word in the sequence.
 
     # Linear layer at the end of MHA - set to small value to not 'skew' embeddings too much
@@ -134,8 +133,29 @@ def make_forward_passing_imprint_layer(first_linear_layer, second_linear_layer, 
     second_linear_layer.weight.data[-1] = 0.001 * torch.ones_like(second_linear_layer.weight.data[0])
     second_linear_layer.bias.data.zero_()
 
+def set_flow_backward_layer(second_layers):
+    """
+    here we set the second linear layer in the ff block to accumulate everything
+    from the first linear layer into one entry, thus allowing gradients to flow 
+    backward, but not 'shifting' the embeddings. 
+    """
+    
+    for layer in second_layers: 
+        layer.weight.data.zero_()
+        layer.weight.data[-1] = 1
+        layer.bias.data.zero_()
+        
+def disable_mha_layer(layers):
+    """
+    Here we set all MHA out_proj_weights to 0 except for the first one
+    where we encode the sequence
+    """
+    
+    for layer in layers: 
+        layer.out_proj.weight.data.zero_()
+        layer.out_proj.bias.data.zero_()
 
-def make_imprint_layer(first_linear_layer, measurement, mean, std):
+def make_imprint_layer(first_layers, measurement, mean, std):
     """
     measurement is the Gaussian vector we take inner product w.r.t.
     mean, std = mean, std of features from feature_distribution
@@ -154,9 +174,15 @@ def make_imprint_layer(first_linear_layer, measurement, mean, std):
         for i in range(new_biases.shape[0]):
             new_biases[i] = -bins[i]
         return new_biases
-
-    hidden_dim, embedding_dim = first_linear_layer.weight.shape
-    bins = _get_bins(mean, std, hidden_dim)
-
-    first_linear_layer.weight.data = measurement.repeat(hidden_dim, 1)
-    first_linear_layer.bias.data = _make_biases(first_linear_layer.bias, bins)
+        
+    hidden_dim, embedding_dim = first_layers[0].weight.shape
+    bins = _get_bins(mean, std, hidden_dim * len(first_layers))
+    
+    bins_per_layer = len(bins) // len(first_layers)
+    
+    for i, layer in enumerate(first_layers):
+        layer.weight.data = measurement.repeat(hidden_dim, 1)
+        layer.bias.data = _make_biases(layer.bias, bins[(i*bins_per_layer):((i+1)*bins_per_layer)])
+        
+    #first_linear_layer.weight.data = measurement.repeat(hidden_dim, 1)
+    #first_linear_layer.bias.data = _make_biases(first_linear_layer.bias, bins)

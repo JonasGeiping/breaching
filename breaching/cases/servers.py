@@ -8,6 +8,8 @@ from .malicious_modifications.analytic_transformer_utils import (
     compute_feature_distribution,
     partially_disable_embedding,
     set_MHA,
+    set_flow_backward_layer,
+    disable_mha_layer,
     make_imprint_layer,
 )
 
@@ -384,10 +386,15 @@ class MaliciousTransformerServer(HonestServer):
 
             norm_layer = self.model.transformer_encoder.layers[0].norm1
             attention_layer = self.model.transformer_encoder.layers[0].self_attn
-            first_linear_layer = self.model.transformer_encoder.layers[0].linear1
-            second_linear_layer = self.model.transformer_encoder.layers[0].linear2
+        
+        first_layers, second_layers, unused_mha = [], [], [] # collecting all the imprint layers
+        for i, layer in enumerate(self.model.transformer_encoder.layers):
+            first_layers.append(layer.linear1)
+            second_layers.append(layer.linear2)
+            if i != 0:
+                unused_mha.append(layer.self_attn)
 
-        hidden_dim, embedding_dim = first_linear_layer.weight.shape
+        hidden_dim, embedding_dim = first_layers[0].weight.shape
 
         # Define "probe" function / measurement vector:
         # Probe Length is embedding_dim minus v_proportion minus skip node
@@ -417,22 +424,26 @@ class MaliciousTransformerServer(HonestServer):
             v_length=v_length,
         )
 
-        second_linear_layer.weight.data.zero_()
-        second_linear_layer.weight.data[-1] = 1
-        second_linear_layer.bias.data.zero_()
+        # Take care of second linear layers, and unused mha layers first
+        set_flow_backward_layer(second_layers)
+        disable_mha_layer(unused_mha)
 
         # Evaluate feature distribution of this model
         std, mu = compute_feature_distribution(self.model, self, measurement)
         # And add imprint modification to the first linear layer
-        make_imprint_layer(first_linear_layer, measurement, mu, std)
+        make_imprint_layer(first_layers, measurement, mu, std)
         # This should be all for the attack :>
 
         # We save secrets for the attack later on:
+        tracker = 0
+        weight_idx, bias_idx = [], []
         for idx, param in enumerate(self.model.parameters()):
-            if param is first_linear_layer.weight:
-                weight_idx = idx
-            if param is first_linear_layer.bias:
-                bias_idx = idx
+            if tracker < len(first_layers) and param is first_layers[tracker].weight:
+                weight_idx.append(idx)
+            if tracker < len(first_layers) and param is first_layers[tracker].bias:
+                bias_idx.append(idx)
+                tracker += 1
+                
         details = dict(
             weight_idx=weight_idx,
             bias_idx=bias_idx,

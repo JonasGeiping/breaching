@@ -287,8 +287,10 @@ class DecepticonAttacker(AnalyticAttacker):
         leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models).view(-1)
         leaked_embeddings = norm_layer(embedding(leaked_tokens)).cpu().view(-1, embedding.weight.shape[1])
 
-        bias_grad = shared_data[0]["gradients"][bias_idx].clone()
-        weight_grad = shared_data[0]["gradients"][weight_idx].clone()
+        bias_grad = torch.cat([shared_data[0]["gradients"][b_idx].clone() for b_idx in bias_idx])
+        weight_grad = torch.cat([shared_data[0]["gradients"][w_idx].clone() for w_idx in weight_idx])
+        #bias_grad = shared_data[0]["gradients"][bias_idx].clone()
+        #weight_grad = shared_data[0]["gradients"][weight_idx].clone()
 
         if self.cfg.sort_by_bias:
             # This variant can recover from shuffled rows under the assumption that biases would be ordered

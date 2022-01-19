@@ -305,6 +305,13 @@ class DecepticonAttacker(AnalyticAttacker):
         valid_classes = bias_grad != 0
         breached_embeddings = weight_grad[valid_classes, :] / bias_grad[valid_classes, None]
         log.info(f"Recovered {len(breached_embeddings)} embeddings with positional data from imprinted layer.")
+        if len(breached_embeddings) > len_data * data_shape[0]:
+            best_guesses = torch.topk(
+                weight_grad.mean(dim=1)[bias_grad != 0].abs(), len_data * data_shape[0], largest=True
+            )
+            log.info(f"Reduced to {len_data * data_shape[0]} hits.")
+            # print(best_guesses.indices.sort().values)
+            breached_embeddings = breached_embeddings[best_guesses.indices]
         # Get an estimation of the positional embeddings:
         dummy_inputs = torch.zeros([len_data, *data_shape], dtype=torch.long, device=self.setup["device"])
         pure_positions = pos_encoder(torch.zeros_like(embedding(dummy_inputs)))

@@ -83,9 +83,10 @@ def set_MHA(
 
     # Set V_bias to subtract positional encoding
     v_bias = torch.zeros(qkv_shape // 3)
-    v_bias[imprint_sentence_position:(imprint_sentence_position + v_length)] =\
-        -just_positions[0, imprint_sentence_position, v_length: (2*v_length)]
-    attention_layer.in_proj_bias.data[2* (qkv_shape // 3):] = v_bias
+    v_bias[imprint_sentence_position : (imprint_sentence_position + v_length)] = -just_positions[
+        0, imprint_sentence_position, v_length : (2 * v_length)
+    ]
+    attention_layer.in_proj_bias.data[2 * (qkv_shape // 3) :] = v_bias
 
     # K matrix setup (identity)
     attention_layer.in_proj_weight.data[qkv_shape // 3 : 2 * (qkv_shape // 3)] = torch.eye(qkv_shape // 3)

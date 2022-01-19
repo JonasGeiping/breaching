@@ -7,8 +7,8 @@ has_external_data: True
 num_queries: 1
 
 param_modification:
-  sequence_token_weight: 0.1
-  imprint_sentence_position: 0
+  sequence_token_weight: 1000
+  imprint_sentence_position: 3
   softmax_skew: 10000
 
   attention_block_idx: 0

@@ -321,26 +321,19 @@ class DecepticonAttacker(AnalyticAttacker):
         sentence_id_components = breached_embeddings[:, :v_length]
 
         if len_data > 1:
-            from k_means_constrained import KMeansConstrained
-
-            clustering = KMeansConstrained(
-                n_clusters=len_data,
-                size_min=0,
-                size_max=data_shape[0],
-                init="k-means++",
-                n_init=40,
-                max_iter=900,
-                tol=1e-6,
+            sentence_labels = self._match_breaches_to_sentences(
+                sentence_id_components, [len_data, data_shape[0]], algorithm=self.cfg.sentence_algorithm
             )
-            labels = clustering.fit_predict(sentence_id_components.contiguous().numpy())
-            sentence_labels = torch.as_tensor(labels)
             _, counts = sentence_labels.unique(return_counts=True)
             log.info(f"Assigned {counts.tolist()} breached embeddings to each sentence.")
         else:
             sentence_labels = torch.zeros(len(breached_embeddings), dtype=torch.long)
 
         # Match breached embeddings to positions for each sentence:
-        breached_embeddings[:, :v_length] = 0
+        breached_embeddings = breached_embeddings[:, v_length:]
+        positional_embeddings = positional_embeddings[:, v_length:]
+        leaked_embeddings = leaked_embeddings[:, v_length:]
+
         ordered_breached_embeddings = torch.zeros_like(positional_embeddings)
         for sentence in range(len_data):
             order_breach_to_positions, costs = self._match_embeddings(
@@ -363,6 +356,43 @@ class DecepticonAttacker(AnalyticAttacker):
 
         reconstructed_data = dict(data=recovered_tokens, labels=recovered_tokens)
         return reconstructed_data, stats
+
+    def _match_breaches_to_sentences(self, sentence_id_components, shape, algorithm="threshold"):
+        if algorithm == "k-means":
+            from k_means_constrained import KMeansConstrained
+
+            clustering = KMeansConstrained(
+                n_clusters=shape[0], size_min=0, size_max=shape[1], init="k-means++", n_init=40, max_iter=900, tol=1e-6,
+            )
+            labels = clustering.fit_predict(sentence_id_components.contiguous().numpy())
+            sentence_labels = torch.as_tensor(labels)
+
+        elif algorithm == "threshold":
+            corrs = torch.as_tensor(np.corrcoef(sentence_id_components.contiguous().detach().numpy()))
+            sentence_labels = -torch.ones(corrs.shape[0], dtype=torch.long)
+            already_assigned = set()
+            for idx in range(corrs.shape[0]):
+                if idx not in already_assigned:
+                    matches = (corrs[idx] >= 0.98).nonzero().squeeze(0)
+
+                    if len(matches) > 0:
+                        filtered_matches = torch.as_tensor([m for m in matches if m not in already_assigned])
+                        if len(filtered_matches) > shape[1]:
+                            filtered_matches = corrs[idx][filtered_matches].topk(k=shape[1]).indices
+                        sentence_labels[filtered_matches] = idx
+            assert sentence_labels.min() == 0
+        elif algorithm == "fcluster":
+            import scipy.cluster.hierarchy as spc
+
+            corrs = np.corrcoef(sentence_id_components.contiguous().detach().numpy())
+            pdist = spc.distance.pdist(1 - corrs)
+            linkage = spc.linkage(pdist, method="complete")  # 'ward'?
+            idx = spc.fcluster(linkage, shape[0], "maxclust")
+            sentence_labels = torch.as_tensor(idx, dtype=torch.long)
+            assert sentence_labels.unique(return_counts=True)[1].max() <= shape[1]
+        else:
+            raise ValueError(f"Invalid sentence algorithm {algorithm} given.")
+        return sentence_labels
 
     @torch.inference_mode()
     def reconstruct_single_sentence(self, server_payload, shared_data, server_secrets=None, dryrun=False):
@@ -450,12 +480,16 @@ class DecepticonAttacker(AnalyticAttacker):
         order_tensor = torch.as_tensor(matches, device=positional_embeddings.device, dtype=torch.long)
         return order_tensor, None
 
-    def _match_embeddings(self, inputs, references):
+    def _match_embeddings(self, inputs, references, measure="corrcoef"):
         if references.ndim == 1:
             references = references[None, :]
-        cosim = references.matmul(inputs.T) / references.norm(dim=-1)[:, None] / inputs.norm(dim=-1)[None, :]
-        row_ind, col_ind = linear_sum_assignment(cosim.detach().numpy(), maximize=True)
-
+        if measure == "corrcoef":
+            s, e = inputs.shape
+            corr = np.corrcoef(inputs.detach().cpu().numpy(), references.detach().cpu().numpy())[s:, :s]
+        else:
+            corr = references.matmul(inputs.T) / references.norm(dim=-1)[:, None] / inputs.norm(dim=-1)[None, :]
+            corr = corr.detach().numpy()
+        row_ind, col_ind = linear_sum_assignment(corr, maximize=True)
         order_tensor = torch.as_tensor(col_ind, device=inputs.device, dtype=torch.long)
-        costs = torch.as_tensor(cosim[row_ind, col_ind], device=inputs.device, dtype=torch.float)
+        costs = torch.as_tensor(corr[row_ind, col_ind], device=inputs.device, dtype=torch.float)
         return order_tensor, costs

@@ -58,8 +58,9 @@ def report(
                 for buffer, server_state in zip(model.buffers(), buffers):
                     buffer.copy_(server_state.to(**setup))
             else:
-                for buffer, user_state in zip(model.buffers(), true_user_data["buffers"][idx]):
-                    buffer.copy_(user_state.to(**setup))
+                if len(true_user_data["buffers"]) > 0:
+                    for buffer, user_state in zip(model.buffers(), true_user_data["buffers"][idx]):
+                        buffer.copy_(user_state.to(**setup))
 
             # Compute the forward passes
             feats_rec = model(reconstructed_user_data["data"].to(device=setup["device"]))

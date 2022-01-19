@@ -6,6 +6,7 @@ from .malicious_modifications import ImprintBlock, RecoveryOptimizer, SparseImpr
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
 from .malicious_modifications.analytic_transformer_utils import (
     compute_feature_distribution,
+    partially_disable_embedding,
     set_MHA,
     make_imprint_layer,
 )
@@ -378,20 +379,31 @@ class MaliciousTransformerServer(HonestServer):
         # Figure out the hidden dimension:
         # For now this is non-automated.
         if "transformer" in self.model.name:  # These are our implementations from model/language_models.py
-            first_linear_layer = self.model.transformer_encoder.layers[0].linear1
-            hidden_dim, embedding_dim = first_linear_layer.weight.shape
-
-        # Define "probe" function / measurement vector:
-        weights = torch.randn(embedding_dim, **self.setup)
-        std, mu = torch.std_mean(weights)  # correct sample toward perfect mean and std
-        measurement = (weights - mu) / std / torch.as_tensor(embedding_dim, **self.setup).sqrt()
-
-        # Modify the first attention mechanism in the model:
-        if "transformer" in self.model.name:  # These are our implementations from model/language_models.py
-            attention_layer = self.model.transformer_encoder.layers[0].self_attn
-            norm_layer = self.model.transformer_encoder.layers[0].norm1
+            embedding = self.model.encoder
             pos_encoder = self.model.pos_encoder
 
+            norm_layer = self.model.transformer_encoder.layers[0].norm1
+            attention_layer = self.model.transformer_encoder.layers[0].self_attn
+            first_linear_layer = self.model.transformer_encoder.layers[0].linear1
+            second_linear_layer = self.model.transformer_encoder.layers[0].linear2
+
+        hidden_dim, embedding_dim = first_linear_layer.weight.shape
+
+        # Define "probe" function / measurement vector:
+        # Probe Length is embedding_dim minus v_proportion minus skip node
+        v_length = self.cfg_server.param_modification.v_length
+        probe_dim = embedding_dim - v_length - 1
+        weights = torch.randn(probe_dim, **self.setup)
+        std, mu = torch.std_mean(weights)  # correct sample toward perfect mean and std
+        probe = (weights - mu) / std / torch.as_tensor(probe_dim, **self.setup).sqrt()
+
+        measurement = torch.zeros(embedding_dim, **self.setup)
+        measurement[v_length:-1] = probe
+
+        # Disable these parts of the embedding:
+        partially_disable_embedding(embedding, v_length)
+
+        # Modify the first attention mechanism in the model:
         # Set QKV modifications in-place:
         set_MHA(
             attention_layer,
@@ -400,16 +412,13 @@ class MaliciousTransformerServer(HonestServer):
             embedding_dim,
             self.cfg_data.shape,
             sequence_token_weight=self.cfg_server.param_modification.sequence_token_weight,
-            pos=self.cfg_server.param_modification.pos,
+            imprint_sentence_position=self.cfg_server.param_modification.imprint_sentence_position,
             softmax_skew=self.cfg_server.param_modification.softmax_skew,
+            v_length=v_length,
         )
 
-        # Set the second linear layer to zeros:
-        if "transformer" in self.model.name:
-            second_linear_layer = self.model.transformer_encoder.layers[0].linear2
-
         second_linear_layer.weight.data.zero_()
-        second_linear_layer.weight.data[0] = 1
+        second_linear_layer.weight.data[-1] = 1
         second_linear_layer.bias.data.zero_()
 
         # Evaluate feature distribution of this model
@@ -424,7 +433,13 @@ class MaliciousTransformerServer(HonestServer):
                 weight_idx = idx
             if param is first_linear_layer.bias:
                 bias_idx = idx
-        details = dict(weight_idx=weight_idx, bias_idx=bias_idx, data_shape=self.cfg_data.shape, structure="cumulative")
+        details = dict(
+            weight_idx=weight_idx,
+            bias_idx=bias_idx,
+            data_shape=self.cfg_data.shape,
+            structure="cumulative",
+            v_length=v_length,
+        )
         self.secrets["ImprintBlock"] = details
 
 
@@ -653,8 +668,11 @@ class ClassParameterServer(HonestServer):
         extra_info["multiplier"] = 300
         self.all_feat_value = []
         self.visited = []
+        self.counter = 0
         num_data_points = len(shared_data["metadata"]["labels"])
-        self.binary_attack_helper(user, extra_info, [feat_value])
+        retval = self.binary_attack_helper(user, extra_info, [feat_value])
+        if retval == 0:  # Stop early after too many attempts in binary search:
+            return None
         self.all_feat_value.sort()
 
         # recover gradients
@@ -688,7 +706,10 @@ class ClassParameterServer(HonestServer):
         # now: naive binarily cut the feature, might be smarter to predict the number of datapoints?
         # on the left hand side
         if len(self.all_feat_value) >= self.num_target_data:
-            return
+            return 1
+        if self.counter >= (self.num_target_data) ** 2:
+            log.info(f"Too many attempts ({self.counter}) on this feature!")
+            return 0
 
         # print('new level')
 
@@ -708,6 +729,7 @@ class ClassParameterServer(HonestServer):
             feat_0 = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
             feat_0_value = float(feat_0[feat_to_obtain])  # the middle includes left hand side
             feat_1_value = 2 * feat_01_value - feat_0_value
+            self.counter += 1
             # print(feat_01_value, feat_0_value, feat_1_value)
             # from IPython import embed; embed()
 
@@ -733,7 +755,7 @@ class ClassParameterServer(HonestServer):
             new_feat_01_values.append((feat_01_value + feat_1_value) / 2)
             new_feat_01_values.append((feat_01_value + feat_0_value) / 2)
 
-        self.binary_attack_helper(user, extra_info, new_feat_01_values)
+        return self.binary_attack_helper(user, extra_info, new_feat_01_values)
 
     def check_with_tolerance(self, value, list, threshold=0.05):
         for i in list:
@@ -904,3 +926,12 @@ class ClassParameterServer(HonestServer):
 
     def estimate_feat(self):
         pass
+
+    def closed_form_april(self, shared_data):
+        qkv_w = self.model.model.blocks[0].attn.qkv.weight.detach()
+        q_w, k_w, v_w = qkv_w.reshape(3, -1, qkv_w.shape[-1]).unbind()
+        qkv_g = shared_data["gradients"][4]
+        q_g, k_g, v_g = qkv_g.reshape(3, -1, qkv_g.shape[-1]).unbind()
+        z_g = shared_data["gradients"][3]
+
+        b = torch.matmul(q_w.T, q_g) + torch.matmul(k_w.T, k_g) + torch.matmul(v_w.T, v_g)

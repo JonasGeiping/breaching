@@ -233,7 +233,12 @@ class _BaseAttacker:
                 candidate = (candidate - self.dm) / self.ds
         elif "patterned" in init_type:  # Look for init_type=rand-patterned-4
             pattern_width = int("".join(filter(str.isdigit, init_type)))
-            seed = (torch.rand([data_shape[0], 3, pattern_width, pattern_width], **self.setup) * 2) - 1.0
+            if "randn" in init_type:
+                seed = torch.randn([data_shape[0], 3, pattern_width, pattern_width], **self.setup)
+            elif "rand" in init_type:
+                seed = (torch.rand([data_shape[0], 3, pattern_width, pattern_width], **self.setup) * 2) - 1
+            else:  # default is also randn
+                seed = torch.randn([data_shape[0], 3, pattern_width, pattern_width], **self.setup)
             # Shape expansion:
             x_factor, y_factor = (
                 torch.as_tensor(data_shape[2] / pattern_width).ceil(),
@@ -244,10 +249,10 @@ class _BaseAttacker:
                 .contiguous()
                 .clone()
             )
-        elif "patterned-wei" in init_type:  # Look for init_type=rand-patterned-wei-4
+        elif "wei" in init_type:  # Look for init_type=rand-patterned-wei-4
             pattern_width = int("".join(filter(str.isdigit, init_type)))
             if "rand" in init_type:
-                seed = torch.rand([data_shape[0], 3, pattern_width, pattern_width], **self.setup)
+                seed = (torch.rand([data_shape[0], 3, pattern_width, pattern_width], **self.setup) * 2) - 1
             else:
                 seed = torch.randn([data_shape[0], 3, pattern_width, pattern_width], **self.setup)
             # Shape expansion:

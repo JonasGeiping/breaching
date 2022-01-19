@@ -88,14 +88,14 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
             log.info("Optimize on averaged gradient with cls attack.")
 
             # cls attack on all labels in the batch
-            extra_info = {'cls_to_obtain': t_labels}
-            server.reconfigure_model('cls_attack', extra_info=extra_info)
+            extra_info = {"cls_to_obtain": t_labels}
+            server.reconfigure_model("cls_attack", extra_info=extra_info)
             server_payload = server.distribute_payload()
-            shared_data, true_user_data = user.compute_local_updates(server_payload)
+            shared_data, _ = user.compute_local_updates(server_payload)
 
             reconstruction, stats = attacker.reconstruct(
                 [server_payload], [shared_data], server.secrets, dryrun=cfg.dryrun
-            ) 
+            )
         else:
             # attack cls by cls
             log.info("Attack cls by cls cls attack.")
@@ -132,6 +132,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
             reconstruction = {"data": reconstruction_data, "labels": shared_data["metadata"]["labels"]}
 
         # Run the full set of metrics:
+        log.info(f"Spent {user.counted_queries} user queries overall.")
         metrics = breaching.analysis.report(
             reconstruction,
             true_user_data,
@@ -153,11 +154,11 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
         # Save recovered data:
         if cfg.save_reconstruction:
             if target_max_psnr:
-                target_indx = target_indx
+                sorted_indx = (metrics["order"].cpu() == torch.as_tensor(target_indx)).nonzero().squeeze()
             else:
-                target_indx = None
+                sorted_indx = None
             breaching.utils.save_reconstruction(
-                reconstruction, [server_payload], true_user_data, cfg, side_by_side=False, target_indx=target_indx
+                reconstruction, [server_payload], true_user_data, cfg, target_indx=sorted_indx
             )
         if cfg.dryrun:
             break
@@ -204,15 +205,24 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
     server_payload = server.distribute_payload()
     tmp_shared_data, _ = user.compute_local_updates(server_payload)
     avg_feature = torch.flatten(server.reconstruct_feature(tmp_shared_data, cls_to_obtain))
-    feat_to_obtain = int(torch.argmax(avg_feature))
-    feat_value = float(avg_feature[feat_to_obtain])
+    single_gradient_recovered = False
 
-    # binary attack to recover all single gradients
-    extra_info["feat_to_obtain"] = feat_to_obtain
-    extra_info["feat_value"] = feat_value
-    extra_info["multiplier"] = 1
+    while not single_gradient_recovered:
+        feat_to_obtain = int(torch.argmax(avg_feature))
+        feat_value = float(avg_feature[feat_to_obtain])
 
-    recovered_single_gradients = server.binary_attack(user, extra_info)
+        # binary attack to recover all single gradients
+        extra_info["feat_to_obtain"] = feat_to_obtain
+        extra_info["feat_value"] = feat_value
+        extra_info["multiplier"] = 1
+
+        recovered_single_gradients = server.binary_attack(user, extra_info)
+        if recovered_single_gradients is not None:
+            single_gradient_recovered = True
+        else:
+            avg_feature[feat_to_obtain] = -1000
+
+        log.info(f"Spent {user.counted_queries} user queries so far.")
 
     # return to the model with multiplier=1
     server.reset_model()
@@ -223,7 +233,8 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
     server_payload = server.distribute_payload()
 
     # recover image by image
-    for i, grad_i in enumerate(recovered_single_gradients):
+    # add reversed() because the ith is always more confident than i-1th
+    for i, grad_i in enumerate(reversed(recovered_single_gradients)):
         log.info(f"Start recovering datapoint {i} of label {shared_data['metadata']['labels'][0].item()}.")
 
         tmp_share_data = copy.deepcopy(shared_data)

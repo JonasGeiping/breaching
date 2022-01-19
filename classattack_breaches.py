@@ -95,6 +95,7 @@ def main_process(
 
             # cls attack on all labels in the batch
             extra_info = {"cls_to_obtain": t_labels}
+            server.reset_model()
             server.reconfigure_model("cls_attack", extra_info=extra_info)
             server_payload = server.distribute_payload()
             shared_data, _ = user.compute_local_updates(server_payload)

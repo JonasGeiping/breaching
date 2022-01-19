@@ -5,7 +5,7 @@ tables/*.csv
 tables/*.csv#
 tables/*.ods
 
-
+.vs/
 
 *.pdf
 images

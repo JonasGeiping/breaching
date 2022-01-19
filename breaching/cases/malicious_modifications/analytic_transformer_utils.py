@@ -62,7 +62,7 @@ def set_MHA(
     pos_encoder,
     embedding_dim,
     data_shape,
-    sequence_token_weight=100,
+    sequence_token_weight=1000,
     imprint_sentence_position=0,  # This position will be imprinted onto the sentence via attention
     softmax_skew=1000,
     v_length=8,
@@ -80,6 +80,12 @@ def set_MHA(
     # Make the position super super large to skew softmax
     attention_layer.in_proj_bias.data[: qkv_shape // 3] = softmax_skew * just_positions[0, imprint_sentence_position, :]
     attention_layer.in_proj_weight.data[: qkv_shape // 3] = torch.zeros((qkv_shape // 3, qkv_shape // 3))
+
+    # Set V_bias to subtract positional encoding
+    v_bias = torch.zeros(qkv_shape // 3)
+    v_bias[imprint_sentence_position:(imprint_sentence_position + v_length)] =\
+        -just_positions[0, imprint_sentence_position, v_length: (2*v_length)]
+    attention_layer.in_proj_bias.data[2* (qkv_shape // 3):] = v_bias
 
     # K matrix setup (identity)
     attention_layer.in_proj_weight.data[qkv_shape // 3 : 2 * (qkv_shape // 3)] = torch.eye(qkv_shape // 3)

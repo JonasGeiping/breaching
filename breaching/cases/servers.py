@@ -14,6 +14,9 @@ from .malicious_modifications.analytic_transformer_utils import (
 from .aux_training import train_encoder_decoder
 from .malicious_modifications.feat_decoders import generate_decoder
 from .data import construct_dataloader
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def construct_server(model, loss_fn, cfg_case, setup, external_dataloader=None):
@@ -292,7 +295,7 @@ class MaliciousModelServer(HonestServer):
             return hook_fn
 
         if trials > 0:
-            print(f"Normalizing model throughput with gain {gain}...")
+            log.info(f"Normalizing model throughput with gain {gain}...")
             model.to(**self.setup)
         for round in range(trials):
             if not bn_modeset:
@@ -301,7 +304,7 @@ class MaliciousModelServer(HonestServer):
                         if isinstance(module, torch.nn.Conv2d) and module.bias is None:
                             if "downsample.0" in name:
                                 module.weight.data.zero_()
-                                print(f"Reset weight in downsample {name} to zero.")
+                                log.info(f"Reset weight in downsample {name} to zero.")
                             continue
 
                         if "downsample.1" in name:
@@ -316,7 +319,7 @@ class MaliciousModelServer(HonestServer):
 
                         model(random_data_sample)
                         std, mu = torch.std_mean(features[name])
-                        print(f"Current mean of layer {name} is {mu.item()}, std is {std.item()} in round {round}.")
+                        log.info(f"Current mean of layer {name} is {mu.item()}, std is {std.item()} in round {round}.")
 
                         with torch.no_grad():
                             module.weight.data /= std / gain + 1e-8
@@ -344,8 +347,8 @@ class MaliciousModelServer(HonestServer):
         layer_cake = list(modified_model.children())
         encoder = torch.nn.Sequential(*(layer_cake[:-1]), torch.nn.Flatten())
         decoder = generate_decoder(modified_model)
-        print(encoder)
-        print(decoder)
+        log.info(encoder)
+        log.info(decoder)
         stats = train_encoder_decoder(encoder, decoder, self.external_dataloader, self.setup)
         return modified_model, decoder
 
@@ -781,8 +784,8 @@ class ClassParameterServer(HonestServer):
         try:
             _, rec_assignment = linear_sum_assignment(similarity_matrix.cpu().numpy(), maximize=True)
         except ValueError:
-            print(f"ValueError from similarity matrix {similarity_matrix.cpu().numpy()}")
-            print("Returning trivial order...")
+            log.info(f"ValueError from similarity matrix {similarity_matrix.cpu().numpy()}")
+            log.info("Returning trivial order...")
             rec_assignment = list(range(num_data))
 
         return [recovered_single_gradients[i] for i in rec_assignment]
@@ -834,7 +837,7 @@ class ClassParameterServer(HonestServer):
                 if i == which_to_recover:
                     print(float(torch.norm(gradient_ii)), float(single_losses[i]), "   target")
                 else:
-                    print(float(torch.norm(gradient_ii)), float(single_losses[i]))
+                    log.info(float(torch.norm(gradient_ii)), float(single_losses[i]))
 
             grad_norm.append(float(torch.norm(gradient_ii)))
             losses.append(float(single_losses[i]))

@@ -64,7 +64,7 @@ def set_MHA(
     data_shape,
     sequence_token_weight=100,
     imprint_sentence_position=0,  # This position will be imprinted onto the sentence via attention
-    softmax_skew=1000000,
+    softmax_skew=1000,
     v_length=8,
 ):
     # Let's set the query matrix to produce just the first positional encoding (or could be any index - might want last index)
@@ -72,7 +72,7 @@ def set_MHA(
 
     # These are the positional embeddings after layer normalization:
     dummy_data = torch.zeros([1, *data_shape, embedding_dim])
-    just_positions = norm_layer(pos_encoder(dummy_data)).cpu()
+    just_positions = (pos_encoder(dummy_data)).cpu()
 
     # Q matrix setup
     # We make the weight 0, and the bias some (large multiple of) positional encoding

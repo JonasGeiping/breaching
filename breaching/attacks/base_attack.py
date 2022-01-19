@@ -249,7 +249,7 @@ class _BaseAttacker:
                 .contiguous()
                 .clone()
             )
-        elif "wei" in init_type:  # Look for init_type=rand-patterned-wei-4
+        elif "wei" in init_type:  # Look for init_type=rand-wei-4
             pattern_width = int("".join(filter(str.isdigit, init_type)))
             if "rand" in init_type:
                 seed = (torch.rand([data_shape[0], 3, pattern_width, pattern_width], **self.setup) * 2) - 1

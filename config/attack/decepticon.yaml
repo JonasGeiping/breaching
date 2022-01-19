@@ -8,6 +8,8 @@ normalize_gradients: False
 
 sort_by_bias: False
 
+sentence_algorithm: threshold
+
 impl:
   dtype: float
   mixed_precision: False

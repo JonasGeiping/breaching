@@ -405,6 +405,8 @@ class MaliciousTransformerServer(HonestServer):
 
         # Disable these parts of the embedding:
         partially_disable_embedding(embedding, v_length)
+        if hasattr(pos_encoder, "embedding"):
+            partially_disable_embedding(self.model.pos_encoder.embedding, v_length)
 
         # Modify the first attention mechanism in the model:
         # Set QKV modifications in-place:

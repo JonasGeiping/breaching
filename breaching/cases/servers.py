@@ -711,10 +711,12 @@ class ClassParameterServer(HonestServer):
         if retval == 0:  # Stop early after too many attempts in binary search:
             return None
         self.all_feat_value = np.array(self.all_feat_value)
-        self.feat_grad = np.array(self.feat_grad, dtype=list)
         sorted_inds = np.argsort(self.all_feat_value)
+        sorted_feat_grad = []
         self.all_feat_value = self.all_feat_value[sorted_inds]
-        self.feat_grad = self.feat_grad[sorted_inds]
+        for i in sorted_inds:
+            sorted_feat_grad.append(self.feat_grad[i])
+        self.feat_grad = sorted_feat_grad
 
         # recover gradients
         import copy
@@ -738,8 +740,8 @@ class ClassParameterServer(HonestServer):
 
         if len(self.all_feat_value) >= self.num_target_data:
             return 1
-        if self.counter >= math.log2(self.num_target_data) * self.num_target_data:
-        # if self.counter >= self.num_target_data ** 2:
+        # if self.counter >= math.log2(self.num_target_data) * self.num_target_data:
+        if self.counter >= self.num_target_data ** 2:
             # log.info(f"Too many attempts ({self.counter}) on this feature!")
             print(f"Too many attempts ({self.counter}) on this feature!")
             return 0
@@ -780,15 +782,21 @@ class ClassParameterServer(HonestServer):
 
                 if len(self.all_feat_value) >= self.num_target_data:
                     return
-                if self.counter >= math.log2(self.num_target_data) * self.num_target_data:
-                # if self.counter >= self.num_target_data ** 2:
+                # self.counter >= math.log2(self.num_target_data) * self.num_target_data:
+                if self.counter >= self.num_target_data ** 2:
                     # log.info(f"Too many attempts ({self.counter}) on this feature!")
                     print(f"Too many attempts ({self.counter}) on this feature!")
                     return 0
 
-            new_feat_01_values.append(feat_1_value)
-            # new_feat_01_values.append((feat_01_value + feat_1_value) / 2)
-            # new_feat_01_values.append((feat_01_value + feat_0_value) / 2)
+            feat_candidates = [
+                               feat_1_value, 
+                               (feat_01_value + feat_1_value) / 2, 
+                               (feat_01_value + feat_0_value) / 2
+                              ]
+                            
+            for feat_cand in feat_candidates:
+                if not self.check_with_tolerance(feat_cand, self.visited):
+                    new_feat_01_values.append(feat_cand)
 
         return self.binary_attack_helper(user, extra_info, new_feat_01_values)
 

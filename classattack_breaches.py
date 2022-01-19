@@ -209,8 +209,8 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
     server_payload = server.distribute_payload()
     tmp_shared_data, _ = user.compute_local_updates(server_payload)
     avg_feature = torch.flatten(server.reconstruct_feature(tmp_shared_data, cls_to_obtain))
+    
     single_gradient_recovered = False
-
     user.counted_queries = 0
 
     while not single_gradient_recovered:
@@ -222,6 +222,7 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
         extra_info["feat_value"] = feat_value
         extra_info["multiplier"] = 1
         extra_info["num_target_data"] = int(torch.count_nonzero((shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int)))
+        extra_info["num_data_points"] = int(cfg.case.user.num_data_points)
 
         if one_shot_ba:
             recovered_single_gradients = server.one_shot_binary_attack(user, extra_info)
@@ -235,9 +236,9 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
 
         log.info(f"Spent {user.counted_queries} user queries so far.")
 
-    # return to the model with multiplier=5, (better with larger multiplier, but not optimizable if it is too large)
+    # return to the model with multiplier=1, (better with larger multiplier, but not optimizable if it is too large)
     server.reset_model()
-    extra_info["multiplier"] = 5
+    extra_info["multiplier"] = 1
     extra_info["feat_value"] = feat_value
     server.reconfigure_model("cls_attack", extra_info=extra_info)
     server.reconfigure_model("feature_attack", extra_info=extra_info)

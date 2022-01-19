@@ -389,8 +389,8 @@ class MaliciousTransformerServer(HonestServer):
 
             norm_layer = self.model.transformer_encoder.layers[0].norm1
             attention_layer = self.model.transformer_encoder.layers[0].self_attn
-        
-        first_layers, second_layers, unused_mha = [], [], [] # collecting all the imprint layers
+
+        first_layers, second_layers, unused_mha = [], [], []  # collecting all the imprint layers
         for i, layer in enumerate(self.model.transformer_encoder.layers):
             first_layers.append(layer.linear1)
             second_layers.append(layer.linear2)
@@ -448,7 +448,7 @@ class MaliciousTransformerServer(HonestServer):
             if tracker < len(first_layers) and param is first_layers[tracker].bias:
                 bias_idx.append(idx)
                 tracker += 1
-                
+
         details = dict(
             weight_idx=weight_idx,
             bias_idx=bias_idx,

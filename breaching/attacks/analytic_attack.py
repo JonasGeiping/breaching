@@ -289,8 +289,6 @@ class DecepticonAttacker(AnalyticAttacker):
 
         bias_grad = torch.cat([shared_data[0]["gradients"][b_idx].clone() for b_idx in bias_idx])
         weight_grad = torch.cat([shared_data[0]["gradients"][w_idx].clone() for w_idx in weight_idx])
-        #bias_grad = shared_data[0]["gradients"][bias_idx].clone()
-        #weight_grad = shared_data[0]["gradients"][weight_idx].clone()
 
         if self.cfg.sort_by_bias:
             # This variant can recover from shuffled rows under the assumption that biases would be ordered
@@ -349,7 +347,7 @@ class DecepticonAttacker(AnalyticAttacker):
         if len(breached_embeddings) < len(positional_embeddings):
             free_positions = (ordered_breached_embeddings.norm(dim=-1) == 0).nonzero().squeeze()
             miss_to_pos, costs = self._match_embeddings(breached_embeddings, positional_embeddings[free_positions])
-            ordered_breached_embeddings[free_positions] = breached_embeddings[miss_to_pos]
+            ordered_breached_embeddings[free_positions[: len(breached_embeddings)]] = breached_embeddings[miss_to_pos]
 
         # These are already in the right position, but which token do they belong to?
         breached_without_positions = ordered_breached_embeddings - positional_embeddings

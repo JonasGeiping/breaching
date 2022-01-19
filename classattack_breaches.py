@@ -45,7 +45,9 @@ def main_launcher(cfg):
     log.info("-----------------Job finished.-------------------------------")
 
 
-def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_psnr=True, opt_on_avg_grad=False, one_shot_ba=True):
+def main_process(
+    process_idx, local_group_size, cfg, num_trials=100, target_max_psnr=True, opt_on_avg_grad=False, one_shot_ba=True
+):
     """This function controls the central routine."""
     local_time = time.time()
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
@@ -84,6 +86,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
         server_payload = server.distribute_payload()
         shared_data, true_user_data = user.compute_local_updates(server_payload)
         t_labels = shared_data["metadata"]["labels"].detach().cpu().numpy()
+        target_indx = None
         log.info(f"Found labels {t_labels} in first query.")
 
         if opt_on_avg_grad:
@@ -99,6 +102,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
             reconstruction, stats = attacker.reconstruct(
                 [server_payload], [shared_data], server.secrets, dryrun=cfg.dryrun
             )
+
         else:
             # attack cls by cls
             log.info("Attack cls by cls cls attack.")
@@ -157,7 +161,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100, target_max_
         overall_metrics.append(metrics)
         # Save recovered data:
         if cfg.save_reconstruction:
-            if target_max_psnr:
+            if target_max_psnr and target_indx is not None:
                 sorted_indx = (metrics["order"].cpu() == torch.as_tensor(target_indx)).nonzero().squeeze()
             else:
                 sorted_indx = None
@@ -209,7 +213,7 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
     server_payload = server.distribute_payload()
     tmp_shared_data, _ = user.compute_local_updates(server_payload)
     avg_feature = torch.flatten(server.reconstruct_feature(tmp_shared_data, cls_to_obtain))
-    
+
     single_gradient_recovered = False
     user.counted_queries = 0
 
@@ -221,7 +225,9 @@ def cls_collision_attack(user, server, attacker, shared_data, cfg, target_max_ps
         extra_info["feat_to_obtain"] = feat_to_obtain
         extra_info["feat_value"] = feat_value
         extra_info["multiplier"] = 1
-        extra_info["num_target_data"] = int(torch.count_nonzero((shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int)))
+        extra_info["num_target_data"] = int(
+            torch.count_nonzero((shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int))
+        )
         extra_info["num_data_points"] = int(cfg.case.user.num_data_points)
 
         if one_shot_ba:

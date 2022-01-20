@@ -742,8 +742,7 @@ class ClassParameterServer(HonestServer):
             return 1
         # if self.counter >= math.log2(self.num_target_data) * self.num_target_data:
         if self.counter >= self.num_target_data ** 2:
-            # log.info(f"Too many attempts ({self.counter}) on this feature!")
-            print(f"Too many attempts ({self.counter}) on this feature!")
+            log.info(f"Too many attempts ({self.counter}) on this feature!")
             return 0
 
         # print('new level')
@@ -784,8 +783,7 @@ class ClassParameterServer(HonestServer):
                     return
                 # self.counter >= math.log2(self.num_target_data) * self.num_target_data:
                 if self.counter >= self.num_target_data ** 2:
-                    # log.info(f"Too many attempts ({self.counter}) on this feature!")
-                    print(f"Too many attempts ({self.counter}) on this feature!")
+                    log.info(f"Too many attempts ({self.counter}) on this feature!")
                     return 0
 
             feat_candidates = [
@@ -880,7 +878,7 @@ class ClassParameterServer(HonestServer):
                 if i == which_to_recover:
                     print(float(torch.norm(gradient_ii)), float(single_losses[i]), "   target")
                 else:
-                    log.info(float(torch.norm(gradient_ii)), float(single_losses[i]))
+                    print(float(torch.norm(gradient_ii)), float(single_losses[i]))
 
             grad_norm.append(float(torch.norm(gradient_ii)))
             losses.append(float(single_losses[i]))
@@ -970,8 +968,79 @@ class ClassParameterServer(HonestServer):
         for param in self.model.parameters():
             param.requires_grad = True
 
-    def estimate_feat(self):
-        pass
+    def estimate_feat(self, cfg, extra_info):
+        import breaching
+        from tqdm import tqdm
+        import numpy as np
+
+        est_features = []
+        sample_sizes = []
+        cls_to_obtain = extra_info["cls_to_obtain"]
+        model = extra_info["model"]
+        loss_fn = extra_info["loss_fn"]
+        setup = extra_info["setup"]
+        self.reset_model()
+        self.reconfigure_model('cls_attack', extra_info=extra_info)
+
+        if cfg.case.data.examples_from_split == "validation":
+            data_per_class = 40
+        else:
+            data_per_class = 900
+
+        for i in tqdm(range(data_per_class // cfg.case.user.num_data_points)):
+            cfg.case.user.user_idx = i
+            user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
+            server_payload = self.distribute_payload()
+            shared_data, _ = user.compute_local_updates(server_payload)
+            num_target = int(torch.count_nonzero((shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int)))
+            if num_target != 0:
+                est_features.append(torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu().numpy())
+                sample_sizes.append(num_target)
+            
+        est_features = np.vstack(est_features)
+        sample_sizes = np.array(sample_sizes)
+
+        return est_features.T, sample_sizes
+    
+    def estimate_gt_stats(self, est_features, sample_sizes, indx=0):
+        import numpy as np
+
+        aggreg_data = []
+        est_feature = est_features[indx]
+        
+        for i in range(len(est_feature)):
+            feat_i = est_feature[i]
+            size_i = sample_sizes[i]
+            aggreg_data.append(feat_i * (size_i ** (1/2)))
+
+        return np.mean(est_feature), np.std(aggreg_data)
+    
+    def find_best_feat(self, est_features, sample_sizes, method="kstest"):
+        import numpy as np
+        from scipy import stats
+        
+        if "kstest" in method:
+            p_values = []
+            for i in range(len(est_features)):
+                tmp_series = est_features[i]
+                tmp_series = (tmp_series - np.mean(tmp_series)) / np.std(tmp_series)
+                p_values.append((np.std(tmp_series), stats.kstest(tmp_series, 'norm').pvalue)[1])
+        elif "most-spread" in method or "most-high-mean" in method:
+            means = []
+            stds = []
+            for i in range(len(est_features)):
+                mu, sigma = self.estimate_gt_stats(est_features, sample_sizes, indx=1)
+                means.append(mu)
+                stds.append(sigma)
+
+            if "most-spread" in method:
+                return np.argmax(stds)
+            else:
+                return np.argmax(means)
+        else:
+            raise ValueError(f"Method {method} not implemented.")
+            
+        return np.argmax(p_values)
 
     def closed_form_april(self, shared_data):
         qkv_w = self.model.model.blocks[0].attn.qkv.weight.detach()

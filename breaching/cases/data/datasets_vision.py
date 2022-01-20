@@ -114,6 +114,20 @@ def _split_dataset_vision(dataset, cfg_data, user_idx=None, return_full_dataset=
                 data_ids.append(user_idx * data_per_user + i)
                 data_ids.append(last_id - user_idx * data_per_user - i)
             dataset = Subset(dataset, data_ids)
+        elif cfg_data.partition == "feat_est":
+            if "num_data_points" in cfg_data:
+                num_data_points = cfg_data.num_data_points
+            else:
+                num_data_points = 1
+
+            if "target_label" in cfg_data:
+                target_label = cfg_data.target_label
+            else:
+                target_label = 0
+
+            data_ids = [idx for (idx, label) in dataset.lookup.items() if label == target_label]
+            data_ids = data_ids[user_idx * num_data_points:(user_idx + 1) * num_data_points]
+            dataset = Subset(dataset, data_ids)
         elif cfg_data.partition == "random-full":  # Data might be repeated across users (e.g. meme images)
             data_per_user = len(dataset) // cfg_data.default_clients
             data_ids = torch.randperm(len(dataset))[:data_per_user]

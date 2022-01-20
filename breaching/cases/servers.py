@@ -1042,11 +1042,57 @@ class ClassParameterServer(HonestServer):
             
         return np.argmax(p_values)
 
-    def closed_form_april(self, shared_data):
-        qkv_w = self.model.model.blocks[0].attn.qkv.weight.detach()
-        q_w, k_w, v_w = qkv_w.reshape(3, -1, qkv_w.shape[-1]).unbind()
-        qkv_g = shared_data["gradients"][4]
-        q_g, k_g, v_g = qkv_g.reshape(3, -1, qkv_g.shape[-1]).unbind()
-        z_g = shared_data["gradients"][3]
+    def recover_patch(self, x):
+        # retile img
+        p_num_2, p_size_2 = x.shape[1:]
+        p_num = int(p_num_2 ** (1/2))
+        p_size = int(p_size_2 ** (1/2))
+        img_size = int((p_num_2 * p_size_2) ** (1/2))
+        x = x.reshape((3, p_num, p_num, p_size, p_size))
+        new_x = torch.zeros_like(x).reshape((3, img_size, img_size))
+        
+        for i in range(p_num):
+            for j in range(p_num):
+                new_x[:, i * p_size:(i + 1) * p_size, j * p_size:(j + 1) * p_size] = x[:, i, j, :]
+                
+        return new_x
 
-        b = torch.matmul(q_w.T, q_g) + torch.matmul(k_w.T, k_g) + torch.matmul(v_w.T, v_g)
+    def closed_form_april(self, shared_data):
+        # recover patch embeddings first, (APRIL paper)
+        qkv_w = self.model.model.blocks[0].attn.qkv.weight.detach().double()
+        q_w, k_w, v_w = qkv_w.reshape(3, -1, qkv_w.shape[-1]).unbind()
+        qkv_g = shared_data["gradients"][4].double()
+        q_g, k_g, v_g = qkv_g.reshape(3, -1, qkv_g.shape[-1]).unbind()
+        A = shared_data["gradients"][1].detach().squeeze().double()
+        pos_embed = self.model.model.pos_embed.detach().squeeze().double()
+
+        b = q_w.T @ q_g + k_w.T @ k_g + v_w.T @ v_g
+        z = torch.linalg.lstsq(A.T, b, driver="gelsd").solution
+        z -= pos_embed
+        z = z[1:]
+
+        # recover img
+        em_w = self.model.model.patch_embed.proj.weight.detach().double()
+        em_w = em_w.reshape((em_w.shape[0], -1))
+        em_b = self.model.model.patch_embed.proj.bias.detach().double()
+
+        x = z - em_b
+        x = torch.linalg.lstsq(em_w, x.T, driver="gelsd").solution
+        x = x.reshape((3, -1, x.shape[-1]))
+        x = x.transpose(1, 2)
+        x = self.recover_patch(x)
+
+        return x.float()
+
+    class ModifiedBlock(torch.nn.Module):
+        def __init__(self, old_Block):
+            super().__init__()
+            self.attn = old_Block.attn
+            self.drop_path = old_Block.drop_path
+            self.norm2 = old_Block.norm2
+            self.mlp = old_Block.mlp
+
+        def forward(self, x):
+            x = self.attn(x)
+            x = self.drop_path(self.mlp((self.norm2(x))))
+            return x

@@ -42,7 +42,7 @@ def compute_feature_distribution(model, server, measurement):
             inputs = torch.as_tensor(samples, device=server.setup["device"]).view((cfg.batch_size, *cfg.shape))
             model(inputs)
             feats.append(features[name].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone())
-    
+
     std, mu = torch.std_mean(torch.matmul(torch.cat(feats), measurement))
     model.eval()
     model.cpu()
@@ -54,6 +54,11 @@ def compute_feature_distribution(model, server, measurement):
 def partially_disable_embedding(embedding_layer, v_length):
     """Disable the first v_proportion rows of all embeddings."""
     embedding_layer.weight.data[:, :v_length] = 0
+
+
+def partially_norm_position(embedding_layer, v_length):
+    for i in range(embedding_layer.weight.shape[0]):
+        embedding_layer.weight[i].data /= torch.norm(embedding_layer.weight[i][v_length : v_length * 2])
 
 
 def set_MHA(
@@ -73,12 +78,13 @@ def set_MHA(
     # These are the positional embeddings after layer normalization:
     dummy_data = torch.zeros([1, *data_shape, embedding_dim])
     just_positions = (pos_encoder(dummy_data)).cpu()
-
     # Q matrix setup
     # We make the weight 0, and the bias some (large multiple of) positional encoding
     # Only coded here for one MHA layer at the beginning of the model...
     # Make the position super super large to skew softmax
-    attention_layer.in_proj_bias.data[: qkv_shape // 3] = softmax_skew * just_positions[0, imprint_sentence_position, :]
+    attention_layer.in_proj_bias.data.zero_()
+    position_comp = just_positions[0, imprint_sentence_position, :][v_length : 2 * v_length]
+    attention_layer.in_proj_bias.data[: qkv_shape // 3][v_length : 2 * v_length] = softmax_skew * position_comp
     attention_layer.in_proj_weight.data[: qkv_shape // 3] = torch.zeros((qkv_shape // 3, qkv_shape // 3))
 
     # Set V_bias to subtract positional encoding
@@ -134,27 +140,31 @@ def make_forward_passing_imprint_layer(first_linear_layer, second_linear_layer, 
     second_linear_layer.weight.data[-1] = 0.001 * torch.ones_like(second_linear_layer.weight.data[0])
     second_linear_layer.bias.data.zero_()
 
-def set_flow_backward_layer(second_layers):
+
+def set_flow_backward_layer(second_layers, eps=1e-4):
     """
     here we set the second linear layer in the ff block to accumulate everything
-    from the first linear layer into one entry, thus allowing gradients to flow 
-    backward, but not 'shifting' the embeddings. 
+    from the first linear layer into one entry, thus allowing gradients to flow
+    backward, but not 'shifting' the embeddings.
     """
-    
-    for layer in second_layers: 
+
+    for layer in second_layers:
         layer.weight.data.zero_()
-        layer.weight.data[-1] = 1
+        print(layer.weight.shape)
+        layer.weight.data[-1] = eps / layer.weight.data.shape[1]
         layer.bias.data.zero_()
-        
+
+
 def disable_mha_layer(layers):
     """
     Here we set all MHA out_proj_weights to 0 except for the first one
     where we encode the sequence
     """
-    
-    for layer in layers: 
+
+    for layer in layers:
         layer.out_proj.weight.data.zero_()
         layer.out_proj.bias.data.zero_()
+
 
 def make_imprint_layer(first_layers, measurement, mean, std):
     """
@@ -175,15 +185,15 @@ def make_imprint_layer(first_layers, measurement, mean, std):
         for i in range(new_biases.shape[0]):
             new_biases[i] = -bins[i]
         return new_biases
-        
+
     hidden_dim, embedding_dim = first_layers[0].weight.shape
     bins = _get_bins(mean, std, hidden_dim * len(first_layers))
-    
+
     bins_per_layer = len(bins) // len(first_layers)
-    
+
     for i, layer in enumerate(first_layers):
         layer.weight.data = measurement.repeat(hidden_dim, 1)
-        layer.bias.data = _make_biases(layer.bias, bins[(i*bins_per_layer):((i+1)*bins_per_layer)])
-        
-    #first_linear_layer.weight.data = measurement.repeat(hidden_dim, 1)
-    #first_linear_layer.bias.data = _make_biases(first_linear_layer.bias, bins)
+        layer.bias.data = _make_biases(layer.bias, bins[(i * bins_per_layer) : ((i + 1) * bins_per_layer)])
+
+    # first_linear_layer.weight.data = measurement.repeat(hidden_dim, 1)
+    # first_linear_layer.bias.data = _make_biases(first_linear_layer.bias, bins)

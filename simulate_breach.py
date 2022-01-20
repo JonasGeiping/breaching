@@ -77,7 +77,7 @@ def main_process(process_idx, local_group_size, cfg):
         reconstructed_user_data, true_user_data, payloads, model, cfg_case=cfg.case, setup=setup
     )
 
-    # Save to summary
+    # Save to summary:
     breaching.utils.save_summary(cfg, metrics, stats, user.counted_queries, time.time() - local_time)
     # Save to output folder:
     breaching.utils.dump_metrics(cfg, metrics)

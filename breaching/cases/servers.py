@@ -10,6 +10,7 @@ from .malicious_modifications.analytic_transformer_utils import (
     set_MHA,
     set_flow_backward_layer,
     disable_mha_layer,
+    partially_norm_position,
     make_imprint_layer,
 )
 
@@ -414,6 +415,7 @@ class MaliciousTransformerServer(HonestServer):
         partially_disable_embedding(embedding, v_length)
         if hasattr(pos_encoder, "embedding"):
             partially_disable_embedding(self.model.pos_encoder.embedding, v_length)
+            partially_norm_position(self.model.pos_encoder.embedding, v_length)
 
         # Modify the first attention mechanism in the model:
         # Set QKV modifications in-place:
@@ -430,7 +432,7 @@ class MaliciousTransformerServer(HonestServer):
         )
 
         # Take care of second linear layers, and unused mha layers first
-        set_flow_backward_layer(second_layers)
+        set_flow_backward_layer(second_layers, eps=self.cfg_server.param_modification.eps)
         disable_mha_layer(unused_mha)
 
         # Evaluate feature distribution of this model
@@ -695,6 +697,7 @@ class ClassParameterServer(HonestServer):
 
     def binary_attack(self, user, extra_info):
         import numpy as np
+
         feat_value = extra_info["feat_value"]
         num_target_data = extra_info["num_target_data"]
         num_data_points = extra_info["num_data_points"]
@@ -720,6 +723,7 @@ class ClassParameterServer(HonestServer):
 
         # recover gradients
         import copy
+
         curr_grad = copy.deepcopy(list(self.feat_grad[0]))
         curr_grad[-1] = curr_grad[-1] * num_data_points
         curr_grad[:-1] = [grad_ii * num_data_points / extra_info["multiplier"] for grad_ii in curr_grad[:-1]]
@@ -736,7 +740,6 @@ class ClassParameterServer(HonestServer):
         return single_gradients
 
     def binary_attack_helper(self, user, extra_info, feat_01_values):
-        import math
 
         if len(self.all_feat_value) >= self.num_target_data:
             return 1
@@ -788,12 +791,8 @@ class ClassParameterServer(HonestServer):
                     print(f"Too many attempts ({self.counter}) on this feature!")
                     return 0
 
-            feat_candidates = [
-                               feat_1_value, 
-                               (feat_01_value + feat_1_value) / 2, 
-                               (feat_01_value + feat_0_value) / 2
-                              ]
-                            
+            feat_candidates = [feat_1_value, (feat_01_value + feat_1_value) / 2, (feat_01_value + feat_0_value) / 2]
+
             for feat_cand in feat_candidates:
                 if not self.check_with_tolerance(feat_cand, self.visited):
                     new_feat_01_values.append(feat_cand)

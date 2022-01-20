@@ -76,6 +76,7 @@ def report(
     if metadata["modality"] == "text":
         m = modality_metrics
         test_word_acc = count_integer_overlap(reconstructed_user_data["data"].view(-1), true_user_data["data"].view(-1))
+        m["token_acc"] = test_word_acc
         log.info(
             f"METRICS: | Accuracy: {m['accuracy']:2.4f} | S-BLEU: {m['sacrebleu']:4.2f} | FMSE: {feat_mse:2.4e} | "
             + "\n"
@@ -121,7 +122,7 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
     overlaps = []
     for rec_sentence, ref_sentence in zip(reconstructed_user_data["data"], true_user_data["data"]):
         overlaps.append(count_integer_overlap(rec_sentence, ref_sentence))
-    text_metrics["intra-sentence-token_accuracy"] = overlaps
+    text_metrics["intra-sentence_token_acc"] = overlaps
 
     # Accuracy:
     for rec_example, ref_example in zip(reconstructed_user_data["data"], true_user_data["data"]):

@@ -13,3 +13,4 @@ param_modification:
 
   attention_block_idx: 0
   v_length: 8
+  eps: 1

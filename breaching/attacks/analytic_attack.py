@@ -373,13 +373,14 @@ class DecepticonAttacker(AnalyticAttacker):
             already_assigned = set()
             for idx in range(corrs.shape[0]):
                 if idx not in already_assigned:
-                    matches = (corrs[idx] >= 0.98).nonzero().squeeze(0)
-
+                    matches = (corrs[idx] >= 0.99).nonzero().squeeze(0)
+                    print(len(matches))
                     if len(matches) > 0:
                         filtered_matches = torch.as_tensor([m for m in matches if m not in already_assigned])
                         if len(filtered_matches) > shape[1]:
                             filtered_matches = corrs[idx][filtered_matches].topk(k=shape[1]).indices
                         sentence_labels[filtered_matches] = idx
+                        already_assigned |= set(filtered_matches.tolist())
             assert sentence_labels.min() == 0
         elif algorithm == "fcluster":
             import scipy.cluster.hierarchy as spc

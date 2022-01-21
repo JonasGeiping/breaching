@@ -148,7 +148,7 @@ def main_process(
             [server_payload],
             server.model,
             order_batch=True,
-            compute_full_iip=True,
+            compute_full_iip=False,
             compute_rpsnr=True,
             compute_ssim=True,
             cfg_case=cfg.case,
@@ -162,15 +162,20 @@ def main_process(
         overall_metrics.append(metrics)
         # Save recovered data:
         if cfg.save_reconstruction:
-            if target_max_psnr and target_indx is not None:
-                sorted_indx = (metrics["order"].cpu() == torch.as_tensor(target_indx)).nonzero().squeeze()
-            else:
-                sorted_indx = None
-            breaching.utils.save_reconstruction(
-                reconstruction, [server_payload], true_user_data, cfg, target_indx=sorted_indx
-            )
-        if cfg.dryrun:
-            break
+            try:
+                if target_max_psnr and target_indx is not None:
+                    sorted_indx = torch.zeros(len(target_indx), dtype=torch.long)
+                    for i, indx in enumerate(target_indx):
+                        sorted_indx[i] = (metrics["order"].cpu() == torch.as_tensor(indx)).nonzero().squeeze()
+                else:
+                    sorted_indx = None
+                breaching.utils.save_reconstruction(
+                    reconstruction, [server_payload], true_user_data, cfg, target_indx=sorted_indx
+                )
+            except:  # noqa
+                log.info("Skipping save for this example...")  # we'll fix this after the deadline!
+        # if cfg.dryrun:
+        #     break
 
     # Compute average statistics:
     average_metrics = breaching.utils.avg_n_dicts(overall_metrics)

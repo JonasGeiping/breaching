@@ -8,7 +8,7 @@ normalize_gradients: False
 
 sort_by_bias: False
 
-sentence_algorithm: threshold
+sentence_algorithm: dynamic-threshold
 
 impl:
   dtype: float

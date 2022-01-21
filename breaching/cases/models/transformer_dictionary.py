@@ -36,7 +36,7 @@ def lookup_module_names(model_name, model):
         ff_transposed = False
         lookup["dimensions"] = hidden_dim, embedding_dim, ff_transposed
     elif "gpt2" in model_name:  # This is huggingface's gpt2 implementation
-        assert model_name in ["gpt2"]
+        assert model_name in ["gpt2", "gpt2S"]
 
         lookup["embedding"] = model.model.transformer.wte
         lookup["pos_encoder"] = PositionalContainer(model.model.transformer.wpe)
@@ -87,10 +87,12 @@ class PositionalContainer(torch.nn.Module):
 def lookup_grad_indices(model_name):
     """Which index in the list of grads corresponds to embedding weight and which to last linear layer bias?"""
     if "transformer" in model_name:  # This lookup is not automated :> Add new models here
-        embedding_parameter_idx = -2 if rec_models[0].name == "transformer3t" else -3
+        embedding_parameter_idx = -2 if model_name == "transformer3t" else -3
         decoder_bias_parameter_idx = -1
     elif "gpt2" in model_name:
         embedding_parameter_idx = 0
         decoder_bias_parameter_idx = None  # No decoder bias!
     else:
-        raise ValueError(f"Unknown architecture {model_name} not registered in module lookup table!")
+        raise ValueError(f"Unknown architecture {model_name} not registered in index lookup table!")
+
+    return embedding_parameter_idx, decoder_bias_parameter_idx

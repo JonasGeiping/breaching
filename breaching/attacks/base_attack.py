@@ -463,13 +463,13 @@ class _BaseAttacker:
         log.info(f"Recovered labels {labels.tolist()} through strategy {self.cfg.label_strategy}.")
         return labels
 
-    def recover_token_information(self, user_data, server_payload, rec_models):
+    def recover_token_information(self, user_data, server_payload, model_name):
         """Recover token information. This is a variation of previous attacks on label recovery, but can abuse
         the embeddings layer in addition to the decoder layer.
 
         The behavior with respect to multiple queries is work in progress and subject of debate.
         """
-        embedding_parameter_idx, decoder_bias_parameter_idx = lookup_grad_indices(rec_models[0].name)
+        embedding_parameter_idx, decoder_bias_parameter_idx = lookup_grad_indices(model_name)
         num_data_points = user_data[0]["metadata"]["num_data_points"]
         num_queries = len(user_data)
 
@@ -483,6 +483,8 @@ class _BaseAttacker:
         num_missing_tokens = num_data_points * self.data_shape[0]
 
         if self.cfg.token_strategy == "decoder-bias":
+            if decoder_bias_parameter_idx is None:
+                raise ValueError("Cannot use this strategy on a model without decoder.")
             # works super well for normal stuff like transformer3 without tying
 
             # This is slightly modified analytic label recovery in the style of Wainakh
@@ -515,11 +517,13 @@ class _BaseAttacker:
             # Stage 1
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             std, mean = torch.std_mean(average_wte_norm.log())
-            cutoff = mean + 3 * std
-            if not cutoff.isfinite():  # tied weights
+            cutoff = mean + 3.5 * std
+            if not cutoff.isfinite():  # untied weights
                 valid_classes = average_wte_norm.nonzero().squeeze(dim=-1)
-            else:  # untied weights
+            else:  # tied weights
                 valid_classes = (average_wte_norm.log() > cutoff).nonzero().squeeze(dim=-1)
+            if len(valid_classes) > num_missing_tokens - 1:  # Cutoff overshoot
+                valid_classes = average_wte_norm.topk(k=num_missing_tokens - 1).indices
             token_list += [*valid_classes]
 
             # top2-log rule is decent:

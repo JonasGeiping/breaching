@@ -136,7 +136,6 @@ class DecepticonAttacker(AnalyticAttacker):
         # Initialize stats module for later usage:
         rec_models, tokens, stats = self.prepare_attack(server_payload, shared_data)
         len_data = shared_data[0]["metadata"]["num_data_points"]  # Could be guessed as well
-
         lookup = lookup_module_names(rec_models[0].name, rec_models[0])
 
         if "ImprintBlock" in server_secrets.keys():
@@ -144,14 +143,20 @@ class DecepticonAttacker(AnalyticAttacker):
             bias_idx = server_secrets["ImprintBlock"]["bias_idx"]
             data_shape = server_secrets["ImprintBlock"]["data_shape"]
             v_length = server_secrets["ImprintBlock"]["v_length"]
+            ff_transposed = server_secrets["ImprintBlock"]["ff_transposed"]
         else:
             raise ValueError(f"No imprint hidden in model {rec_models[0]} according to server.")
 
-        leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models).view(-1)
-        leaked_embeddings = norm_layer(embedding(leaked_tokens)).cpu().view(-1, lookup["embedding"].weight.shape[1])
+        leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models[0].name).view(-1)
+        leaked_embeddings = lookup["norm_layer1"](lookup["embedding"](leaked_tokens))
+        leaked_embeddings = leaked_embeddings.cpu().view(-1, lookup["embedding"].weight.shape[1])
 
         bias_grad = torch.cat([shared_data[0]["gradients"][b_idx].clone() for b_idx in bias_idx])
-        weight_grad = torch.cat([shared_data[0]["gradients"][w_idx].clone() for w_idx in weight_idx])
+        if ff_transposed:
+            weight_grad = torch.cat([shared_data[0]["gradients"][w_idx].clone() for w_idx in weight_idx], dim=1)
+            weight_grad = weight_grad.T.contiguous()  # Restride only due to paranoia
+        else:
+            weight_grad = torch.cat([shared_data[0]["gradients"][w_idx].clone() for w_idx in weight_idx])
 
         if self.cfg.sort_by_bias:
             # This variant can recover from shuffled rows under the assumption that biases would be ordered
@@ -175,10 +180,14 @@ class DecepticonAttacker(AnalyticAttacker):
             log.info(f"Reduced to {len_data * data_shape[0]} hits.")
             # print(best_guesses.indices.sort().values)
             breached_embeddings = breached_embeddings[best_guesses.indices]
+        if (~torch.isfinite(breached_embeddings)).sum():
+            raise ValueError("Invalid breached embeddings recovered.")
+
         # Get an estimation of the positional embeddings:
         dummy_inputs = torch.zeros([len_data, *data_shape], dtype=torch.long, device=self.setup["device"])
         pure_positions = lookup["pos_encoder"](torch.zeros_like(lookup["embedding"](dummy_inputs)))
-        positional_embeddings = lookup["norm_layer1"](pure_positions).cpu().view(-1, embedding.weight.shape[1])
+        pure_normed_positions = lookup["norm_layer1"](pure_positions)
+        positional_embeddings = pure_normed_positions.cpu().view(-1, lookup["embedding"].weight.shape[1])
 
         # Step 0: Separate breached embeddings into separate sentences:
         sentence_id_components = breached_embeddings[:, :v_length]
@@ -207,7 +216,7 @@ class DecepticonAttacker(AnalyticAttacker):
             ]
         # Then fill up the missing locations:
         if len(breached_embeddings) < len(positional_embeddings):
-            free_positions = (ordered_breached_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=0)
+            free_positions = (ordered_breached_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
             assert len(breached_embeddings) > len(free_positions)
             miss_to_pos, costs = self._match_embeddings(breached_embeddings, positional_embeddings[free_positions])
             ordered_breached_embeddings[free_positions] = breached_embeddings[miss_to_pos]

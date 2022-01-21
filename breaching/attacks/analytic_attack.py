@@ -177,6 +177,7 @@ class DecepticonAttacker(AnalyticAttacker):
             best_guesses = torch.topk(
                 weight_grad.mean(dim=1)[bias_grad != 0].abs(), len_data * data_shape[0], largest=True
             )
+            # best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len_data * data_shape[0], largest=False)
             log.info(f"Reduced to {len_data * data_shape[0]} hits.")
             # print(best_guesses.indices.sort().values)
             breached_embeddings = breached_embeddings[best_guesses.indices]
@@ -399,7 +400,12 @@ class DecepticonAttacker(AnalyticAttacker):
         else:
             corr = references.matmul(inputs.T) / references.norm(dim=-1)[:, None] / inputs.norm(dim=-1)[None, :]
             corr = corr.detach().numpy()
-        row_ind, col_ind = linear_sum_assignment(corr, maximize=True)
+        try:
+            row_ind, col_ind = linear_sum_assignment(corr, maximize=True)
+        except ValueError:
+            print(f"ValueError from correlation matrix {corr}")
+            print("Returning trivial order...")
+            row_ind, col_ind = list(range(corr.shape[0])), list(range(corr.shape[1]))
         order_tensor = torch.as_tensor(col_ind, device=inputs.device, dtype=torch.long)
         costs = torch.as_tensor(corr[row_ind, col_ind], device=inputs.device, dtype=torch.float)
         return order_tensor, costs

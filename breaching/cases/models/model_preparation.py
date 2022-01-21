@@ -117,6 +117,7 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
             else:
                 hf_cfg = AutoConfig.from_pretrained(cfg_model, **extra_args)
                 model = auto_class.from_config(hf_cfg)
+            # model.transformer.h[0].attn.scale_attn_weights = False
             if model.config.vocab_size != cfg_data.vocab_size:
                 model.resize_token_embeddings(new_num_tokens=cfg_data.vocab_size)
             model = HuggingFaceContainer(model)

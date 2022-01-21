@@ -967,7 +967,7 @@ class ClassParameterServer(HonestServer):
         for param in self.model.parameters():
             param.requires_grad = True
 
-    def estimate_feat(self, cfg, extra_info):
+    def estimate_feat(self, cfg, extra_info, num_to_est=900):
         import breaching
         from tqdm import tqdm
         import numpy as np
@@ -981,12 +981,7 @@ class ClassParameterServer(HonestServer):
         self.reset_model()
         self.reconfigure_model("cls_attack", extra_info=extra_info)
 
-        if cfg.case.data.examples_from_split == "validation":
-            data_per_class = 40
-        else:
-            data_per_class = 900
-
-        for i in tqdm(range(data_per_class // cfg.case.user.num_data_points)):
+        for i in tqdm(range(num_to_est // cfg.case.user.num_data_points)):
             cfg.case.user.user_idx = i
             user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
             server_payload = self.distribute_payload()

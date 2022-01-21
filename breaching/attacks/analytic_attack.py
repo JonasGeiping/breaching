@@ -181,6 +181,7 @@ class DecepticonAttacker(AnalyticAttacker):
             log.info(f"Reduced to {len_data * data_shape[0]} hits.")
             # print(best_guesses.indices.sort().values)
             breached_embeddings = breached_embeddings[best_guesses.indices]
+        breached_embeddings = breached_embeddings.cpu()  # Assignments run on CPU anyway
         if (~torch.isfinite(breached_embeddings)).sum():
             raise ValueError("Invalid breached embeddings recovered.")
 

@@ -530,3 +530,68 @@ class DecepticonAttacker(AnalyticAttacker):
                 sentences[n].append(sorted_tokens[w[m]])
 
         return sentences
+
+
+class AprilAttacker(AnalyticAttacker):
+    """Analytically reconstruct the input of a vision transformer for a batch of size 1."""
+
+    def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
+        """Analytic recovery based on first query."""
+        # Initialize stats module for later usage:
+        rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)
+        len_data = shared_data[0]["metadata"]["num_data_points"]  # Not strictly needed for the attack
+
+        x_patched = self.closed_form_april(rec_models[0], shared_data[0])
+        x = self.recover_patch(x_patched)
+        inputs = torch.max(torch.min(x, (1 - self.dm) / self.ds), -self.dm / self.ds)
+
+        # This attack always recovers just one sample!
+        data = torch.zeros([len_data, *self.data_shape])
+        data[0] = inputs
+        reconstructed_data = dict(data=data, labels=labels)
+        return reconstructed_data, stats
+
+    @staticmethod
+    def recover_patch(x):
+        # retile img
+        p_num_2, p_size_2 = x.shape[1:]
+        p_num = int(p_num_2 ** (1 / 2))
+        p_size = int(p_size_2 ** (1 / 2))
+        img_size = int((p_num_2 * p_size_2) ** (1 / 2))
+        x = x.reshape((3, p_num, p_num, p_size, p_size))
+        new_x = torch.zeros_like(x).reshape((3, img_size, img_size))
+
+        for i in range(p_num):
+            for j in range(p_num):
+                new_x[:, i * p_size : (i + 1) * p_size, j * p_size : (j + 1) * p_size] = x[:, i, j, :]
+
+        return new_x
+
+    @staticmethod
+    def closed_form_april(model, shared_data):
+        # recover patch embeddings first, (APRIL paper)
+        qkv_w = model.model.blocks[0].attn.qkv.weight.detach().double()
+        q_w, k_w, v_w = qkv_w.reshape(3, -1, qkv_w.shape[-1]).unbind()
+        qkv_g = shared_data["gradients"][4].double()
+        assert qkv_w.shape == qkv_g.shape
+        q_g, k_g, v_g = qkv_g.reshape(3, -1, qkv_g.shape[-1]).unbind()
+        A = shared_data["gradients"][1].detach().squeeze().double()
+        pos_embed = model.model.pos_embed.detach().squeeze().double()
+
+        b = (q_w.T @ q_g + k_w.T @ k_g + v_w.T @ v_g).double()
+        print(A.norm(), b.norm())
+        z = torch.linalg.lstsq(A @ A.T, A @ b, driver="gelsd", rcond=None).solution
+        z -= pos_embed
+        z = z[1:]
+
+        # recover img
+        em_w = model.model.patch_embed.proj.weight.detach().double()
+        em_w = em_w.reshape((em_w.shape[0], -1))
+        em_b = model.model.patch_embed.proj.bias.detach().double()
+
+        x = z - em_b
+        print(em_w.norm(), x.norm())
+        x = torch.linalg.lstsq(em_w, x.T, driver="gelsd", rcond=None).solution
+        x = x.reshape((3, -1, x.shape[-1]))
+        x = x.transpose(1, 2)
+        return x

@@ -310,7 +310,7 @@ def compute_text_order(reconstructed_user_data, true_user_data):
             overlap = count_integer_overlap(rec_sentence, ref_sentence)
             overlaps[idx, idy] = overlap
     try:
-        _, rec_assignment = linear_sum_assignment(overlaps.cpu().numpy(), maximize=True)
+        _, rec_assignment = linear_sum_assignment(overlaps.T.cpu().numpy(), maximize=True)
     except ValueError:
         print(f"ValueError from overlap matrix {overlaps.cpu().numpy()}")
         print("Returning trivial order...")

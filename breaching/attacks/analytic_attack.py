@@ -196,9 +196,9 @@ class DecepticonAttacker(AnalyticAttacker):
             sentence_labels = torch.zeros(len(breached_embeddings), dtype=torch.long)
 
         # Match breached embeddings to positions for each sentence:
-        breached_embeddings = breached_embeddings[:, v_length:]
-        positional_embeddings = positional_embeddings[:, v_length:]
-        leaked_embeddings = leaked_embeddings[:, v_length:]
+        breached_embeddings = breached_embeddings[:, v_length:-1]
+        positional_embeddings = positional_embeddings[:, v_length:-1]
+        leaked_embeddings = leaked_embeddings[:, v_length:-1]
 
         ordered_breached_embeddings = torch.zeros_like(positional_embeddings)
         for sentence in range(len_data):

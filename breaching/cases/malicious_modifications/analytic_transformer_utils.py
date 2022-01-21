@@ -85,7 +85,7 @@ def set_MHA(
 
     # These are the positional embeddings after layer normalization:
     dummy_data = torch.zeros([1, *data_shape, embedding_dim])
-    just_positions = norm_layer0(pos_encoder(dummy_data)).cpu()
+    just_positions = (pos_encoder(dummy_data)).cpu()
     # Q matrix setup
     # We make the weight 0, and the bias some (large multiple of) positional encoding
     # Only coded here for one MHA layer at the beginning of the model...
@@ -120,7 +120,7 @@ def set_MHA(
         v_data[:v_length, v_length : (2 * v_length)] = torch.eye(v_length)
 
     if ff_transposed:
-        attention_layer["in_proj_weight"].data[:, 2 * (qkv_shape // 3) :] = v_data
+        attention_layer["in_proj_weight"].data[:, 2 * (qkv_shape // 3) :] = v_data.T.contiguous()
     else:
         attention_layer["in_proj_weight"].data[2 * (qkv_shape // 3) :] = v_data
     # So, (QK^T)V just adds the same vector (first word embedding) to each word in the sequence.
@@ -130,7 +130,7 @@ def set_MHA(
     attention_layer["out_proj_bias"].data.zero_()
 
 
-def set_flow_backward_layer(second_layers, eps=1e-4):
+def set_flow_backward_layer(second_layers, ff_transposed=False, eps=1e-4):
     """
     here we set the second linear layer in the ff block to accumulate everything
     from the first linear layer into one entry, thus allowing gradients to flow
@@ -139,7 +139,10 @@ def set_flow_backward_layer(second_layers, eps=1e-4):
 
     for layer in second_layers:
         layer.weight.data.zero_()
-        layer.weight.data[-1] = eps / layer.weight.data.shape[1]
+        if ff_transposed:
+            layer.weight.data[:, -1] = eps / layer.weight.data.shape[0]
+        else:
+            layer.weight.data[-1] = eps / layer.weight.data.shape[1]
         layer.bias.data.zero_()
 
 

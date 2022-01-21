@@ -7,7 +7,7 @@ from collections import defaultdict
 import copy
 
 from ..common import optimizer_lookup
-
+from ..cases.models.transformer_dictionary import lookup_grad_indices
 
 import logging
 
@@ -469,10 +469,7 @@ class _BaseAttacker:
 
         The behavior with respect to multiple queries is work in progress and subject of debate.
         """
-        if "transformer" in rec_models[0].name:  # This lookup is not automated :> Add new models here
-            embedding_parameter_idx = -2 if rec_models[0].name == "transformer3t" else -3
-            decoder_bias_parameter_idx = -1
-
+        embedding_parameter_idx, decoder_bias_parameter_idx = lookup_grad_indices(rec_models[0].name)
         num_data_points = user_data[0]["metadata"]["num_data_points"]
         num_queries = len(user_data)
 
@@ -590,5 +587,5 @@ class _BaseAttacker:
 
         # Always sort, order does not matter here:
         tokens = tokens.sort()[0]
-        log.info(f"Recovered tokens {tokens.tolist()} through strategy {self.cfg.token_strategy}.")
+        log.info(f"Recovered tokens {tokens} through strategy {self.cfg.token_strategy}.")
         return tokens

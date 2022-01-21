@@ -8,7 +8,7 @@ from scipy.optimize import linear_sum_assignment  # Better than greedy search
 from collections import defaultdict
 
 from .base_attack import _BaseAttacker
-
+from ..cases.models.transformer_dictionary import lookup_module_names
 
 import logging
 
@@ -137,10 +137,7 @@ class DecepticonAttacker(AnalyticAttacker):
         rec_models, tokens, stats = self.prepare_attack(server_payload, shared_data)
         len_data = shared_data[0]["metadata"]["num_data_points"]  # Could be guessed as well
 
-        if "transformer" in rec_models[0].name:  # These are our implementations from model/language_models.py
-            norm_layer = rec_models[0].transformer_encoder.layers[0].norm1
-            pos_encoder = rec_models[0].pos_encoder
-            embedding = rec_models[0].encoder
+        lookup = lookup_module_names(rec_models[0].name, rec_models[0])
 
         if "ImprintBlock" in server_secrets.keys():
             weight_idx = server_secrets["ImprintBlock"]["weight_idx"]
@@ -151,7 +148,7 @@ class DecepticonAttacker(AnalyticAttacker):
             raise ValueError(f"No imprint hidden in model {rec_models[0]} according to server.")
 
         leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models).view(-1)
-        leaked_embeddings = norm_layer(embedding(leaked_tokens)).cpu().view(-1, embedding.weight.shape[1])
+        leaked_embeddings = norm_layer(embedding(leaked_tokens)).cpu().view(-1, lookup["embedding"].weight.shape[1])
 
         bias_grad = torch.cat([shared_data[0]["gradients"][b_idx].clone() for b_idx in bias_idx])
         weight_grad = torch.cat([shared_data[0]["gradients"][w_idx].clone() for w_idx in weight_idx])
@@ -180,8 +177,8 @@ class DecepticonAttacker(AnalyticAttacker):
             breached_embeddings = breached_embeddings[best_guesses.indices]
         # Get an estimation of the positional embeddings:
         dummy_inputs = torch.zeros([len_data, *data_shape], dtype=torch.long, device=self.setup["device"])
-        pure_positions = pos_encoder(torch.zeros_like(embedding(dummy_inputs)))
-        positional_embeddings = norm_layer(pure_positions).cpu().view(-1, embedding.weight.shape[1])
+        pure_positions = lookup["pos_encoder"](torch.zeros_like(lookup["embedding"](dummy_inputs)))
+        positional_embeddings = lookup["norm_layer1"](pure_positions).cpu().view(-1, embedding.weight.shape[1])
 
         # Step 0: Separate breached embeddings into separate sentences:
         sentence_id_components = breached_embeddings[:, :v_length]
@@ -210,9 +207,10 @@ class DecepticonAttacker(AnalyticAttacker):
             ]
         # Then fill up the missing locations:
         if len(breached_embeddings) < len(positional_embeddings):
-            free_positions = (ordered_breached_embeddings.norm(dim=-1) == 0).nonzero().squeeze()
+            free_positions = (ordered_breached_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=0)
+            assert len(breached_embeddings) > len(free_positions)
             miss_to_pos, costs = self._match_embeddings(breached_embeddings, positional_embeddings[free_positions])
-            ordered_breached_embeddings[free_positions[: len(breached_embeddings)]] = breached_embeddings[miss_to_pos]
+            ordered_breached_embeddings[free_positions] = breached_embeddings[miss_to_pos]
 
         # These are already in the right position, but which token do they belong to?
         breached_without_positions = ordered_breached_embeddings - positional_embeddings

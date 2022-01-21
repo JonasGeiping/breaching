@@ -38,7 +38,7 @@ def construct_model(cfg_model, cfg_data, pretrained=True, **kwargs):
 
 
 def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
-    if cfg_model == "transformer3":
+    if cfg_model == "transformer3f":
         # This is the transformer from "A field guide to federated learning"
         """
         we train a modified 3-layer Transformer model [250],
@@ -48,8 +48,10 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
         """
         # For simplicity the dropout is disabled for now
         # the 12-dim query is 96/8 = 12
-        model = TransformerModel(ntokens=cfg_data.vocab_size, ninp=96, nhead=8, nhid=1536, nlayers=3, dropout=0)
-    elif cfg_model == "transformer3p":
+        model = TransformerModel(
+            ntokens=cfg_data.vocab_size, ninp=96, nhead=8, nhid=1536, nlayers=3, dropout=0, positional_embedding="fixed"
+        )
+    elif cfg_model == "transformer3":
         # Same as above but with learnable positional embeddings
         model = TransformerModel(
             ntokens=cfg_data.vocab_size,
@@ -61,7 +63,7 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
             positional_embedding="learnable",
         )
     elif cfg_model == "transformer3t":
-        # Same as above but with learnable positional embeddings
+        # Same as above but with learnable positional embeddings and tied weights
         model = TransformerModel(
             ntokens=cfg_data.vocab_size,
             ninp=96,

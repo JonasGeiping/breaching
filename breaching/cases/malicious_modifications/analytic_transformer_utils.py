@@ -6,48 +6,50 @@ log = logging.getLogger(__name__)
 
 
 @torch.inference_mode()
-def compute_feature_distribution(model, server, measurement):
+def compute_feature_distribution(model, target_layer, measurement, server):
     """Compute the mean and std of the feature layer of the given network."""
     features = dict()
 
     def named_hook(name):
         def hook_fn(module, input, output):
             features[name] = input[0]
+            raise RuntimeError("Early exit")
 
         return hook_fn
 
-    name = "linear1"
-    module = model.transformer_encoder.layers[0].linear1
-    hook = module.register_forward_hook(named_hook(name))
-    feature_layer_name = name
+    hook = target_layer.register_forward_hook(named_hook("linear_probe"))
 
     feats = []
     model.train()
     model.to(**server.setup)
 
     if server.external_dataloader is not None:
-        log.info(f"Computing feature distribution before the {feature_layer_name} layer from external data.")
+        log.info(f"Computing feature distribution before the probe layer {target_layer} from external data.")
         for i, batch in enumerate(server.external_dataloader):
             inputs = batch["input_ids"].to(device=server.setup["device"])
-            model(inputs)
-            feats.append(features[name].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone())
+            try:
+                model(inputs)
+            except RuntimeError:
+                pass
+                # This is likely the worst-possible way to break execution after  the hook ...
+            feats.append(features["linear_probe"].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone())
     else:
-        log.info(f"Computing feature distribution before the {feature_layer_name} layer from random tokens.")
+        log.info(f"Computing feature distribution before the probe layer{target_layer} from random tokens.")
         cfg = server.cfg_data
-        weights = 1 / torch.arange(1, cfg.vocab_size + 1)  # Zipfy?
+        weights = 1 / torch.arange(1, cfg.vocab_size + 1)  # Zipfy enough?
         for i in range(50):
             # inputs = torch.randint(0, cfg.vocab_size, (cfg.batch_size, *cfg.shape), device=server.setup["device"])
             sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=cfg.batch_size * cfg.shape[0])
             samples = list(iter(sampler))
             inputs = torch.as_tensor(samples, device=server.setup["device"]).view((cfg.batch_size, *cfg.shape))
             model(inputs)
-            feats.append(features[name].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone())
+            feats.append(features["linear_probe"].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone())
 
     std, mu = torch.std_mean(torch.matmul(torch.cat(feats), measurement))
     model.eval()
     model.cpu()
     hook.remove()
-    print(f"Feature mean is {mu.item()}, feature std is {std.item()}.")
+    log.info(f"Feature mean is {mu.item()}, feature std is {std.item()}.")
     return std, mu
 
 
@@ -63,39 +65,52 @@ def partially_norm_position(embedding_layer, v_length):
 
 def set_MHA(
     attention_layer,
-    norm_layer,
+    norm_layer0,
     pos_encoder,
     embedding_dim,
+    ff_transposed,
     data_shape,
-    sequence_token_weight=1000,
+    sequence_token_weight=1,
     imprint_sentence_position=0,  # This position will be imprinted onto the sentence via attention
-    softmax_skew=1000,
-    v_length=8,
+    softmax_skew=1000000,
+    v_length=6,
 ):
     # Let's set the query matrix to produce just the first positional encoding (or could be any index - might want last index)
-    qkv_shape = attention_layer.in_proj_weight.data.shape[0]
+    if ff_transposed:
+        qkv_shape = attention_layer["in_proj_weight"].data.shape[1]
+        log.info(f"Found attention of shape {attention_layer['in_proj_weight'].T.shape}.")
+    else:
+        qkv_shape = attention_layer["in_proj_weight"].data.shape[0]
+        log.info(f"Found attention of shape {attention_layer['in_proj_weight'].data.shape}.")
 
     # These are the positional embeddings after layer normalization:
     dummy_data = torch.zeros([1, *data_shape, embedding_dim])
-    just_positions = (pos_encoder(dummy_data)).cpu()
+    just_positions = norm_layer0(pos_encoder(dummy_data)).cpu()
     # Q matrix setup
     # We make the weight 0, and the bias some (large multiple of) positional encoding
     # Only coded here for one MHA layer at the beginning of the model...
     # Make the position super super large to skew softmax
-    attention_layer.in_proj_bias.data.zero_()
+    attention_layer["in_proj_bias"].data.zero_()
     position_comp = just_positions[0, imprint_sentence_position, :][v_length : 2 * v_length]
-    attention_layer.in_proj_bias.data[: qkv_shape // 3][v_length : 2 * v_length] = softmax_skew * position_comp
-    attention_layer.in_proj_weight.data[: qkv_shape // 3] = torch.zeros((qkv_shape // 3, qkv_shape // 3))
+    attention_layer["in_proj_bias"].data[: qkv_shape // 3][v_length : 2 * v_length] = softmax_skew * position_comp
+
+    if ff_transposed:
+        attention_layer["in_proj_weight"].data[:, : qkv_shape // 3] = torch.zeros((qkv_shape // 3, qkv_shape // 3))
+    else:
+        attention_layer["in_proj_weight"].data[: qkv_shape // 3] = torch.zeros((qkv_shape // 3, qkv_shape // 3))
 
     # Set V_bias to subtract positional encoding
     v_bias = torch.zeros(qkv_shape // 3)
     v_bias[imprint_sentence_position : (imprint_sentence_position + v_length)] = -just_positions[
         0, imprint_sentence_position, v_length : (2 * v_length)
     ]
-    attention_layer.in_proj_bias.data[2 * (qkv_shape // 3) :] = v_bias
+    attention_layer["in_proj_bias"].data[2 * (qkv_shape // 3) :] = v_bias
 
     # K matrix setup (identity)
-    attention_layer.in_proj_weight.data[qkv_shape // 3 : 2 * (qkv_shape // 3)] = torch.eye(qkv_shape // 3)
+    if ff_transposed:
+        attention_layer["in_proj_weight"].data[:, qkv_shape // 3 : 2 * (qkv_shape // 3)] = torch.eye(qkv_shape // 3)
+    else:
+        attention_layer["in_proj_weight"].data[qkv_shape // 3 : 2 * (qkv_shape // 3)] = torch.eye(qkv_shape // 3)
 
     # V matrix setup (truncated shifted identity block)
     if v_length == qkv_shape // 3:  # Do not modify:
@@ -103,11 +118,16 @@ def set_MHA(
     else:
         v_data = torch.zeros((qkv_shape // 3, qkv_shape // 3))
         v_data[:v_length, v_length : (2 * v_length)] = torch.eye(v_length)
-    attention_layer.in_proj_weight.data[2 * (qkv_shape // 3) :] = v_data
+
+    if ff_transposed:
+        attention_layer["in_proj_weight"].data[:, 2 * (qkv_shape // 3) :] = v_data
+    else:
+        attention_layer["in_proj_weight"].data[2 * (qkv_shape // 3) :] = v_data
     # So, (QK^T)V just adds the same vector (first word embedding) to each word in the sequence.
 
-    # Linear layer at the end of MHA - set to small value to not 'skew' embeddings too much
-    attention_layer.out_proj.weight.data = sequence_token_weight * torch.eye(qkv_shape // 3)
+    # Linear layer at the end of MHA - optionally can be set to small value to not 'skew' embeddings too much
+    attention_layer["out_proj_weight"].data = sequence_token_weight * torch.eye(qkv_shape // 3)
+    attention_layer["out_proj_bias"].data.zero_()
 
 
 def set_flow_backward_layer(second_layers, eps=1e-4):
@@ -129,12 +149,12 @@ def disable_mha_layer(layers):
     where we encode the sequence
     """
 
-    for layer in layers:
-        layer.out_proj.weight.data.zero_()
-        layer.out_proj.bias.data.zero_()
+    for layer_out_proj in layers:
+        layer_out_proj.weight.data.zero_()
+        layer_out_proj.bias.data.zero_()
 
 
-def make_imprint_layer(first_layers, measurement, mean, std):
+def make_imprint_layer(first_layers, measurement, mean, std, hidden_dim, embedding_dim, ff_transposed=False):
     """
     measurement is the Gaussian vector we take inner product w.r.t.
     mean, std = mean, std of features from feature_distribution
@@ -154,11 +174,12 @@ def make_imprint_layer(first_layers, measurement, mean, std):
             new_biases[i] = -bins[i]
         return new_biases
 
-    hidden_dim, embedding_dim = first_layers[0].weight.shape
     bins = _get_bins(mean, std, hidden_dim * len(first_layers))
-
     bins_per_layer = len(bins) // len(first_layers)
 
     for i, layer in enumerate(first_layers):
-        layer.weight.data = measurement.repeat(hidden_dim, 1)
+        if ff_transposed:
+            layer.weight.data = measurement.repeat(hidden_dim, 1).T
+        else:
+            layer.weight.data = measurement.repeat(hidden_dim, 1)
         layer.bias.data = _make_biases(layer.bias, bins[(i * bins_per_layer) : ((i + 1) * bins_per_layer)])

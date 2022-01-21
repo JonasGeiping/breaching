@@ -13,6 +13,7 @@ from .malicious_modifications.analytic_transformer_utils import (
     partially_norm_position,
     make_imprint_layer,
 )
+from .models.transformer_dictionary import lookup_module_names
 
 from .aux_training import train_encoder_decoder
 from .malicious_modifications.feat_decoders import generate_decoder
@@ -382,23 +383,10 @@ class MaliciousTransformerServer(HonestServer):
         """Reinitialize, continue training or otherwise modify model parameters."""
         super().reconfigure_model(model_state)  # Load the benign model state first
 
-        # Figure out the hidden dimension:
-        # For now this is non-automated.
-        if "transformer" in self.model.name:  # These are our implementations from model/language_models.py
-            embedding = self.model.encoder
-            pos_encoder = self.model.pos_encoder
-
-            norm_layer = self.model.transformer_encoder.layers[0].norm1
-            attention_layer = self.model.transformer_encoder.layers[0].self_attn
-
-        first_layers, second_layers, unused_mha = [], [], []  # collecting all the imprint layers
-        for i, layer in enumerate(self.model.transformer_encoder.layers):
-            first_layers.append(layer.linear1)
-            second_layers.append(layer.linear2)
-            if i != 0:
-                unused_mha.append(layer.self_attn)
-
-        hidden_dim, embedding_dim = first_layers[0].weight.shape
+        # Figure out the names of all layers by lookup:
+        # For now this is non-automated. Add a new arch to this lookup function before running it.
+        lookup = lookup_module_names(self.model.name, self.model)
+        hidden_dim, embedding_dim, ff_transposed = lookup["dimensions"]
 
         # Define "probe" function / measurement vector:
         # Probe Length is embedding_dim minus v_proportion minus skip node
@@ -413,10 +401,10 @@ class MaliciousTransformerServer(HonestServer):
         measurement[v_length:-1] = probe
 
         # Disable these parts of the embedding:
-        partially_disable_embedding(embedding, v_length)
-        if hasattr(pos_encoder, "embedding"):
-            partially_disable_embedding(self.model.pos_encoder.embedding, v_length)
-            partially_norm_position(self.model.pos_encoder.embedding, v_length)
+        partially_disable_embedding(lookup["embedding"], v_length)
+        if hasattr(lookup["pos_encoder"], "embedding"):
+            partially_disable_embedding(lookup["pos_encoder"].embedding, v_length)
+            partially_norm_position(lookup["pos_encoder"].embedding, v_length)
 
             # Maybe later:
             # self.model.pos_encoder.embedding.weight.data[:, v_length : v_length * 4] = 0
@@ -425,10 +413,11 @@ class MaliciousTransformerServer(HonestServer):
         # Modify the first attention mechanism in the model:
         # Set QKV modifications in-place:
         set_MHA(
-            attention_layer,
-            norm_layer,
-            pos_encoder,
+            lookup["attention_layer"],
+            lookup["norm_layer0"],
+            lookup["pos_encoder"],
             embedding_dim,
+            ff_transposed,
             self.cfg_data.shape,
             sequence_token_weight=self.cfg_server.param_modification.sequence_token_weight,
             imprint_sentence_position=self.cfg_server.param_modification.imprint_sentence_position,
@@ -437,22 +426,25 @@ class MaliciousTransformerServer(HonestServer):
         )
 
         # Take care of second linear layers, and unused mha layers first
-        set_flow_backward_layer(second_layers, eps=self.cfg_server.param_modification.eps)
-        disable_mha_layer(unused_mha)
+        set_flow_backward_layer(lookup["second_linear_layers"], eps=self.cfg_server.param_modification.eps)
+        disable_mha_layer(lookup["unused_mha_outs"])
 
         # Evaluate feature distribution of this model
-        std, mu = compute_feature_distribution(self.model, self, measurement)
+        std, mu = compute_feature_distribution(self.model, lookup["first_linear_layers"][0], measurement, self)
         # And add imprint modification to the first linear layer
-        make_imprint_layer(first_layers, measurement, mu, std)
+        make_imprint_layer(
+            lookup["first_linear_layers"], measurement, mu, std, hidden_dim, embedding_dim, ff_transposed
+        )
         # This should be all for the attack :>
 
         # We save secrets for the attack later on:
+        num_layers = len(lookup["first_linear_layers"])
         tracker = 0
         weight_idx, bias_idx = [], []
         for idx, param in enumerate(self.model.parameters()):
-            if tracker < len(first_layers) and param is first_layers[tracker].weight:
+            if tracker < num_layers and param is lookup["first_linear_layers"][tracker].weight:
                 weight_idx.append(idx)
-            if tracker < len(first_layers) and param is first_layers[tracker].bias:
+            if tracker < num_layers and param is lookup["first_linear_layers"][tracker].bias:
                 bias_idx.append(idx)
                 tracker += 1
 
@@ -462,6 +454,7 @@ class MaliciousTransformerServer(HonestServer):
             data_shape=self.cfg_data.shape,
             structure="cumulative",
             v_length=v_length,
+            ff_transposed=ff_transposed,
         )
         self.secrets["ImprintBlock"] = details
 

@@ -5,6 +5,9 @@ import copy
 from itertools import chain
 
 from .data import construct_dataloader
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def construct_user(model, loss_fn, cfg_case, setup):
@@ -137,6 +140,7 @@ class UserSingleStep(torch.nn.Module):
                     if hasattr(module, "momentum"):
                         module.momentum = None  # Force recovery without division
                 self.model.train()
+        log.info(f"Computing user update in model mode: {'training' if self.model.training else 'eval'}.")
 
         def _compute_batch_gradient(data):
             data[self.data_key] = (

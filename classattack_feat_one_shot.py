@@ -1,5 +1,5 @@
 import hydra
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, open_dict
 
 import datetime
 import time
@@ -32,6 +32,10 @@ def main_launcher(cfg):
     cfg.case.data.name = "ImageNet"
     cfg.case.data.examples_from_split = "train"
     cfg.case.data.default_clients = 1000
+
+    with open_dict(cfg):
+        cfg.case.data.num_data_points = cfg.case.user.num_data_points
+        cfg.case.data.target_label = 0
 
     log.info(OmegaConf.to_yaml(cfg))
     breaching.utils.initialize_multiprocess_log(cfg)  # manually save log configuration
@@ -85,7 +89,7 @@ def main_process(
         server.reconfigure_model('cls_attack', extra_info=extra_info)
         
         log.info(f"Now estimating features from cls {cls_to_obtain} within {num_to_est} datapoints in batch size {batch_size}.")
-
+        extra_info = {"cls_to_obtain": cls_to_obtain, "model": model, "loss_fn": loss_fn, "setup": setup}
         est_features, est_sample_sizes = server.estimate_feat(cfg, extra_info, num_to_est=num_to_est)
         f_indx = server.find_best_feat(est_features, est_sample_sizes, method="kstest")
         est_mean, est_std = server.estimate_gt_stats(est_features, est_sample_sizes, indx=f_indx)
@@ -121,6 +125,8 @@ def main_process(
             counter += 1
             if counter == num_trials:
                 return num_of_catches, num_trials
+    
+    return num_of_catches, num_trials
 
 if __name__ == "__main__":
     main_launcher()

@@ -1065,12 +1065,12 @@ class ClassParameterServer(HonestServer):
 
     def closed_form_april(self, shared_data):
         # recover patch embeddings first, (APRIL paper)
-        qkv_w = self.model.model.blocks[0].attn.qkv.weight.detach().double()
+        qkv_w = self.model.model.blocks[0].attn.qkv.weight.detach().double().cpu()
         q_w, k_w, v_w = qkv_w.reshape(3, -1, qkv_w.shape[-1]).unbind()
-        qkv_g = shared_data["gradients"][4].double()
+        qkv_g = shared_data["gradients"][4].double().cpu()
         q_g, k_g, v_g = qkv_g.reshape(3, -1, qkv_g.shape[-1]).unbind()
-        A = shared_data["gradients"][1].detach().squeeze().double()
-        pos_embed = self.model.model.pos_embed.detach().squeeze().double()
+        A = shared_data["gradients"][1].detach().squeeze().double().cpu()
+        pos_embed = self.model.model.pos_embed.detach().squeeze().double().cpu()
 
         b = q_w.T @ q_g + k_w.T @ k_g + v_w.T @ v_g
         z = torch.linalg.lstsq(A.T, b, driver="gelsd").solution
@@ -1078,9 +1078,9 @@ class ClassParameterServer(HonestServer):
         z = z[1:]
 
         # recover img
-        em_w = self.model.model.patch_embed.proj.weight.detach().double()
+        em_w = self.model.model.patch_embed.proj.weight.detach().double().cpu()
         em_w = em_w.reshape((em_w.shape[0], -1))
-        em_b = self.model.model.patch_embed.proj.bias.detach().double()
+        em_b = self.model.model.patch_embed.proj.bias.detach().double().cpu()
 
         x = z - em_b
         x = torch.linalg.lstsq(em_w, x.T, driver="gelsd").solution
@@ -1088,7 +1088,7 @@ class ClassParameterServer(HonestServer):
         x = x.transpose(1, 2)
         x = self.recover_patch(x)
 
-        return x.float()
+        return x.float().to(**self.setup)
 
     class ModifiedBlock(torch.nn.Module):
         def __init__(self, old_Block):

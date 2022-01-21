@@ -402,7 +402,7 @@ class MaliciousTransformerServer(HonestServer):
 
         # Define "probe" function / measurement vector:
         # Probe Length is embedding_dim minus v_proportion minus skip node
-        measurement_scale = self.cfg_server.param_modification.measurment_scale
+        measurement_scale = self.cfg_server.param_modification.measurement_scale
         v_length = self.cfg_server.param_modification.v_length
         probe_dim = embedding_dim - v_length - 1
         weights = torch.randn(probe_dim, **self.setup)

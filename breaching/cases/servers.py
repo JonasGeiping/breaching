@@ -10,6 +10,7 @@ from .malicious_modifications.analytic_transformer_utils import (
     set_MHA,
     set_flow_backward_layer,
     disable_mha_layer,
+    partially_norm_position,
     make_imprint_layer,
 )
 
@@ -401,11 +402,12 @@ class MaliciousTransformerServer(HonestServer):
 
         # Define "probe" function / measurement vector:
         # Probe Length is embedding_dim minus v_proportion minus skip node
+        measurement_scale = self.cfg_server.param_modification.measurement_scale
         v_length = self.cfg_server.param_modification.v_length
         probe_dim = embedding_dim - v_length - 1
         weights = torch.randn(probe_dim, **self.setup)
         std, mu = torch.std_mean(weights)  # correct sample toward perfect mean and std
-        probe = (weights - mu) / std / torch.as_tensor(probe_dim, **self.setup).sqrt()
+        probe = (weights - mu) / std / torch.as_tensor(probe_dim, **self.setup).sqrt() * measurement_scale
 
         measurement = torch.zeros(embedding_dim, **self.setup)
         measurement[v_length:-1] = probe
@@ -414,6 +416,11 @@ class MaliciousTransformerServer(HonestServer):
         partially_disable_embedding(embedding, v_length)
         if hasattr(pos_encoder, "embedding"):
             partially_disable_embedding(self.model.pos_encoder.embedding, v_length)
+            partially_norm_position(self.model.pos_encoder.embedding, v_length)
+
+            # Maybe later:
+            # self.model.pos_encoder.embedding.weight.data[:, v_length : v_length * 4] = 0
+            # embedding.weight.data[:, v_length * 4 :] = 0
 
         # Modify the first attention mechanism in the model:
         # Set QKV modifications in-place:
@@ -430,7 +437,7 @@ class MaliciousTransformerServer(HonestServer):
         )
 
         # Take care of second linear layers, and unused mha layers first
-        set_flow_backward_layer(second_layers)
+        set_flow_backward_layer(second_layers, eps=self.cfg_server.param_modification.eps)
         disable_mha_layer(unused_mha)
 
         # Evaluate feature distribution of this model
@@ -695,6 +702,7 @@ class ClassParameterServer(HonestServer):
 
     def binary_attack(self, user, extra_info):
         import numpy as np
+
         feat_value = extra_info["feat_value"]
         num_target_data = extra_info["num_target_data"]
         num_data_points = extra_info["num_data_points"]
@@ -720,6 +728,7 @@ class ClassParameterServer(HonestServer):
 
         # recover gradients
         import copy
+
         curr_grad = copy.deepcopy(list(self.feat_grad[0]))
         curr_grad[-1] = curr_grad[-1] * num_data_points
         curr_grad[:-1] = [grad_ii * num_data_points / extra_info["multiplier"] for grad_ii in curr_grad[:-1]]
@@ -736,7 +745,6 @@ class ClassParameterServer(HonestServer):
         return single_gradients
 
     def binary_attack_helper(self, user, extra_info, feat_01_values):
-        import math
 
         if len(self.all_feat_value) >= self.num_target_data:
             return 1
@@ -786,12 +794,8 @@ class ClassParameterServer(HonestServer):
                     log.info(f"Too many attempts ({self.counter}) on this feature!")
                     return 0
 
-            feat_candidates = [
-                               feat_1_value, 
-                               (feat_01_value + feat_1_value) / 2, 
-                               (feat_01_value + feat_0_value) / 2
-                              ]
-                            
+            feat_candidates = [feat_1_value, (feat_01_value + feat_1_value) / 2, (feat_01_value + feat_0_value) / 2]
+
             for feat_cand in feat_candidates:
                 if not self.check_with_tolerance(feat_cand, self.visited):
                     new_feat_01_values.append(feat_cand)
@@ -980,7 +984,7 @@ class ClassParameterServer(HonestServer):
         loss_fn = extra_info["loss_fn"]
         setup = extra_info["setup"]
         self.reset_model()
-        self.reconfigure_model('cls_attack', extra_info=extra_info)
+        self.reconfigure_model("cls_attack", extra_info=extra_info)
 
         if cfg.case.data.examples_from_split == "validation":
             data_per_class = 40
@@ -994,37 +998,39 @@ class ClassParameterServer(HonestServer):
             shared_data, _ = user.compute_local_updates(server_payload)
             num_target = int(torch.count_nonzero((shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int)))
             if num_target != 0:
-                est_features.append(torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu().numpy())
+                est_features.append(
+                    torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu().numpy()
+                )
                 sample_sizes.append(num_target)
-            
+
         est_features = np.vstack(est_features)
         sample_sizes = np.array(sample_sizes)
 
         return est_features.T, sample_sizes
-    
+
     def estimate_gt_stats(self, est_features, sample_sizes, indx=0):
         import numpy as np
 
         aggreg_data = []
         est_feature = est_features[indx]
-        
+
         for i in range(len(est_feature)):
             feat_i = est_feature[i]
             size_i = sample_sizes[i]
-            aggreg_data.append(feat_i * (size_i ** (1/2)))
+            aggreg_data.append(feat_i * (size_i ** (1 / 2)))
 
         return np.mean(est_feature), np.std(aggreg_data)
-    
+
     def find_best_feat(self, est_features, sample_sizes, method="kstest"):
         import numpy as np
         from scipy import stats
-        
+
         if "kstest" in method:
             p_values = []
             for i in range(len(est_features)):
                 tmp_series = est_features[i]
                 tmp_series = (tmp_series - np.mean(tmp_series)) / np.std(tmp_series)
-                p_values.append((np.std(tmp_series), stats.kstest(tmp_series, 'norm').pvalue)[1])
+                p_values.append((np.std(tmp_series), stats.kstest(tmp_series, "norm").pvalue)[1])
         elif "most-spread" in method or "most-high-mean" in method:
             means = []
             stds = []
@@ -1039,22 +1045,22 @@ class ClassParameterServer(HonestServer):
                 return np.argmax(means)
         else:
             raise ValueError(f"Method {method} not implemented.")
-            
+
         return np.argmax(p_values)
 
     def recover_patch(self, x):
         # retile img
         p_num_2, p_size_2 = x.shape[1:]
-        p_num = int(p_num_2 ** (1/2))
-        p_size = int(p_size_2 ** (1/2))
-        img_size = int((p_num_2 * p_size_2) ** (1/2))
+        p_num = int(p_num_2 ** (1 / 2))
+        p_size = int(p_size_2 ** (1 / 2))
+        img_size = int((p_num_2 * p_size_2) ** (1 / 2))
         x = x.reshape((3, p_num, p_num, p_size, p_size))
         new_x = torch.zeros_like(x).reshape((3, img_size, img_size))
-        
+
         for i in range(p_num):
             for j in range(p_num):
-                new_x[:, i * p_size:(i + 1) * p_size, j * p_size:(j + 1) * p_size] = x[:, i, j, :]
-                
+                new_x[:, i * p_size : (i + 1) * p_size, j * p_size : (j + 1) * p_size] = x[:, i, j, :]
+
         return new_x
 
     def closed_form_april(self, shared_data):

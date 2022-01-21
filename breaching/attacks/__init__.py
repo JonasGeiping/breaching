@@ -5,7 +5,7 @@ from .optimization_based_attack import OptimizationBasedAttacker
 from .multiscale_optimization_attack import MultiScaleOptimizationAttacker
 from .optimization_with_label_attack import OptimizationJointAttacker
 from .optimization_permutation_attack import OptimizationPermutationAttacker
-from .analytic_attack import AnalyticAttacker, ImprintAttacker, DecepticonAttacker
+from .analytic_attack import AnalyticAttacker, ImprintAttacker, DecepticonAttacker, AprilAttacker
 from .recursive_attack import RecursiveAttacker
 
 
@@ -16,6 +16,8 @@ def prepare_attack(model, loss, cfg_attack, setup):
         attacker = MultiScaleOptimizationAttacker(model, loss, cfg_attack, setup)
     elif cfg_attack.attack_type == "analytic":
         attacker = AnalyticAttacker(model, loss, cfg_attack, setup)
+    elif cfg_attack.attack_type == "april-analytic":
+        attacker = AprilAttacker(model, loss, cfg_attack, setup)
     elif cfg_attack.attack_type == "imprint-readout":
         attacker = ImprintAttacker(model, loss, cfg_attack, setup)
     elif cfg_attack.attack_type == "decepticon-readout":

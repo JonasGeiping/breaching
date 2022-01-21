@@ -25,7 +25,9 @@ def report(
     model.to(**setup)
     metadata = server_payload[0]["metadata"]
     if metadata["modality"] == "text":
-        modality_metrics = _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, cfg_case)
+        modality_metrics = _run_text_metrics(
+            reconstructed_user_data, true_user_data, server_payload, cfg_case, order_batch
+        )
     else:
         modality_metrics = _run_vision_metrics(
             reconstructed_user_data,
@@ -74,6 +76,7 @@ def report(
     if metadata["modality"] == "text":
         m = modality_metrics
         test_word_acc = count_integer_overlap(reconstructed_user_data["data"].view(-1), true_user_data["data"].view(-1))
+        m["token_acc"] = test_word_acc
         log.info(
             f"METRICS: | Accuracy: {m['accuracy']:2.4f} | S-BLEU: {m['sacrebleu']:4.2f} | FMSE: {feat_mse:2.4e} | "
             + "\n"
@@ -94,16 +97,33 @@ def report(
     return metrics
 
 
-def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, cfg_case):
+def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, cfg_case, order_batch=True):
     import datasets
     from ..cases.data.datasets_text import _get_tokenizer
+
+    text_metrics = dict()
 
     candidate_metrics = ["accuracy", "bleu", "rouge", "google_bleu", "sacrebleu"]
     metrics = {name: datasets.load_metric(name) for name in candidate_metrics}
 
     tokenizer = _get_tokenizer(server_payload[0]["metadata"]["tokenizer"], cache_dir=cfg_case.data.path)
 
-    text_metrics = dict()
+    if order_batch:
+        order = compute_text_order(reconstructed_user_data, true_user_data)
+        reconstructed_user_data["data"] = reconstructed_user_data["data"][order]
+        if reconstructed_user_data["labels"] is not None:
+            reconstructed_user_data["labels"] = reconstructed_user_data["labels"][order]
+    else:
+        order = None
+    text_metrics["order"] = order
+
+    # Per sentence token overlap:
+    B = reconstructed_user_data["data"].shape[0]
+    overlaps = []
+    for rec_sentence, ref_sentence in zip(reconstructed_user_data["data"], true_user_data["data"]):
+        overlaps.append(count_integer_overlap(rec_sentence, ref_sentence))
+    text_metrics["intra-sentence_token_acc"] = overlaps
+
     # Accuracy:
     for rec_example, ref_example in zip(reconstructed_user_data["data"], true_user_data["data"]):
         metrics["accuracy"].add_batch(predictions=rec_example, references=ref_example)
@@ -126,7 +146,10 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
         ref_sentence = tokenizer.batch_decode(true_user_data["data"])
 
         num_sentences = len(rec_sentence)
-        score = metrics[name].compute(predictions=rec_sentence, references=[ref_sentence] * num_sentences)
+        if name == "rouge":
+            score = metrics[name].compute(predictions=rec_sentence, references=ref_sentence)
+        else:
+            score = metrics[name].compute(predictions=rec_sentence, references=[ref_sentence] * num_sentences)
         if name == "sacrebleu":
             text_metrics[name] = score["score"] / 100
         else:
@@ -274,6 +297,25 @@ def compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalize
         print("Returning trivial order...")
         rec_assignment = list(range(B))
     return torch.as_tensor(rec_assignment, device=setup["device"], dtype=torch.long)
+
+
+def compute_text_order(reconstructed_user_data, true_user_data):
+    from scipy.optimize import linear_sum_assignment  # Again a lazy import
+
+    """Simple text ordering based just on token overlap."""
+    B = reconstructed_user_data["data"].shape[0]
+    overlaps = torch.zeros(B, B, device=true_user_data["data"].device)
+    for (idx, rec_sentence) in enumerate(reconstructed_user_data["data"]):
+        for (idy, ref_sentence) in enumerate(true_user_data["data"]):
+            overlap = count_integer_overlap(rec_sentence, ref_sentence)
+            overlaps[idx, idy] = overlap
+    try:
+        _, rec_assignment = linear_sum_assignment(overlaps.T.cpu().numpy(), maximize=True)
+    except ValueError:
+        print(f"ValueError from overlap matrix {overlaps.cpu().numpy()}")
+        print("Returning trivial order...")
+        rec_assignment = list(range(B))
+    return torch.as_tensor(rec_assignment, device=true_user_data["data"].device, dtype=torch.long)
 
 
 def normalize_tensor(in_feat, eps=1e-10):

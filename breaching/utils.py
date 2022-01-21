@@ -259,6 +259,11 @@ def save_reconstruction(
 def dump_metrics(cfg, metrics):
     """Simple yaml dump of metric values."""
     filepath = f"metrics_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.yaml"
-    sanitized_metrics = {metric: np.asarray(val).item() for metric, val in metrics.items()}
+    sanitized_metrics = dict()
+    for metric, val in metrics.items():
+        try:
+            sanitized_metrics[metric] = np.asarray(val).item()
+        except ValueError:
+            sanitized_metrics[metric] = np.asarray(val).tolist()
     with open(filepath, "w") as yaml_file:
         yaml.dump(sanitized_metrics, yaml_file, default_flow_style=False)

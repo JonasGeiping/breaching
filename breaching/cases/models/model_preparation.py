@@ -199,6 +199,17 @@ def _construct_vision_model(cfg_model, cfg_data, pretrained=True, **kwargs):
                         state_dict[sanitized_key] = val
 
                     model.load_state_dict(state_dict, strict=True)  # The fc layer is not actually loaded here
+            elif "vit_base_april" in cfg_model:
+                import timm  # lazily import
+
+                # timm models are listed at https://github.com/rwightman/pytorch-image-models/blob/master/results/results-imagenet.csv
+                model = timm.create_model("vit_base_patch16_224", pretrained=pretrained)
+                model.blocks[0] = ModifiedBlock(model.blocks[0])
+            elif "vit_small_april" in cfg_model:
+                import timm
+
+                model = timm.create_model("vit_small_patch16_224", pretrained=pretrained)
+                model.blocks[0] = ModifiedBlock(model.blocks[0])
             elif "vit_base" in cfg_model:
                 import timm  # lazily import
 
@@ -208,6 +219,7 @@ def _construct_vision_model(cfg_model, cfg_data, pretrained=True, **kwargs):
                 import timm
 
                 model = timm.create_model("vit_small_patch16_224", pretrained=pretrained)
+
             elif "linear" == cfg_model:
                 input_dim = cfg_data.shape[0] * cfg_data.shape[1] * cfg_data.shape[2]
                 model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(input_dim, classes))
@@ -489,3 +501,17 @@ class _Select(torch.nn.Module):
 
     def forward(self, x):
         return x[:, : self.n]
+
+
+class ModifiedBlock(torch.nn.Module):
+    def __init__(self, old_Block):
+        super().__init__()
+        self.attn = old_Block.attn
+        self.drop_path = old_Block.drop_path
+        self.norm2 = old_Block.norm2
+        self.mlp = old_Block.mlp
+
+    def forward(self, x):
+        x = self.attn(x)
+        x = self.drop_path(self.mlp((self.norm2(x))))
+        return x

@@ -7,9 +7,12 @@ has_external_data: True
 num_queries: 1
 
 param_modification:
-  sequence_token_weight: 1000
-  imprint_sentence_position: 0
-  softmax_skew: 10000
+  sequence_token_weight: 1
+  imprint_sentence_position: 0 # positions other than 0 are not implemented for more than one head
+  softmax_skew: 10000000
 
   attention_block_idx: 0
-  v_length: 8
+  v_length: 6
+  eps: 1e-4
+
+  measurement_scale: 1.0

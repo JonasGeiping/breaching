@@ -14,3 +14,5 @@ param_modification:
   attention_block_idx: 0
   v_length: 6
   eps: 1e-4
+
+  measurement_scale: 1.0

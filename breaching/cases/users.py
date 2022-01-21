@@ -100,16 +100,23 @@ class UserSingleStep(torch.nn.Module):
         if self.clip_value > 0:
             self.defense_repr.append(f"Defense: Gradient clipping to maximum of {self.clip_value}.")
 
-    def compute_local_updates(self, server_payload):
+    def compute_local_updates(self, server_payload, custom_data=None):
         """Compute local updates to the given model based on server payload.
 
         Batchnorm behavior:
         If public buffers are sent by the server, then the user will be set into evaluation mode
         Otherwise the user is in training mode and sends back buffer based on .provide_buffers.
 
-        Shared labels are canonically sorted for simplicity."""
+        Shared labels are canonically sorted for simplicity.
+
+        Optionally custom data can be directly inserted here, superseding actual user data.
+        Use this behavior only for demonstrations.
+        """
         self.counted_queries += 1
-        data = self._load_data()
+        if custom_data is None:
+            data = self._load_data()
+        else:
+            data = custom_data
         B = data["labels"].shape[0]
         # Compute local updates
         shared_grads = []

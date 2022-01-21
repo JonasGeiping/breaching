@@ -110,37 +110,6 @@ def set_MHA(
     attention_layer.out_proj.weight.data = sequence_token_weight * torch.eye(qkv_shape // 3)
 
 
-def make_forward_passing_imprint_layer(first_linear_layer, second_linear_layer, measurement, mean, std):
-    """
-    measurement is the Gaussian vector we take inner product w.r.t.
-    mean, std = mean, std of features from feature_distribution
-    """
-
-    def _get_bins(mean, std, num_bins):
-        bins = []
-        mass_per_bin = 1 / (num_bins)
-        bins.append(-10)  # -Inf is not great here, but NormalDist(mu=0, sigma=1).cdf(10) approx 1
-        for i in range(1, num_bins):
-            bins.append(NormalDist().inv_cdf(i * mass_per_bin) * std + mean)
-        return bins
-
-    def _make_biases(bias_layer, bins):
-        new_biases = torch.zeros_like(bias_layer.data)
-        for i in range(new_biases.shape[0]):
-            new_biases[i] = -bins[i]
-        return new_biases
-
-    bin_dim = first_linear_layer.weight.data.shape[0]
-    bins = _get_bins(mean, std, bin_dim)
-    first_linear_layer.weight.data = measurement.repeat(bin_dim, 1)
-    first_linear_layer.bias.data = _make_biases(first_linear_layer.bias, bins)
-
-    # We set the second linear layer in the ff to minimally modify (b/c skip connection)
-    second_linear_layer.weight.data.zero_()
-    second_linear_layer.weight.data[-1] = 0.001 * torch.ones_like(second_linear_layer.weight.data[0])
-    second_linear_layer.bias.data.zero_()
-
-
 def set_flow_backward_layer(second_layers, eps=1e-4):
     """
     here we set the second linear layer in the ff block to accumulate everything
@@ -150,7 +119,6 @@ def set_flow_backward_layer(second_layers, eps=1e-4):
 
     for layer in second_layers:
         layer.weight.data.zero_()
-        print(layer.weight.shape)
         layer.weight.data[-1] = eps / layer.weight.data.shape[1]
         layer.bias.data.zero_()
 
@@ -194,6 +162,3 @@ def make_imprint_layer(first_layers, measurement, mean, std):
     for i, layer in enumerate(first_layers):
         layer.weight.data = measurement.repeat(hidden_dim, 1)
         layer.bias.data = _make_biases(layer.bias, bins[(i * bins_per_layer) : ((i + 1) * bins_per_layer)])
-
-    # first_linear_layer.weight.data = measurement.repeat(hidden_dim, 1)
-    # first_linear_layer.bias.data = _make_biases(first_linear_layer.bias, bins)

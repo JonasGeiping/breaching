@@ -133,7 +133,7 @@ def main_process(
 
             counter += 1
             if counter == num_trials:
-                return num_of_catches, num_trials
+                return np.array(num_of_catches), num_trials
     
     return np.array(num_of_catches), num_trials
 

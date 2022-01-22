@@ -165,9 +165,9 @@ class DecepticonAttacker(AnalyticAttacker):
             weight_grad = weight_grad[order]
 
         if server_secrets["ImprintBlock"]["structure"] == "cumulative":
-            for i in reversed(list(range(1, weight_grad.shape[0]))):
-                weight_grad[i] -= weight_grad[i - 1]
-                bias_grad[i] -= bias_grad[i - 1]
+            for i in range(0, weight_grad.shape[0] - 1):
+                weight_grad[i] -= weight_grad[i + 1]
+                bias_grad[i] -= bias_grad[i + 1]
 
         # Here are our reconstructed positionally encoded embeddings:
         valid_classes = bias_grad != 0

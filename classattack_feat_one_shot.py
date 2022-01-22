@@ -32,6 +32,7 @@ def main_launcher(cfg):
     cfg.case.data.name = "ImageNet"
     cfg.case.data.examples_from_split = "train"
     cfg.case.data.default_clients = 1000
+    cfg.case.data.partition = "feat_est"
 
     with open_dict(cfg):
         cfg.case.data.num_data_points = cfg.case.user.num_data_points
@@ -43,6 +44,7 @@ def main_launcher(cfg):
 
     log.info("-----------------Final Results-------------------------------")
     log.info(f"Total {num_trials} attempts")
+    log.info(f"P(catch 0) = {round(len(num_of_catches[num_of_catches == 0]) / num_trials, 2)}")
     log.info(f"P(catch 1) = {round(len(num_of_catches[num_of_catches == 1]) / num_trials, 2)}")
     log.info(f"P(catch 2) = {round(len(num_of_catches[num_of_catches == 2]) / num_trials, 2)}")
     log.info(f"P(catch 3) = {round(len(num_of_catches[num_of_catches == 3]) / num_trials, 2)}")
@@ -60,6 +62,10 @@ def main_process(
     """This function controls the central routine."""
     local_time = time.time()
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
+
+    # device = torch.device(f'cuda') if torch.cuda.is_available() else torch.device('cpu')
+    # torch.backends.cudnn.benchmark = cfg.case.impl.benchmark
+    # setup = dict(device=device, dtype=getattr(torch, cfg.case.impl.dtype))
 
     if cfg.num_trials is not None:
         num_trials = cfg.num_trials
@@ -101,11 +107,15 @@ def main_process(
         extra_info['feat_value'] = stats.norm.ppf(0.1, est_mean, est_std)
         server.reconfigure_model('cls_attack', extra_info=extra_info)
         server.reconfigure_model('feature_attack', extra_info=extra_info)
+        server.model = server.model.to(**server.setup)
+        server_payload = server.distribute_payload()
 
         log.info(f"Now start one-shot attack")
 
         num_to_test = 1000 - num_to_est
         start_ind = num_to_est // 10
+        cfg.case.user.num_data_points = 10
+        cfg.case.data.num_data_points = cfg.case.user.num_data_points
 
         for i in range((num_to_test // 10) - 1):
             cfg.case.user.user_idx = start_ind + i
@@ -114,7 +124,6 @@ def main_process(
             
             cfg.case.data.num_data_points = cfg.case.user.num_data_points
             user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
-            server_payload = server.distribute_payload()
             shared_data, true_user_data = user.compute_local_updates(server_payload)
             
             logtis = server.model(true_user_data["data"])[:, [cls_to_obtain]]
@@ -126,7 +135,7 @@ def main_process(
             if counter == num_trials:
                 return num_of_catches, num_trials
     
-    return num_of_catches, num_trials
+    return np.array(num_of_catches), num_trials
 
 if __name__ == "__main__":
     main_launcher()

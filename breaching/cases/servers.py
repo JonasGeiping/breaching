@@ -427,7 +427,7 @@ class MaliciousTransformerServer(HonestServer):
 
         # Take care of second linear layers, and unused mha layers first
         set_flow_backward_layer(
-            lookup["second_linear_layers"], ff_transposed, eps=self.cfg_server.param_modification.eps
+            lookup["second_linear_layers"], ff_transposed=ff_transposed, eps=self.cfg_server.param_modification.eps
         )
         disable_mha_layer(lookup["unused_mha_outs"])
 

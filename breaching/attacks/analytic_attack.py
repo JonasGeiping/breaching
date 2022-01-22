@@ -252,7 +252,6 @@ class DecepticonAttacker(AnalyticAttacker):
                 if num_entries > shape[1]:
                     break
             final_threshold = trial_tresholds[::-1][idx - 1]
-
             already_assigned = set()
             initial_labels = -torch.ones(corrs.shape[0], dtype=torch.long)
             total_groups = 0
@@ -266,7 +265,8 @@ class DecepticonAttacker(AnalyticAttacker):
                         already_assigned |= set(filtered_matches.tolist())
                     if total_groups == shape[0]:
                         break
-
+            if total_groups < shape[0]:
+                raise ValueError(f"Could not assemble enough seed vectors searching on threshold at {final_threshold}.")
             # Find seeds
             seeds = torch.zeros(shape[0], sentence_id_components.shape[-1])  # seeds for every sentence
             label_ids = initial_labels.unique()
@@ -274,6 +274,7 @@ class DecepticonAttacker(AnalyticAttacker):
                 seeds[idx] = sentence_id_components[initial_labels == group_label].mean(dim=0)
             replicated_seeds = torch.repeat_interleave(seeds, shape[1], dim=0)  # Replicate seeds to seq_length
             # Recompute correlations based on these mean seeds
+
             order_breach_to_seed, _ = self._match_embeddings(replicated_seeds, sentence_id_components)
             sentence_labels = (order_breach_to_seed / shape[1]).to(dtype=torch.long)
 

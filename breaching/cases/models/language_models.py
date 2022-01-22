@@ -133,7 +133,7 @@ class PositionalEncoding(nn.Module):
 class LearnablePositionalEmbedding(torch.nn.Module):
     """Shorthand for a learnable embedding."""
 
-    def __init__(self, embed_dim, max_position_embeddings=4096, dropout=0.0):
+    def __init__(self, embed_dim, max_position_embeddings=1024, dropout=0.0):
         super().__init__()
         self.embedding = torch.nn.Embedding(max_position_embeddings, embed_dim)
         self.dropout = torch.nn.Dropout(p=dropout)

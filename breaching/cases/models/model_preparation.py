@@ -110,6 +110,9 @@ def _construct_text_model(cfg_model, cfg_data, pretrained=True, **kwargs):
             if cfg_model == "gpt2S":
                 cfg_model = "gpt2"
                 extra_args = dict(activation_function="relu", resid_pdrop=0.0, embd_pdrop=0.0, attn_pdrop=0.0)
+            elif cfg_model == "bert-sanity-check":
+                cfg_model = "bert-base-uncased"
+                extra_args = dict(hidden_act="relu", hidden_dropout_prob=0.0, attention_probs_dropout_prob=0.0)
             else:
                 extra_args = dict()
             if pretrained:

@@ -75,6 +75,112 @@ def set_MHA(
     softmax_skew=1000000,
     v_length=6,
 ):
+    # Q,K,V matrices stored as single array (default) or as three separate arrays (bert) as in huggingface bert
+    if attention_layer["mode"] == "default":
+        _set_default_MHA(
+            attention_layer,
+            norm_layer0,
+            pos_encoder,
+            embedding_dim,
+            ff_transposed,
+            data_shape,
+            sequence_token_weight=1,
+            imprint_sentence_position=0,  # This position will be imprinted onto the sentence via attention
+            softmax_skew=1000000,
+            v_length=6,
+        )
+    elif attention_layer["mode"] == "bert":
+        _set_bert_MHA(
+            attention_layer,
+            norm_layer0,
+            pos_encoder,
+            embedding_dim,
+            ff_transposed,
+            data_shape,
+            sequence_token_weight=1,
+            imprint_sentence_position=0,  # This position will be imprinted onto the sentence via attention
+            softmax_skew=1000000,
+            v_length=6,
+        )
+    else:
+        raise ValueError(f"Invalid MHA mode {attention_layer['mode']} given.")
+
+
+def _set_bert_MHA(
+    attention_layer,
+    norm_layer0,
+    pos_encoder,
+    embedding_dim,
+    ff_transposed,
+    data_shape,
+    sequence_token_weight=1,
+    imprint_sentence_position=0,  # This position will be imprinted onto the sentence via attention
+    softmax_skew=1000000,
+    v_length=6,
+):
+    # Let's set the query matrix to produce just the first positional encoding (or could be any index - might want last index)
+    if ff_transposed:
+        qkv_shape = attention_layer["query"].weight.data.shape[1]
+        log.info(f"Found attention of shape {attention_layer['query'].weight.T.shape}.")
+    else:
+        qkv_shape = attention_layer["query"].weight.data.shape[0]
+        log.info(f"Found attention of shape {attention_layer['query'].weight.data.shape}.")
+
+    # These are the positional embeddings after layer normalization:
+    dummy_data = torch.zeros([1, *data_shape, embedding_dim])
+    just_positions = norm_layer0(pos_encoder(dummy_data)).cpu()
+    # Q matrix setup
+    # We make the weight 0, and the bias some (large multiple of) positional encoding
+    # Only coded here for one MHA layer at the beginning of the model...
+    # Make the position super super large to skew softmax
+    attention_layer["query"].bias.data.zero_()
+    attention_layer["key"].bias.data.zero_()
+    attention_layer["value"].bias.data.zero_()
+    position_comp = just_positions[0, imprint_sentence_position, :][v_length : 2 * v_length]
+    attention_layer["query"].bias.data[v_length : 2 * v_length] = softmax_skew * position_comp
+
+    attention_layer["query"].weight.data = torch.zeros((qkv_shape, qkv_shape))
+
+    # Set V_bias to subtract positional encoding
+    v_bias = torch.zeros(qkv_shape)
+    v_bias[imprint_sentence_position : (imprint_sentence_position + v_length)] = -just_positions[
+        0, imprint_sentence_position, v_length : (2 * v_length)
+    ]
+    attention_layer["value"].bias.data = v_bias
+
+    # K matrix setup (identity)
+    if ff_transposed:
+        attention_layer["key"].weight.data = torch.eye(qkv_shape)
+    else:
+        attention_layer["key"].weight.data = torch.eye(qkv_shape)
+
+    # V matrix setup (truncated shifted identity block)
+    v_data = torch.zeros((qkv_shape, qkv_shape))
+    v_data[:v_length, v_length : (2 * v_length)] = torch.eye(v_length)
+
+    if ff_transposed:
+        attention_layer["value"].weight.data = v_data.T.contiguous()
+    else:
+        attention_layer["value"].weight.data = v_data
+    # So, (QK^T)V just adds the same vector (first word embedding) to each word in the sequence.
+
+    # Linear layer at the end of MHA - optionally can be set to small value to not 'skew' embeddings too much
+    attention_layer["output"].weight.data = sequence_token_weight * torch.eye(qkv_shape)
+    attention_layer["output"].bias.data.zero_()
+
+
+def _set_default_MHA(
+    attention_layer,
+    norm_layer0,
+    pos_encoder,
+    embedding_dim,
+    ff_transposed,
+    data_shape,
+    sequence_token_weight=1,
+    imprint_sentence_position=0,  # This position will be imprinted onto the sentence via attention
+    softmax_skew=1000000,
+    v_length=6,
+):
     # Let's set the query matrix to produce just the first positional encoding (or could be any index - might want last index)
     if ff_transposed:
         qkv_shape = attention_layer["in_proj_weight"].data.shape[1]
@@ -85,7 +191,7 @@ def set_MHA(
 
     # These are the positional embeddings after layer normalization:
     dummy_data = torch.zeros([1, *data_shape, embedding_dim])
-    just_positions = (pos_encoder(dummy_data)).cpu()
+    just_positions = norm_layer0(pos_encoder(dummy_data)).cpu()
     # Q matrix setup
     # We make the weight 0, and the bias some (large multiple of) positional encoding
     # Only coded here for one MHA layer at the beginning of the model...
@@ -113,11 +219,8 @@ def set_MHA(
         attention_layer["in_proj_weight"].data[qkv_shape // 3 : 2 * (qkv_shape // 3)] = torch.eye(qkv_shape // 3)
 
     # V matrix setup (truncated shifted identity block)
-    if v_length == qkv_shape // 3:  # Do not modify:
-        v_data = torch.eye(qkv_shape // 3)
-    else:
-        v_data = torch.zeros((qkv_shape // 3, qkv_shape // 3))
-        v_data[:v_length, v_length : (2 * v_length)] = torch.eye(v_length)
+    v_data = torch.zeros((qkv_shape // 3, qkv_shape // 3))
+    v_data[:v_length, v_length : (2 * v_length)] = torch.eye(v_length)
 
     if ff_transposed:
         attention_layer["in_proj_weight"].data[:, 2 * (qkv_shape // 3) :] = v_data.T.contiguous()

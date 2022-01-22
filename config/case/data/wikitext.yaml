@@ -3,7 +3,7 @@ modality: text
 task: causal-lm # masked-lm / causal-lm
 
 # only used when task=masked-lm:
-mlm_probability: 1
+mlm_probability: 0.15
 disable_mlm: False
 
 path: "~/data"

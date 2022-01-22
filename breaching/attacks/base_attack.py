@@ -484,7 +484,7 @@ class _BaseAttacker:
 
         if self.cfg.token_strategy == "decoder-bias":
             if decoder_bias_parameter_idx is None:
-                raise ValueError("Cannot use this strategy on a model without decoder.")
+                raise ValueError("Cannot use this strategy on a model without decoder bias.")
             # works super well for normal stuff like transformer3 without tying
 
             # This is slightly modified analytic label recovery in the style of Wainakh
@@ -492,10 +492,16 @@ class _BaseAttacker:
             token_list = []
             # Stage 1
             average_bias = torch.stack(bias_per_query).mean(dim=0)
+            average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             valid_classes = (average_bias < 0).nonzero().squeeze(dim=-1)
             token_list += [*valid_classes]
             # Supplement with missing tokens from input:
-            tokens_in_input = torch.stack(wte_per_query).mean(dim=0).norm(dim=1).nonzero().squeeze(dim=-1)
+            std, mean = torch.std_mean(average_wte_norm.log())
+            cutoff = mean + 3.5 * std
+            if not cutoff.isfinite():  # untied weights
+                tokens_in_input = average_wte_norm.nonzero().squeeze(dim=-1)
+            else:  # tied weights
+                tokens_in_input = (average_wte_norm.log() > cutoff).nonzero().squeeze(dim=-1)
             for token in tokens_in_input:
                 if token not in token_list:
                     token_list.append(token)
@@ -569,6 +575,8 @@ class _BaseAttacker:
 
             token_list = []
             # Stage 1
+            average_bias = torch.stack(bias_per_query).mean(dim=0)
+            average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             std, mean = torch.std_mean(average_wte_norm.log())
             cutoff = mean + 3 * std
             if not cutoff.isfinite():  # tied weights

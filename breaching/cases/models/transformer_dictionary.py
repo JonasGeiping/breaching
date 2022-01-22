@@ -6,6 +6,7 @@ def lookup_module_names(model_name, model):
     """New architectures have to be registered here before the decepticons can know what is where."""
 
     lookup = dict()
+
     if "transformer" in model_name:  # These are the basic transformers from language_models.py
         assert model_name in ["transformer1", "transformer3", "transformer3f", "transformer3t", "transformerS"]
 
@@ -16,6 +17,7 @@ def lookup_module_names(model_name, model):
         lookup["norm_layer1"] = model.transformer_encoder.layers[0].norm1
 
         lookup["attention_layer"] = dict()
+        lookup["attention_layer"]["mode"] = "default"
         lookup["attention_layer"]["in_proj_weight"] = model.transformer_encoder.layers[0].self_attn.in_proj_weight
         lookup["attention_layer"]["in_proj_bias"] = model.transformer_encoder.layers[0].self_attn.in_proj_bias
         lookup["attention_layer"]["out_proj_weight"] = model.transformer_encoder.layers[0].self_attn.out_proj.weight
@@ -41,10 +43,11 @@ def lookup_module_names(model_name, model):
         lookup["embedding"] = model.model.transformer.wte
         lookup["pos_encoder"] = PositionalContainer(model.model.transformer.wpe)
 
-        lookup["norm_layer0"] = model.model.transformer.h[0].ln_1
+        lookup["norm_layer0"] = torch.nn.Identity()  # Better disabled? model.model.transformer.h[0].ln_1
         lookup["norm_layer1"] = model.model.transformer.h[0].ln_2
 
         lookup["attention_layer"] = dict()
+        lookup["attention_layer"]["mode"] = "default"
         lookup["attention_layer"]["in_proj_weight"] = model.model.transformer.h[0].attn.c_attn.weight
         lookup["attention_layer"]["in_proj_bias"] = model.model.transformer.h[0].attn.c_attn.bias
         lookup["attention_layer"]["out_proj_weight"] = model.model.transformer.h[0].attn.c_proj.weight
@@ -63,6 +66,43 @@ def lookup_module_names(model_name, model):
 
         hidden_dim, embedding_dim = first_linear_layers[0].weight.T.shape
         ff_transposed = True
+        lookup["dimensions"] = hidden_dim, embedding_dim, ff_transposed
+
+    elif "bert" in model_name or "BERT" in model_name:
+        assert model_name in [
+            "bert-base-uncased",
+            "bert-large-uncased",
+            "bert-small-uncased",
+            "bert-sanity-check",
+            "huawei-noah/TinyBERT_General_4L_312D",
+        ]
+        bert = model.model.bert
+        lookup["embedding"] = bert.embeddings.word_embeddings
+        lookup["pos_encoder"] = PositionalContainer(bert.embeddings.position_embeddings)
+
+        lookup["norm_layer0"] = bert.embeddings.LayerNorm  # This would be a norm before the MHA
+        lookup["norm_layer1"] = torch.nn.Identity()  # ??? bert.encoder.layer[0].output.LayerNorm
+
+        lookup["attention_layer"] = dict()
+        lookup["attention_layer"]["mode"] = "bert"
+        lookup["attention_layer"]["query"] = bert.encoder.layer[0].attention.self.query
+        lookup["attention_layer"]["key"] = bert.encoder.layer[0].attention.self.key
+        lookup["attention_layer"]["value"] = bert.encoder.layer[0].attention.self.value
+        lookup["attention_layer"]["output"] = bert.encoder.layer[0].attention.output.dense
+
+        first_linear_layers, second_linear_layers, unused_mhas = [], [], []  # collecting all the imprint layers
+        for i, layer in enumerate(bert.encoder.layer):
+            first_linear_layers.append(layer.intermediate.dense)
+            second_linear_layers.append(layer.output.dense)
+            if i != 0:
+                unused_mhas.append(layer.attention.output.dense)
+
+        lookup["first_linear_layers"] = first_linear_layers
+        lookup["second_linear_layers"] = second_linear_layers
+        lookup["unused_mha_outs"] = unused_mhas
+
+        hidden_dim, embedding_dim = first_linear_layers[0].weight.shape
+        ff_transposed = False
         lookup["dimensions"] = hidden_dim, embedding_dim, ff_transposed
     else:
         raise ValueError(f"Unknown architecture {model_name} not registered in module lookup table!")
@@ -92,6 +132,9 @@ def lookup_grad_indices(model_name):
     elif "gpt2" in model_name:
         embedding_parameter_idx = 0
         decoder_bias_parameter_idx = None  # No decoder bias!
+    elif "bert" in model_name or "BERT" in model_name:
+        embedding_parameter_idx = 0
+        decoder_bias_parameter_idx = -5  # No decoder bias!
     else:
         raise ValueError(f"Unknown architecture {model_name} not registered in index lookup table!")
 

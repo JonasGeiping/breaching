@@ -401,6 +401,8 @@ class MaliciousTransformerServer(HonestServer):
         measurement = torch.zeros(embedding_dim, **self.setup)
         measurement[v_length:-1] = probe
 
+        # Reset the embedding:
+        lookup["embedding"].reset_parameters()
         # Disable these parts of the embedding:
         partially_disable_embedding(lookup["embedding"], v_length)
         if hasattr(lookup["pos_encoder"], "embedding"):

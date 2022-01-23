@@ -25,6 +25,7 @@ def system_startup(process_idx, local_group_size, cfg):
     log = get_log(cfg)
     torch.backends.cudnn.benchmark = cfg.case.impl.benchmark
     torch.multiprocessing.set_sharing_strategy(cfg.case.impl.sharing_strategy)
+    huggingface_offline_mode(cfg.case.impl.enable_huggingface_offline_mode)
     # 100% reproducibility?
     if cfg.case.impl.deterministic:
         set_deterministic()
@@ -274,3 +275,9 @@ def dump_metrics(cfg, metrics):
             sanitized_metrics[metric] = np.asarray(val).tolist()
     with open(filepath, "w") as yaml_file:
         yaml.dump(sanitized_metrics, yaml_file, default_flow_style=False)
+
+
+def huggingface_offline_mode(huggingface_offline_mode):
+    if huggingface_offline_mode:
+        os.environ["HF_DATASETS_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"

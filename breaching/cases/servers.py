@@ -95,6 +95,7 @@ class HonestServer:
 
     def reconfigure_model(self, model_state, query_id=0):
         """Reinitialize, continue training or otherwise modify model parameters in a benign way."""
+        self.model.cpu()  # References might have been used on GPU later on. Return to normal first.
         for name, module in self.model.named_modules():
             if model_state == "untrained":
                 if hasattr(module, "reset_parameters"):

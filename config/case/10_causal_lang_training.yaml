@@ -1,4 +1,4 @@
-name: bert_training
+name: causal_lang_training
 
 defaults:
   - data: wikitext
@@ -6,12 +6,11 @@ defaults:
   - server: honest-but-curious
   - user: local_gradient
 data:
-  tokenizer: bert-base-uncased
-  task: masked-lm
-  vocab_size: 30522
-  mlm_probability: 0.15
+  tokenizer: gpt2
+  task: causal-lm
+  vocab_size: 50257
 
-model: bert-base-uncased
+model: transformer3 # The FL model
 
 # Server and user:
 num_queries: 1

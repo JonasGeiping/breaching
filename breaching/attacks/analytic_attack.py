@@ -618,7 +618,7 @@ class AprilAttacker(AnalyticAttacker):
         # recover patch embeddings first, (APRIL paper)
         qkv_w = model.model.blocks[0].attn.qkv.weight.detach().double().cpu()
         q_w, k_w, v_w = qkv_w.reshape(3, -1, qkv_w.shape[-1]).unbind()
-        qkv_g = shared_data["gradients"][4].double()
+        qkv_g = shared_data["gradients"][4].detach().double().cpu()
         assert qkv_w.shape == qkv_g.shape
         q_g, k_g, v_g = qkv_g.reshape(3, -1, qkv_g.shape[-1]).unbind()
         A = shared_data["gradients"][1].detach().squeeze().double().cpu()

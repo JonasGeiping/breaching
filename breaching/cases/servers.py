@@ -1021,11 +1021,13 @@ class ClassParameterServer(HonestServer):
         from scipy import stats
 
         if "kstest" in method:
-            p_values = []
+            statistics = []
             for i in range(len(est_features)):
                 tmp_series = est_features[i]
                 tmp_series = (tmp_series - np.mean(tmp_series)) / np.std(tmp_series)
-                p_values.append((np.std(tmp_series), stats.kstest(tmp_series, "norm").pvalue)[1])
+                statistics.append(stats.kstest(tmp_series, "norm")[0])
+                
+            return np.argmin(statistics)
         elif "most-spread" in method or "most-high-mean" in method:
             means = []
             stds = []

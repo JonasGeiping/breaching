@@ -226,6 +226,8 @@ class DecepticonAttacker(AnalyticAttacker):
         # These are already in the right position, but which token do they belong to?
         breached_without_positions = ordered_breached_embeddings - positional_embeddings
         order_leaked_to_breached, _ = self._match_embeddings(leaked_embeddings, breached_without_positions)
+        if self.cfg.embedding_token_weight > 0:
+            pass
         recovered_tokens = leaked_tokens[order_leaked_to_breached].view([len_data, *data_shape])
 
         reconstructed_data = dict(data=recovered_tokens, labels=recovered_tokens)
@@ -245,7 +247,7 @@ class DecepticonAttacker(AnalyticAttacker):
 
         elif algorithm == "dynamic-threshold":
             corrs = torch.as_tensor(np.corrcoef(sentence_id_components.contiguous().detach().numpy()))
-            trial_tresholds = 1.5 - np.geomspace(1, 0.5, 100)
+            trial_tresholds = 1.5 - np.geomspace(1, 0.5, 2000)
             num_entries = []
             for idx, threshold in enumerate(trial_tresholds[::-1]):
                 num_entries = (corrs > threshold).sum(dim=-1).max()
@@ -266,7 +268,7 @@ class DecepticonAttacker(AnalyticAttacker):
                     if total_groups == shape[0]:
                         break
             if total_groups < shape[0]:
-                raise ValueError(f"Could not assemble enough seed vectors searching on threshold at {final_threshold}.")
+                raise ValueError(f"Could assemble only {total_groups} seeds searching on threshold {final_threshold}.")
             # Find seeds
             seeds = torch.zeros(shape[0], sentence_id_components.shape[-1])  # seeds for every sentence
             label_ids = initial_labels[initial_labels != -1].unique()  # Skip over -1 here

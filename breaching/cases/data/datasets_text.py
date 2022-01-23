@@ -167,10 +167,10 @@ def _split_wikipedia_into_articles(dataset, user_idx=0, return_full_dataset=Fals
         clean_line_ids = []
         article_counter = 0
         for idx, line in enumerate(dataset["text"]):
-            if " = " in line:
+            if " = " in line and " ; " not in line:  # exclude table headers
                 if line.count("=") == 2 and len(line) < 100:
                     article_counter += 1
-                    # print(f"Including article {article_counter}: {line}")
+                    # print(f"Checking article {article_counter}: {line} at idx {idx}")
             elif len(line) < min_length:
                 pass
             else:
@@ -178,7 +178,10 @@ def _split_wikipedia_into_articles(dataset, user_idx=0, return_full_dataset=Fals
                     clean_line_ids.append(idx)
             if article_counter > user_idx + 1:
                 break
-        dataset = dataset.select(clean_line_ids)
+        if len(clean_line_ids) > 0:
+            dataset = dataset.select(clean_line_ids)
+        else:
+            raise ValueError("This user does not exist or has no data.")
     return dataset
 
 

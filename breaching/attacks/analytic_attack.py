@@ -146,6 +146,7 @@ class DecepticonAttacker(AnalyticAttacker):
             ff_transposed = server_secrets["ImprintBlock"]["ff_transposed"]
         else:
             raise ValueError(f"No imprint hidden in model {rec_models[0]} according to server.")
+        [model.eval() for model in rec_models]
 
         leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models[0].name).view(-1)
         leaked_embeddings = lookup["norm_layer1"](lookup["embedding"](leaked_tokens))
@@ -177,7 +178,7 @@ class DecepticonAttacker(AnalyticAttacker):
             best_guesses = torch.topk(
                 weight_grad.mean(dim=1)[bias_grad != 0].abs(), len_data * data_shape[0], largest=True
             )
-            # best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len_data * data_shape[0], largest=False)
+            best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len_data * data_shape[0], largest=False)
             log.info(f"Reduced to {len_data * data_shape[0]} hits.")
             # print(best_guesses.indices.sort().values)
             breached_embeddings = breached_embeddings[best_guesses.indices]
@@ -219,8 +220,7 @@ class DecepticonAttacker(AnalyticAttacker):
         # Then fill up the missing locations:
         if len(breached_embeddings) < len(positional_embeddings):
             free_positions = (ordered_breached_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
-            if len(breached_embeddings) < len(free_positions):
-                import ipdb; ipdb.set_trace()
+            assert len(breached_embeddings) > len(free_positions)
             miss_to_pos, costs = self._match_embeddings(breached_embeddings, positional_embeddings[free_positions])
             ordered_breached_embeddings[free_positions] = breached_embeddings[miss_to_pos]
 
@@ -239,7 +239,7 @@ class DecepticonAttacker(AnalyticAttacker):
                 max_corr = self.vcorrcoef(all_token_embeddings.detach()[1:].cpu().numpy(), entry)
                 val, loc = torch.as_tensor(max_corr).max(dim=0)
                 if val * self.cfg.embedding_token_weight > costs[idx]:
-                    log.info(f"Replaced token {idx} with cost {costs[idx]} with new token with cost {val}")
+                    log.info(f"Replaced token {idx} with corr {costs[idx]} with new token with corr {val}")
                     recovered_tokens[idx] = loc + 1
 
         # Finally re-order into sentences:
@@ -261,8 +261,8 @@ class DecepticonAttacker(AnalyticAttacker):
 
         elif algorithm == "dynamic-threshold":
             corrs = torch.as_tensor(np.corrcoef(sentence_id_components.double().detach().numpy()))
-            upper_range = [1 - 1.5**float(n) for n in torch.arange(-96, -16)]
-            lower_range = 1.5 - np.geomspace(1, 0.5, 2000)[:-1]
+            upper_range = [1 - 1.5 ** float(n) for n in torch.arange(-96, -16)]
+            lower_range = 1.001 - np.geomspace(1, 0.001, 2000)[:-1]
             trial_tresholds = [*lower_range, *upper_range]
             num_entries = []
             for idx, threshold in enumerate(trial_tresholds[::-1]):

@@ -57,41 +57,46 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     )
 
     cfg.case.user.user_idx = -1
+    run = 0
     overall_metrics = []
-    for run in range(num_trials):
+    while run < num_trials:
         # Select data that has not been seen before:
         cfg.case.user.user_idx += 1
         user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
-        log.info(f"Now evaluating indices {user.user_idx} in trial {run}.")
-        # Run exchange
-        shared_user_data, payloads, true_user_data = server.run_protocol(user)
-        # Evaluate attack:
-        reconstruction, stats = attacker.reconstruct(payloads, shared_user_data, server.secrets, dryrun=cfg.dryrun)
+        if len(user.dataloader.dataset) < user.num_data_points:
+            log.info(f"Skipping user {user.user_idx} (has not enough data).")
+        else:
+            log.info(f"Now evaluating user {user.user_idx} in trial {run}.")
+            run += 1
+            # Run exchange
+            shared_user_data, payloads, true_user_data = server.run_protocol(user)
+            # Evaluate attack:
+            reconstruction, stats = attacker.reconstruct(payloads, shared_user_data, server.secrets, dryrun=cfg.dryrun)
 
-        # Run the full set of metrics:
-        metrics = breaching.analysis.report(
-            reconstruction,
-            true_user_data,
-            payloads,
-            server.model,
-            order_batch=True,
-            compute_full_iip=True,
-            compute_rpsnr=True,
-            compute_ssim=True,
-            cfg_case=cfg.case,
-            setup=setup,
-        )
+            # Run the full set of metrics:
+            metrics = breaching.analysis.report(
+                reconstruction,
+                true_user_data,
+                payloads,
+                server.model,
+                order_batch=True,
+                compute_full_iip=True,
+                compute_rpsnr=True,
+                compute_ssim=True,
+                cfg_case=cfg.case,
+                setup=setup,
+            )
 
-        # Save local summary:
-        breaching.utils.save_summary(
-            cfg, metrics, stats, user.counted_queries, time.time() - local_time, original_cwd=False
-        )
-        overall_metrics.append(metrics)
-        # Save recovered data:
-        if cfg.save_reconstruction:
-            breaching.utils.save_reconstruction(reconstruction, payloads, true_user_data, cfg, side_by_side=False)
-        if cfg.dryrun:
-            break
+            # Save local summary:
+            breaching.utils.save_summary(
+                cfg, metrics, stats, user.counted_queries, time.time() - local_time, original_cwd=False
+            )
+            overall_metrics.append(metrics)
+            # Save recovered data:
+            if cfg.save_reconstruction:
+                breaching.utils.save_reconstruction(reconstruction, payloads, true_user_data, cfg, side_by_side=False)
+            if cfg.dryrun:
+                break
 
     # Compute average statistics:
     average_metrics = breaching.utils.avg_n_dicts(overall_metrics)

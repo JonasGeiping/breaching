@@ -226,12 +226,25 @@ class DecepticonAttacker(AnalyticAttacker):
 
         # These are already in the right position, but which token do they belong to?
         breached_without_positions = ordered_breached_embeddings - positional_embeddings
-        order_leaked_to_breached, _ = self._match_embeddings(leaked_embeddings, breached_without_positions)
+        order_leaked_to_breached, costs = self._match_embeddings(leaked_embeddings, breached_without_positions)
+        recovered_tokens = leaked_tokens[order_leaked_to_breached]
         if self.cfg.embedding_token_weight > 0:
-            pass
-        recovered_tokens = leaked_tokens[order_leaked_to_breached].view([len_data, *data_shape])
+            # Optionally: Match breached_without_positions to any embedding entries
+            # If the costs from the matching above are low, then this can recover lost tokens that were missed by
+            # .recover_token_information()
+            vocab_size = server_payload[0]["metadata"]["vocab_size"]
+            all_token_embeddings = lookup["norm_layer1"](lookup["embedding"](torch.arange(0, vocab_size)))
+            all_token_embeddings = all_token_embeddings[:, v_length:-1]
+            for idx, entry in enumerate(breached_without_positions.detach().cpu().numpy()):
+                max_corr = self.vcorrcoef(all_token_embeddings.detach()[1:].cpu().numpy(), entry)
+                val, loc = torch.as_tensor(max_corr).max(dim=0)
+                if val * self.cfg.embedding_token_weight > costs[idx]:
+                    log.info(f"Replaced token {idx} with cost {costs[idx]} with new token with cost {val}")
+                    recovered_tokens[idx] = loc + 1
 
-        reconstructed_data = dict(data=recovered_tokens, labels=recovered_tokens)
+        # Finally re-order into sentences:
+        final_tokens = recovered_tokens.view([len_data, *data_shape])
+        reconstructed_data = dict(data=final_tokens, labels=final_tokens)
         return reconstructed_data, stats
 
     def _match_breaches_to_sentences(self, sentence_id_components, shape, algorithm="threshold"):
@@ -550,6 +563,18 @@ class DecepticonAttacker(AnalyticAttacker):
                 sentences[n].append(sorted_tokens[w[m]])
 
         return sentences
+
+    @staticmethod
+    def vcorrcoef(X, y):
+        """Correlation between matrix and vector taken from here because lazy:
+        https://waterprogramming.wordpress.com/2014/06/13/numpy-vectorized-correlation-coefficient/
+        """
+        Xm = np.reshape(np.mean(X, axis=1), (X.shape[0], 1))
+        ym = np.mean(y)
+        r_num = np.sum((X - Xm) * (y - ym), axis=1)
+        r_den = np.sqrt(np.sum((X - Xm) ** 2, axis=1) * np.sum((y - ym) ** 2))
+        r = r_num / r_den
+        return r
 
 
 class AprilAttacker(AnalyticAttacker):

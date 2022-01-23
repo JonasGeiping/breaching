@@ -219,7 +219,8 @@ class DecepticonAttacker(AnalyticAttacker):
         # Then fill up the missing locations:
         if len(breached_embeddings) < len(positional_embeddings):
             free_positions = (ordered_breached_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
-            assert len(breached_embeddings) > len(free_positions)
+            if len(breached_embeddings) < len(free_positions):
+                import ipdb; ipdb.set_trace()
             miss_to_pos, costs = self._match_embeddings(breached_embeddings, positional_embeddings[free_positions])
             ordered_breached_embeddings[free_positions] = breached_embeddings[miss_to_pos]
 
@@ -246,8 +247,10 @@ class DecepticonAttacker(AnalyticAttacker):
             sentence_labels = torch.as_tensor(labels)
 
         elif algorithm == "dynamic-threshold":
-            corrs = torch.as_tensor(np.corrcoef(sentence_id_components.contiguous().detach().numpy()))
-            trial_tresholds = 1.5 - np.geomspace(1, 0.5, 2000)
+            corrs = torch.as_tensor(np.corrcoef(sentence_id_components.double().detach().numpy()))
+            upper_range = [1 - 1.5**float(n) for n in torch.arange(-96, -16)]
+            lower_range = 1.5 - np.geomspace(1, 0.5, 2000)[:-1]
+            trial_tresholds = [*lower_range, *upper_range]
             num_entries = []
             for idx, threshold in enumerate(trial_tresholds[::-1]):
                 num_entries = (corrs > threshold).sum(dim=-1).max()

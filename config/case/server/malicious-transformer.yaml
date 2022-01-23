@@ -8,6 +8,7 @@ num_queries: 1
 
 param_modification:
   sequence_token_weight: 1
+  equalize_token_weight: 0.0001
   imprint_sentence_position: 0 # positions other than 0 are not implemented for more than one head
   softmax_skew: 10000000
 

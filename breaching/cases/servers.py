@@ -9,7 +9,8 @@ from .malicious_modifications.analytic_transformer_utils import (
     partially_disable_embedding,
     set_MHA,
     set_flow_backward_layer,
-    disable_mha_layer,
+    disable_mha_layers,
+    equalize_mha_layer,
     partially_norm_position,
     make_imprint_layer,
 )
@@ -413,7 +414,7 @@ class MaliciousTransformerServer(HonestServer):
         # Modify the first attention mechanism in the model:
         # Set QKV modifications in-place:
         set_MHA(
-            lookup["attention_layer"],
+            lookup["first_attention"],
             lookup["norm_layer0"],
             lookup["pos_encoder"],
             embedding_dim,
@@ -429,7 +430,18 @@ class MaliciousTransformerServer(HonestServer):
         set_flow_backward_layer(
             lookup["second_linear_layers"], ff_transposed=ff_transposed, eps=self.cfg_server.param_modification.eps
         )
-        disable_mha_layer(lookup["unused_mha_outs"])
+        disable_mha_layers(lookup["unused_mha_outs"])
+
+        if self.cfg_data.task == "masked-lm" and not self.cfg_data.disable_mlm:
+            equalize_mha_layer(
+                lookup["last_attention"],
+                ff_transposed,
+                equalize_token_weight=self.cfg_server.param_modification.equalize_token_weight,
+                v_length=v_length,
+            )
+        else:
+            lookup["last_attention"]["out_proj_weight"].data.zero_()
+            lookup["last_attention"]["out_proj_bias"].data.zero_()
 
         # Evaluate feature distribution of this model
         std, mu = compute_feature_distribution(self.model, lookup["first_linear_layers"][0], measurement, self)

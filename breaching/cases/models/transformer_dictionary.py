@@ -16,18 +16,25 @@ def lookup_module_names(model_name, model):
         lookup["norm_layer0"] = torch.nn.Identity()  # This would be a norm before the MHA
         lookup["norm_layer1"] = model.transformer_encoder.layers[0].norm1
 
-        lookup["attention_layer"] = dict()
-        lookup["attention_layer"]["mode"] = "default"
-        lookup["attention_layer"]["in_proj_weight"] = model.transformer_encoder.layers[0].self_attn.in_proj_weight
-        lookup["attention_layer"]["in_proj_bias"] = model.transformer_encoder.layers[0].self_attn.in_proj_bias
-        lookup["attention_layer"]["out_proj_weight"] = model.transformer_encoder.layers[0].self_attn.out_proj.weight
-        lookup["attention_layer"]["out_proj_bias"] = model.transformer_encoder.layers[0].self_attn.out_proj.bias
+        lookup["first_attention"] = dict()
+        lookup["first_attention"]["mode"] = "default"
+        lookup["first_attention"]["in_proj_weight"] = model.transformer_encoder.layers[0].self_attn.in_proj_weight
+        lookup["first_attention"]["in_proj_bias"] = model.transformer_encoder.layers[0].self_attn.in_proj_bias
+        lookup["first_attention"]["out_proj_weight"] = model.transformer_encoder.layers[0].self_attn.out_proj.weight
+        lookup["first_attention"]["out_proj_bias"] = model.transformer_encoder.layers[0].self_attn.out_proj.bias
+
+        lookup["last_attention"] = dict()
+        lookup["last_attention"]["mode"] = "default"
+        lookup["last_attention"]["in_proj_weight"] = model.transformer_encoder.layers[-1].self_attn.in_proj_weight
+        lookup["last_attention"]["in_proj_bias"] = model.transformer_encoder.layers[-1].self_attn.in_proj_bias
+        lookup["last_attention"]["out_proj_weight"] = model.transformer_encoder.layers[-1].self_attn.out_proj.weight
+        lookup["last_attention"]["out_proj_bias"] = model.transformer_encoder.layers[-1].self_attn.out_proj.bias
 
         first_linear_layers, second_linear_layers, unused_mhas = [], [], []  # collecting all the imprint layers
         for i, layer in enumerate(model.transformer_encoder.layers):
             first_linear_layers.append(layer.linear1)
             second_linear_layers.append(layer.linear2)
-            if i != 0:
+            if i > 0 and i < len(model.transformer_encoder.layers) - 1:  # all intermediate attention blocks
                 unused_mhas.append(layer.self_attn.out_proj)
 
         lookup["first_linear_layers"] = first_linear_layers
@@ -46,18 +53,25 @@ def lookup_module_names(model_name, model):
         lookup["norm_layer0"] = torch.nn.Identity()  # Better disabled? model.model.transformer.h[0].ln_1
         lookup["norm_layer1"] = model.model.transformer.h[0].ln_2
 
-        lookup["attention_layer"] = dict()
-        lookup["attention_layer"]["mode"] = "default"
-        lookup["attention_layer"]["in_proj_weight"] = model.model.transformer.h[0].attn.c_attn.weight
-        lookup["attention_layer"]["in_proj_bias"] = model.model.transformer.h[0].attn.c_attn.bias
-        lookup["attention_layer"]["out_proj_weight"] = model.model.transformer.h[0].attn.c_proj.weight
-        lookup["attention_layer"]["out_proj_bias"] = model.model.transformer.h[0].attn.c_proj.bias
+        lookup["first_attention"] = dict()
+        lookup["first_attention"]["mode"] = "default"
+        lookup["first_attention"]["in_proj_weight"] = model.model.transformer.h[0].attn.c_attn.weight
+        lookup["first_attention"]["in_proj_bias"] = model.model.transformer.h[0].attn.c_attn.bias
+        lookup["first_attention"]["out_proj_weight"] = model.model.transformer.h[0].attn.c_proj.weight
+        lookup["first_attention"]["out_proj_bias"] = model.model.transformer.h[0].attn.c_proj.bias
+
+        lookup["last_attention"] = dict()
+        lookup["last_attention"]["mode"] = "default"
+        lookup["last_attention"]["in_proj_weight"] = model.model.transformer.h[-1].attn.c_attn.weight
+        lookup["last_attention"]["in_proj_bias"] = model.model.transformer.h[-1].attn.c_attn.bias
+        lookup["last_attention"]["out_proj_weight"] = model.model.transformer.h[-1].attn.c_proj.weight
+        lookup["last_attention"]["out_proj_bias"] = model.model.transformer.h[-1].attn.c_proj.bias
 
         first_linear_layers, second_linear_layers, unused_mhas = [], [], []  # collecting all the imprint layers
         for i, layer in enumerate(model.model.transformer.h):
             first_linear_layers.append(layer.mlp.c_fc)
             second_linear_layers.append(layer.mlp.c_proj)
-            if i != 0:
+            if i > 0 and i < len(model.model.transformer.h) - 1:
                 unused_mhas.append(layer.attn.c_proj)
 
         lookup["first_linear_layers"] = first_linear_layers
@@ -83,18 +97,25 @@ def lookup_module_names(model_name, model):
         lookup["norm_layer0"] = bert.embeddings.LayerNorm  # This would be a norm before the MHA
         lookup["norm_layer1"] = torch.nn.Identity()  # ??? bert.encoder.layer[0].output.LayerNorm
 
-        lookup["attention_layer"] = dict()
-        lookup["attention_layer"]["mode"] = "bert"
-        lookup["attention_layer"]["query"] = bert.encoder.layer[0].attention.self.query
-        lookup["attention_layer"]["key"] = bert.encoder.layer[0].attention.self.key
-        lookup["attention_layer"]["value"] = bert.encoder.layer[0].attention.self.value
-        lookup["attention_layer"]["output"] = bert.encoder.layer[0].attention.output.dense
+        lookup["first_attention"] = dict()
+        lookup["first_attention"]["mode"] = "bert"
+        lookup["first_attention"]["query"] = bert.encoder.layer[0].attention.self.query
+        lookup["first_attention"]["key"] = bert.encoder.layer[0].attention.self.key
+        lookup["first_attention"]["value"] = bert.encoder.layer[0].attention.self.value
+        lookup["first_attention"]["output"] = bert.encoder.layer[0].attention.output.dense
+
+        lookup["last_attention"] = dict()
+        lookup["last_attention"]["mode"] = "bert"
+        lookup["last_attention"]["query"] = bert.encoder.layer[-1].attention.self.query
+        lookup["last_attention"]["key"] = bert.encoder.layer[-1].attention.self.key
+        lookup["last_attention"]["value"] = bert.encoder.layer[-1].attention.self.value
+        lookup["last_attention"]["output"] = bert.encoder.layer[-1].attention.output.dense
 
         first_linear_layers, second_linear_layers, unused_mhas = [], [], []  # collecting all the imprint layers
         for i, layer in enumerate(bert.encoder.layer):
             first_linear_layers.append(layer.intermediate.dense)
             second_linear_layers.append(layer.output.dense)
-            if i != 0:
+            if i > 0 and i < len(bert.encoder.layer) - 1:
                 unused_mhas.append(layer.attention.output.dense)
 
         lookup["first_linear_layers"] = first_linear_layers

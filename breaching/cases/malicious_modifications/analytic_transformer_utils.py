@@ -84,10 +84,10 @@ def set_MHA(
             embedding_dim,
             ff_transposed,
             data_shape,
-            sequence_token_weight=1,
-            imprint_sentence_position=0,  # This position will be imprinted onto the sentence via attention
-            softmax_skew=1000000,
-            v_length=6,
+            sequence_token_weight,
+            imprint_sentence_position,  # This position will be imprinted onto the sentence via attention
+            softmax_skew,
+            v_length,
         )
     elif attention_layer["mode"] == "bert":
         _set_bert_MHA(
@@ -97,10 +97,10 @@ def set_MHA(
             embedding_dim,
             ff_transposed,
             data_shape,
-            sequence_token_weight=1,
-            imprint_sentence_position=0,  # This position will be imprinted onto the sentence via attention
-            softmax_skew=1000000,
-            v_length=6,
+            sequence_token_weight,
+            imprint_sentence_position,  # This position will be imprinted onto the sentence via attention
+            softmax_skew,
+            v_length,
         )
     else:
         raise ValueError(f"Invalid MHA mode {attention_layer['mode']} given.")
@@ -140,7 +140,6 @@ def _set_bert_MHA(
     attention_layer["query"].bias.data[v_length : 2 * v_length] = softmax_skew * position_comp
 
     attention_layer["query"].weight.data = torch.zeros((qkv_shape, qkv_shape))
-
     # Set V_bias to subtract positional encoding
     v_bias = torch.zeros(qkv_shape)
     v_bias[imprint_sentence_position : (imprint_sentence_position + v_length)] = -just_positions[
@@ -249,7 +248,7 @@ def set_flow_backward_layer(second_layers, ff_transposed=False, eps=1e-4):
         layer.bias.data.zero_()
 
 
-def disable_mha_layer(layers):
+def disable_mha_layers(layers):
     """
     Here we set all MHA out_proj_weights to 0 except for the first one
     where we encode the sequence
@@ -258,6 +257,53 @@ def disable_mha_layer(layers):
     for layer_out_proj in layers:
         layer_out_proj.weight.data.zero_()
         layer_out_proj.bias.data.zero_()
+
+
+def equalize_mha_layer(
+    attention_layer, ff_transposed, equalize_token_weight=0.001, v_length=6,
+):
+
+    if attention_layer["mode"] == "default":
+        if ff_transposed:
+            qkv_shape = attention_layer["in_proj_weight"].data.shape[1]
+            log.info(f"Found attention of shape {attention_layer['in_proj_weight'].T.shape}.")
+        else:
+            qkv_shape = attention_layer["in_proj_weight"].data.shape[0]
+        attention_layer["in_proj_bias"].data.zero_()
+        # Q to zero:
+        attention_layer["in_proj_weight"].data.zero_()
+        # K matrix setup (identity)
+        if ff_transposed:
+            attention_layer["in_proj_weight"].data[:, qkv_shape // 3 : 2 * (qkv_shape // 3)] = torch.eye(qkv_shape // 3)
+        else:
+            attention_layer["in_proj_weight"].data[qkv_shape // 3 : 2 * (qkv_shape // 3)] = torch.eye(qkv_shape // 3)
+        # V matrix setup ( identity block)
+        if ff_transposed:
+            attention_layer["in_proj_weight"].data[:, 2 * (qkv_shape // 3) :] = torch.eye(qkv_shape // 3)
+        else:
+            attention_layer["in_proj_weight"].data[2 * (qkv_shape // 3) :] = torch.eye(qkv_shape // 3)
+
+        attention_layer["out_proj_weight"].data = equalize_token_weight * torch.eye(qkv_shape // 3)
+        attention_layer["out_proj_bias"].data.zero_()
+    else:
+        if ff_transposed:
+            qkv_shape = attention_layer["query"].weight.data.shape[1]
+            log.info(f"Found attention of shape {attention_layer['query'].weight.T.shape}.")
+        else:
+            qkv_shape = attention_layer["query"].weight.data.shape[0]
+            log.info(f"Found attention of shape {attention_layer['query'].weight.data.shape}.")
+        attention_layer["query"].weight.data = torch.zeros((qkv_shape, qkv_shape))
+        attention_layer["query"].bias.data.zero_()
+        # K matrix setup (identity)
+        attention_layer["key"].weight.data = torch.eye(qkv_shape)
+        attention_layer["key"].bias.data.zero_()
+        # Set V to identity
+        attention_layer["value"].weight.data = torch.eye(qkv_shape)
+        attention_layer["value"].bias.data.zero_()
+
+        # Linear layer at the end of MHA - optionally can be set to small value to not 'skew' embeddings too much
+        attention_layer["output"].weight.data = equalize_token_weight * torch.eye(qkv_shape)
+        attention_layer["output"].bias.data.zero_()
 
 
 def make_imprint_layer(first_layers, measurement, mean, std, hidden_dim, embedding_dim, ff_transposed=False):

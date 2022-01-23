@@ -182,7 +182,7 @@ def avg_n_dicts(dicts):
         for key in dic:
             if key not in means:
                 if isinstance(dic[key], list):
-                    means[key] = [0 for entry in list]
+                    means[key] = [0 for entry in dic[key]]
                 else:
                     means[key] = 0
             if isinstance(dic[key], list):

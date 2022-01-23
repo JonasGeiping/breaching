@@ -181,8 +181,15 @@ def avg_n_dicts(dicts):
     for dic in dicts:
         for key in dic:
             if key not in means:
-                means[key] = 0
-            means[key] += dic[key] / len(dicts)
+                if isinstance(dic[key], list):
+                    means[key] = [0 for entry in list]
+                else:
+                    means[key] = 0
+            if isinstance(dic[key], list):
+                for idx, entry in enumerate(dic[key]):
+                    means[key][idx] += entry / len(dicts)
+            else:
+                means[key] += dic[key] / len(dicts)
     return means
 
 

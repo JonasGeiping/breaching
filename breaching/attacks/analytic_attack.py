@@ -261,15 +261,20 @@ class DecepticonAttacker(AnalyticAttacker):
 
         elif algorithm == "dynamic-threshold":
             corrs = torch.as_tensor(np.corrcoef(sentence_id_components.double().detach().numpy()))
-            upper_range = [1 - 1.5 ** float(n) for n in torch.arange(-96, -16)]
+            upper_range = [1 - 1.5 ** float(n) for n in torch.arange(-96, -16)][::-1]
             lower_range = 1.001 - np.geomspace(1, 0.001, 2000)[:-1]
             trial_tresholds = [*lower_range, *upper_range]
             num_entries = []
             for idx, threshold in enumerate(trial_tresholds[::-1]):
                 num_entries = (corrs > threshold).sum(dim=-1).max()
+                # print(idx, threshold, num_entries, shape[1])
                 if num_entries > shape[1]:
+                    final_threshold = trial_tresholds[::-1][idx - 1]
                     break
-            final_threshold = trial_tresholds[::-1][idx - 1]
+            else:
+                log.info(f"Cannot separate {shape[0]} seeds by thresholding!")
+                final_threshold = trial_tresholds[0]
+
             already_assigned = set()
             initial_labels = -torch.ones(corrs.shape[0], dtype=torch.long)
             total_groups = 0
@@ -284,9 +289,10 @@ class DecepticonAttacker(AnalyticAttacker):
                     if total_groups == shape[0]:
                         break
             if total_groups < shape[0]:
-                raise ValueError(f"Could assemble only {total_groups} seeds searching on threshold {final_threshold}.")
+                log.info(f"Could assemble only {total_groups} seeds searching on threshold {final_threshold}.")
+                log.info(f"Filling with {shape[0] - total_groups} random seeds...These sentences will be scrambled.")
             # Find seeds
-            seeds = torch.zeros(shape[0], sentence_id_components.shape[-1])  # seeds for every sentence
+            seeds = torch.randn(shape[0], sentence_id_components.shape[-1])  # seeds for every sentence
             label_ids = initial_labels[initial_labels != -1].unique()  # Skip over -1 here
             for idx, group_label in enumerate(label_ids):
                 seeds[idx] = sentence_id_components[initial_labels == group_label].mean(dim=0)

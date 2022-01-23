@@ -25,7 +25,6 @@ dependencies:
   - tensorflow
   - nltk
   - pip
-  - ortools
   - cython
   - pip:
       - hydra-core
@@ -35,4 +34,3 @@ dependencies:
       - rouge-score
       - sacrebleu
       - timm
-      - k-means-constrained --no-binary k-means-constrained==0.6.0 --no-deps

@@ -269,8 +269,8 @@ class DecepticonAttacker(AnalyticAttacker):
                 raise ValueError(f"Could not assemble enough seed vectors searching on threshold at {final_threshold}.")
             # Find seeds
             seeds = torch.zeros(shape[0], sentence_id_components.shape[-1])  # seeds for every sentence
-            label_ids = initial_labels.unique()
-            for idx, group_label in enumerate(label_ids[1:]):  # Skip over -1 here
+            label_ids = initial_labels[initial_labels != -1].unique()  # Skip over -1 here
+            for idx, group_label in enumerate(label_ids):
                 seeds[idx] = sentence_id_components[initial_labels == group_label].mean(dim=0)
             replicated_seeds = torch.repeat_interleave(seeds, shape[1], dim=0)  # Replicate seeds to seq_length
             # Recompute correlations based on these mean seeds

@@ -127,7 +127,7 @@ def _set_bert_MHA(
         log.info(f"Found attention of shape {attention_layer['query'].weight.data.shape}.")
 
     # These are the positional embeddings after layer normalization:
-    dummy_data = torch.zeros([1, *data_shape, embedding_dim])
+    dummy_data = torch.zeros([1, *data_shape, embedding_dim], device=norm_layer0.weight.device)
     just_positions = norm_layer0(pos_encoder(dummy_data)).cpu()
     # Q matrix setup
     # We make the weight 0, and the bias some (large multiple of) positional encoding
@@ -189,7 +189,7 @@ def _set_default_MHA(
         log.info(f"Found attention of shape {attention_layer['in_proj_weight'].data.shape}.")
 
     # These are the positional embeddings after layer normalization:
-    dummy_data = torch.zeros([1, *data_shape, embedding_dim])
+    dummy_data = torch.zeros([1, *data_shape, embedding_dim], device=norm_layer0.weight.device)
     just_positions = norm_layer0(pos_encoder(dummy_data)).cpu()
     # Q matrix setup
     # We make the weight 0, and the bias some (large multiple of) positional encoding

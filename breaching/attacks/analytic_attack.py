@@ -225,6 +225,14 @@ class DecepticonAttacker(AnalyticAttacker):
             ordered_breached_embeddings[free_positions] = breached_embeddings[miss_to_pos]
 
         # These are already in the right position, but which token do they belong to?
+        # b_std, b_mean = torch.std_mean(ordered_breached_embeddings, dim=-1, keepdim=True)
+        # normalized_ordered_breached = (ordered_breached_embeddings - b_mean) / (b_std + 1e-10)
+        # p_std, p_mean = torch.std_mean(positional_embeddings, dim=-1, keepdim=True)
+        # normalized_positions = (positional_embeddings - p_mean) / (p_std + 1e-10)
+        # breached_without_positions = normalized_ordered_breached - normalized_positions
+        # A = torch.stack([ordered_breached_embeddings.view(-1, 89), positional_embeddings.view(-1, 89)], dim=-1)
+        # U, S, V = torch.pca_lowrank(A, q=None, center=True, niter=2,)
+        # breached_without_positions = torch.matmul(A, V[:, 1:2].permute(0, 2, 1)).view_as(ordered_breached_embeddings)
         breached_without_positions = ordered_breached_embeddings - positional_embeddings
         order_leaked_to_breached, costs = self._match_embeddings(leaked_embeddings, breached_without_positions)
         recovered_tokens = leaked_tokens[order_leaked_to_breached]

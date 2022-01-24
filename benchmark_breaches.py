@@ -63,8 +63,13 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         # Select data that has not been seen before:
         cfg.case.user.user_idx += 1
         user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
-        if len(user.dataloader.dataset) < user.num_data_points:
-            log.info(f"Skipping user {user.user_idx} (has not enough data).")
+        if cfg.case.data.modality == "text":
+            dshape = user.dataloader.dataset[0]["input_ids"].shape
+            data_shape_mismatch = any([d != d_ref for d, d_ref in zip(dshape, cfg.case.data.shape)])
+        else:
+            data_shape_mismatch = False  # Handled by preprocessing for images
+        if len(user.dataloader.dataset) < user.num_data_points or data_shape_mismatch:
+            log.info(f"Skipping user {user.user_idx} (has not enough data or data shape mismatch).")
         else:
             log.info(f"Now evaluating user {user.user_idx} in trial {run}.")
             run += 1

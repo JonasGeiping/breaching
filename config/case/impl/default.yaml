@@ -25,4 +25,4 @@ checkpoint:
   name:
   save_every_nth_step: 10
 
-enable_huggingface_offline_mode: False # Only set this true after caching everything
+enable_huggingface_offline_mode: True # Only set this true after caching everything

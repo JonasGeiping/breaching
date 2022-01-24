@@ -278,6 +278,7 @@ class DecepticonAttacker(AnalyticAttacker):
 
         elif algorithm == "dynamic-threshold":
             corrs = torch.as_tensor(np.corrcoef(sentence_id_components.double().detach().numpy()))
+            corrs[torch.isnan(corrs)] = 0  # Should only ever trigger in edge cases where sentence_component=0
             upper_range = [1 - 1.5 ** float(n) for n in torch.arange(-96, -16)][::-1]
             lower_range = 1.001 - np.geomspace(1, 0.001, 2000)[:-1]
             trial_tresholds = [*lower_range, *upper_range]

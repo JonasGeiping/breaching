@@ -241,15 +241,24 @@ class DecepticonAttacker(AnalyticAttacker):
             # If the costs from the matching above are low, then this can recover lost tokens that were missed by
             # .recover_token_information()
             vocab_size = server_payload[0]["metadata"]["vocab_size"]
-            all_token_embeddings = lookup["norm_layer1"](lookup["embedding"](torch.arange(0, vocab_size)))
+            all_token_ids = torch.arange(0, vocab_size, device=self.setup["device"])
+            all_token_embeddings = lookup["norm_layer1"](lookup["embedding"](all_token_ids))
             all_token_embeddings = all_token_embeddings[:, v_length:-1]
+            avg_costs = 0
+            avg_new_corr = 0
+            num_replaced_tokens = 0
             for idx, entry in enumerate(breached_without_positions.detach().cpu().numpy()):
                 max_corr = self.vcorrcoef(all_token_embeddings.detach()[1:].cpu().numpy(), entry)
                 val, loc = torch.as_tensor(max_corr).max(dim=0)
                 if val * self.cfg.embedding_token_weight > costs[idx]:
-                    log.info(f"Replaced token {idx} with corr {costs[idx]} with new token with corr {val}")
+                    num_replaced_tokens += 1
+                    avg_costs += costs[idx]
+                    avg_new_corr += val
                     recovered_tokens[idx] = loc + 1
-
+            log.info(
+                f"Replaced {num_replaced_tokens} tokens with avg. corr {avg_costs / num_replaced_tokens} "
+                f"with new tokens with avg corr {avg_new_corr / num_replaced_tokens}"
+            )
         # Finally re-order into sentences:
         final_tokens = recovered_tokens.view([len_data, *data_shape])
         reconstructed_data = dict(data=final_tokens, labels=final_tokens)
@@ -307,7 +316,9 @@ class DecepticonAttacker(AnalyticAttacker):
             replicated_seeds = torch.repeat_interleave(seeds, shape[1], dim=0)  # Replicate seeds to seq_length
             # Recompute correlations based on these mean seeds
 
-            order_breach_to_seed, _ = self._match_embeddings(replicated_seeds, sentence_id_components)
+            order_breach_to_seed, _ = self._match_embeddings(
+                replicated_seeds, sentence_id_components, fallbacks=initial_labels
+            )
             sentence_labels = (order_breach_to_seed / shape[1]).to(dtype=torch.long)
 
         elif algorithm == "threshold":
@@ -545,7 +556,7 @@ class DecepticonAttacker(AnalyticAttacker):
         order_tensor = torch.as_tensor(matches, device=positional_embeddings.device, dtype=torch.long)
         return order_tensor, None
 
-    def _match_embeddings(self, inputs, references, measure="corrcoef"):
+    def _match_embeddings(self, inputs, references, measure="corrcoef", fallbacks=None):
         if references.ndim == 1:
             references = references[None, :]
         if measure == "corrcoef":
@@ -557,9 +568,13 @@ class DecepticonAttacker(AnalyticAttacker):
         try:
             row_ind, col_ind = linear_sum_assignment(corr, maximize=True)
         except ValueError:
-            print(f"ValueError from correlation matrix {corr}")
-            print("Returning trivial order...")
-            row_ind, col_ind = list(range(corr.shape[0])), list(range(corr.shape[1]))
+            log.info(f"ValueError from correlation matrix {corr}")
+            if fallbacks is None:
+                log.info("Returning trivial order...")
+                row_ind, col_ind = list(range(corr.shape[1])), list(range(corr.shape[0]))
+            else:
+                log.info("Returning fallback order...")
+                row_ind, col_ind = list(range(corr.shape[0])), fallbacks
         order_tensor = torch.as_tensor(col_ind, device=inputs.device, dtype=torch.long)
         costs = torch.as_tensor(corr[row_ind, col_ind], device=inputs.device, dtype=torch.float)
         return order_tensor, costs

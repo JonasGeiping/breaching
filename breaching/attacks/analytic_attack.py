@@ -322,9 +322,7 @@ class DecepticonAttacker(AnalyticAttacker):
             replicated_seeds = torch.repeat_interleave(seeds, shape[1], dim=0)  # Replicate seeds to seq_length
             # Recompute correlations based on these mean seeds
 
-            order_breach_to_seed, _, _ = self._match_embeddings(
-                replicated_seeds, sentence_id_components, fallbacks=initial_labels
-            )
+            order_breach_to_seed, _, _ = self._match_embeddings(replicated_seeds, sentence_id_components)
             sentence_labels = (order_breach_to_seed / shape[1]).to(dtype=torch.long)
 
         elif algorithm == "threshold":

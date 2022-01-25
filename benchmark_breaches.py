@@ -76,32 +76,39 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
             # Run exchange
             shared_user_data, payloads, true_user_data = server.run_protocol(user)
             # Evaluate attack:
-            reconstruction, stats = attacker.reconstruct(payloads, shared_user_data, server.secrets, dryrun=cfg.dryrun)
+            try:
+                reconstruction, stats = attacker.reconstruct(
+                    payloads, shared_user_data, server.secrets, dryrun=cfg.dryrun
+                )
 
-            # Run the full set of metrics:
-            metrics = breaching.analysis.report(
-                reconstruction,
-                true_user_data,
-                payloads,
-                server.model,
-                order_batch=True,
-                compute_full_iip=True,
-                compute_rpsnr=True,
-                compute_ssim=True,
-                cfg_case=cfg.case,
-                setup=setup,
-            )
+                # Run the full set of metrics:
+                metrics = breaching.analysis.report(
+                    reconstruction,
+                    true_user_data,
+                    payloads,
+                    server.model,
+                    order_batch=True,
+                    compute_full_iip=True,
+                    compute_rpsnr=True,
+                    compute_ssim=True,
+                    cfg_case=cfg.case,
+                    setup=setup,
+                )
 
-            # Save local summary:
-            breaching.utils.save_summary(
-                cfg, metrics, stats, user.counted_queries, time.time() - local_time, original_cwd=False
-            )
-            overall_metrics.append(metrics)
-            # Save recovered data:
-            if cfg.save_reconstruction:
-                breaching.utils.save_reconstruction(reconstruction, payloads, true_user_data, cfg, side_by_side=False)
-            if cfg.dryrun:
-                break
+                # Save local summary:
+                breaching.utils.save_summary(
+                    cfg, metrics, stats, user.counted_queries, time.time() - local_time, original_cwd=False
+                )
+                overall_metrics.append(metrics)
+                # Save recovered data:
+                if cfg.save_reconstruction:
+                    breaching.utils.save_reconstruction(
+                        reconstruction, payloads, true_user_data, cfg, side_by_side=False
+                    )
+                if cfg.dryrun:
+                    break
+            except Exception as e:  # noqa # yeah we're that close to the deadlines
+                log.info(f"Trial {run} broke down with error {e}.")
 
     # Compute average statistics:
     average_metrics = breaching.utils.avg_n_dicts(overall_metrics)

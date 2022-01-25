@@ -136,7 +136,7 @@ def _get_tokenizer(tokenizer_name, cache_dir=None):
         else:
             from .wordlevel_tokenizer import generate_word_level_tokenizer
 
-            generate_word_level_tokenizer()
+            generate_word_level_tokenizer(vocab_size=50_000)
             tokenizer = PreTrainedTokenizerFast(tokenizer_file=path, cache_dir=cache_dir)
     elif tokenizer_name == "character":
         tokenizer = CanineTokenizer.from_pretrained("google/canine-c", cache_dir=cache_dir)

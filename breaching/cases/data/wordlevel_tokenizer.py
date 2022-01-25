@@ -20,7 +20,7 @@ from datasets import load_dataset
 from ...utils import get_base_cwd
 
 
-def generate_word_level_tokenizer():
+def generate_word_level_tokenizer(vocab_size=50_000):
     dataset = load_dataset("ag_news", cache_dir="~/data", split="train")
 
     tokenizer = Tokenizer(WordLevel(unk_token="[UNK]"))
@@ -35,7 +35,7 @@ def generate_word_level_tokenizer():
         for i in range(0, len(dataset), batch_size):
             yield dataset[i : i + batch_size]["text"]
 
-    trainer = WordLevelTrainer(vocab_size=50_000, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
+    trainer = WordLevelTrainer(vocab_size=vocab_size, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
     tokenizer.train_from_iterator(batch_iterator(), trainer=trainer, length=len(dataset))
 
     path = os.path.join(get_base_cwd(), "cache", "word-tokenizer.json")

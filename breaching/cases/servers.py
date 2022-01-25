@@ -444,8 +444,12 @@ class MaliciousTransformerServer(HonestServer):
                 v_length=v_length,
             )
         else:
-            lookup["last_attention"]["out_proj_weight"].data.zero_()
-            lookup["last_attention"]["out_proj_bias"].data.zero_()
+            if lookup["last_attention"]["mode"] == "bert":
+                lookup["last_attention"]["output"].weight.data.zero_()
+                lookup["last_attention"]["output"].bias.data.zero_()
+            else:
+                lookup["last_attention"]["out_proj_weight"].data.zero_()
+                lookup["last_attention"]["out_proj_bias"].data.zero_()
 
         # Evaluate feature distribution of this model
         std, mu = compute_feature_distribution(self.model, lookup["first_linear_layers"][0], measurement, self)
@@ -1037,7 +1041,7 @@ class ClassParameterServer(HonestServer):
                 tmp_series = est_features[i]
                 tmp_series = (tmp_series - np.mean(tmp_series)) / np.std(tmp_series)
                 statistics.append(stats.kstest(tmp_series, "norm")[0])
-                
+
             return np.argmin(statistics)
         elif "most-spread" in method or "most-high-mean" in method:
             means = []

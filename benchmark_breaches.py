@@ -47,6 +47,9 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
     model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data, cfg.case.server.pretrained)
 
+    if cfg.num_trials is not None:
+        num_trials = cfg.num_trials
+
     server = breaching.cases.construct_server(model, loss_fn, cfg.case, setup)
     model = server.vet_model(model)
     attacker = breaching.attacks.prepare_attack(model, loss_fn, cfg.attack, setup)
@@ -97,7 +100,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
 
                 # Save local summary:
                 breaching.utils.save_summary(
-                    cfg, metrics, stats, user.counted_queries, time.time() - local_time, original_cwd=False
+                    cfg, metrics, stats, time.time() - local_time, user.counted_queries, original_cwd=False
                 )
                 overall_metrics.append(metrics)
                 # Save recovered data:

@@ -105,8 +105,12 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
                 overall_metrics.append(metrics)
                 # Save recovered data:
                 if cfg.save_reconstruction:
+                    if cfg.data.modality == "text":
+                        side_by_side = True
+                    else:
+                        side_by_side = False
                     breaching.utils.save_reconstruction(
-                        reconstruction, payloads, true_user_data, cfg, side_by_side=False
+                        reconstruction, payloads, true_user_data, cfg, side_by_side=side_by_side
                     )
                 if cfg.dryrun:
                     break

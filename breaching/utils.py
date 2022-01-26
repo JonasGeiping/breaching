@@ -227,7 +227,11 @@ def save_reconstruction(
     if metadata["modality"] == "text":
         from breaching.cases.data.datasets_text import _get_tokenizer
 
-        tokenizer = _get_tokenizer(server_payload[0]["metadata"]["tokenizer"], cache_dir=cfg.case.data.path)
+        tokenizer = _get_tokenizer(
+            server_payload[0]["metadata"]["tokenizer"],
+            server_payload[0]["metadata"]["vocab_size"],
+            cache_dir=cfg.case.data.path,
+        )
         text_rec = tokenizer.batch_decode(reconstructed_user_data["data"])
         text_ref = tokenizer.batch_decode(true_user_data["data"])
         if target_indx is not None:

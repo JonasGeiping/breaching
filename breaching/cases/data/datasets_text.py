@@ -51,7 +51,7 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
     if "label" in columns:
         columns.remove("label")
         raw_dataset = raw_dataset.rename_column("label", "labels")
-    tokenizer = _get_tokenizer(cfg_data.tokenizer, cache_dir=cfg_data.path)
+    tokenizer = _get_tokenizer(cfg_data.tokenizer, cfg_data.vocab_size, cache_dir=cfg_data.path)
     tokenize, group_texts, collate_fn = _get_preprocessing(tokenizer, cfg_data)
 
     tokenized_dataset = raw_dataset.map(tokenize, batched=True, remove_columns=columns, load_from_cache_file=True)
@@ -125,18 +125,18 @@ def _get_preprocessing(tokenizer, cfg_data):
     return tokenize, group_texts, collate_fn
 
 
-def _get_tokenizer(tokenizer_name, cache_dir=None):
+def _get_tokenizer(tokenizer_name, vocab_size=None, cache_dir=None):
     """Load tokenizer."""
     from transformers import PreTrainedTokenizerFast, AutoTokenizer, CanineTokenizer
 
     if tokenizer_name == "word-level":
-        path = os.path.join(get_base_cwd(), "cache", "word-tokenizer.json")
+        path = os.path.join(get_base_cwd(), "cache", f"word-tokenizer_{vocab_size}.json")
         if os.path.isfile(path):
             tokenizer = PreTrainedTokenizerFast(tokenizer_file=path)
         else:
             from .wordlevel_tokenizer import generate_word_level_tokenizer
 
-            generate_word_level_tokenizer(vocab_size=50_000)
+            generate_word_level_tokenizer(vocab_size=vocab_size)
             tokenizer = PreTrainedTokenizerFast(tokenizer_file=path, cache_dir=cache_dir)
     elif tokenizer_name == "character":
         tokenizer = CanineTokenizer.from_pretrained("google/canine-c", cache_dir=cache_dir)
@@ -152,6 +152,8 @@ def _get_tokenizer(tokenizer_name, cache_dir=None):
         except OSError as error_msg:
             raise ValueError(f"Invalid huggingface tokenizer {tokenizer_name} given: {error_msg}")
     tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+    if tokenizer.vocab_size != vocab_size:
+        raise ValueError(f"Requested tokenizer with vocab_size {tokenizer.vocab_size} incompatible with given vocab.")
     return tokenizer
 
 

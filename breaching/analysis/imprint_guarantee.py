@@ -29,4 +29,4 @@ def one_shot_guarantee(k, n):
 
 
 if __name__ == "__main__":
-    print(expected_amount(3, 6))
+    print(expected_amount(128, 5))

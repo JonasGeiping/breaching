@@ -43,7 +43,7 @@ def main_launcher(cfg):
 
 def main_process(process_idx, local_group_size, cfg, num_trials=100):
     """This function controls the central routine."""
-    local_time = time.time()
+    total_time = time.time()  # Rough time measurements here
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
     model, loss_fn = breaching.cases.construct_model(cfg.case.model, cfg.case.data, cfg.case.server.pretrained)
 
@@ -63,6 +63,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     run = 0
     overall_metrics = []
     while run < num_trials:
+        local_time = time.time()
         # Select data that has not been seen before:
         cfg.case.user.user_idx += 1
         user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
@@ -105,7 +106,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
                 overall_metrics.append(metrics)
                 # Save recovered data:
                 if cfg.save_reconstruction:
-                    if cfg.data.modality == "text":
+                    if cfg.case.data.modality == "text":
                         side_by_side = True
                     else:
                         side_by_side = False
@@ -122,7 +123,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
 
     # Save global summary:
     breaching.utils.save_summary(
-        cfg, average_metrics, stats, time.time() - local_time, None, original_cwd=True, table_name="BENCHMARK_breach"
+        cfg, average_metrics, stats, time.time() - total_time, None, original_cwd=True, table_name="BENCHMARK_breach"
     )
 
 

@@ -13,7 +13,7 @@ local_diff_privacy:
   distribution: laplacian
   per_example_clipping: 0.0
 
-num_local_updates: 10
+num_local_updates: 1 # Set to more to do fedAVG
 num_data_per_local_update_step: 100 # Every step is taken on a different sample
 local_learning_rate: 0.001
 provide_local_hyperparams: False # Provide local_learning_rate, num_data_per_local_update_step, num_local_updates to server

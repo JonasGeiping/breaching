@@ -8,6 +8,7 @@ attack_type: joint-optimization
 label_strategy: None
 
 token_recovery: from-embedding
+init: randn-trunc # Not in the original, but helps a lot
 
 objective:
   type: tag-euclidean

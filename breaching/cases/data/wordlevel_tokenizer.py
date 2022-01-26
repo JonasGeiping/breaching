@@ -38,7 +38,7 @@ def generate_word_level_tokenizer(vocab_size=50_000):
     trainer = WordLevelTrainer(vocab_size=vocab_size, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
     tokenizer.train_from_iterator(batch_iterator(), trainer=trainer, length=len(dataset))
 
-    path = os.path.join(get_base_cwd(), "cache", "word-tokenizer.json")
+    path = os.path.join(get_base_cwd(), "cache", f"word-tokenizer_{vocab_size}.json")
     tokenizer.save(path)
 
 

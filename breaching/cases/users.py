@@ -380,24 +380,23 @@ class MultiUserAggregate(UserMultiStep):
     access to the aggregated local updates.
 
     self.dataloader of this class is actually quite unwieldy, due to its possible size.
-    For the same reason the true_user_data that is returned contains only references to all dataloaders.
     """
 
-    def __init__(self, model, loss, dataloader, setup, cfg_user):
+    def __init__(self, model, loss, dataloaders, setup, cfg_user):
         """Initialize but do not propagate the cfg_case.user dict further."""
-        super().__init__(model, loss, dataloader, setup, None, cfg_user)
+        super().__init__(model, loss, dataloaders, setup, None, cfg_user)
 
-        self.num_users = len(dataloader)
+        self.num_users = len(dataloaders)
 
         self.users = []
         self.user_setup = dict(dtype=setup["dtype"], device=torch.device("cpu"))  # Simulate on CPU
         for idx in range(self.num_users):
             if self.num_local_updates > 1:
-                self.users.append(UserMultiStep(model, loss, dataloader[idx], self.user_setup, idx, cfg_user))
+                self.users.append(UserMultiStep(model, loss, dataloaders[idx], self.user_setup, idx, cfg_user))
             else:
-                self.users.append(UserSingleStep(model, loss, dataloader[idx], self.user_setup, idx, cfg_user))
+                self.users.append(UserSingleStep(model, loss, dataloaders[idx], self.user_setup, idx, cfg_user))
 
-        self.dataloader = chain(*dataloader)
+        self.dataloader = chain(*dataloaders)
 
     def __repr__(self):
         n = "\n"
@@ -415,13 +414,19 @@ class MultiUserAggregate(UserMultiStep):
         aggregate_buffers = [torch.zeros_like(b, dtype=torch.float) for b in self.model.buffers()]
         aggregate_labels = []
         aggregate_label_lists = []  # Only ever used in rare sanity checks. List of labels per local update step
+        aggregate_true_user_data = []
+        aggregate_true_user_labels = []
+
         for user in self.users:
             user.to(**self.setup)
-            user_data, _ = user.compute_local_updates(server_payload)
+            user_data, true_user_data = user.compute_local_updates(server_payload)
             user.to(**self.user_setup)
 
+            aggregate_true_user_data += [true_user_data["data"].cpu()]
+            if true_user_data["labels"] is not None:
+                aggregate_true_user_labels += [true_user_data["labels"].cpu()]
             torch._foreach_sub_(user_data["gradients"], aggregate_updates)
-            torch._foreach_add_(aggregate_updates, user_data["gradients"], alpha=-1 / self.num_users)
+            torch._foreach_add_(aggregate_updates, user_data["gradients"], alpha=1 / self.num_users)
 
             if user_data["buffers"] is not None:
                 torch._foreach_sub_(user_data["buffers"], aggregate_buffers)
@@ -436,7 +441,7 @@ class MultiUserAggregate(UserMultiStep):
             gradients=aggregate_updates,
             buffers=aggregate_buffers if self.provide_buffers else None,
             metadata=dict(
-                num_data_points=self.num_data_points if self.provide_num_data_points else None,
+                num_data_points=self.num_data_points * len(self.users) if self.provide_num_data_points else None,
                 labels=torch.cat(aggregate_labels.sort()[0]) if self.provide_labels else None,
                 num_users=self.num_users,
                 local_hyperparams=dict(
@@ -450,10 +455,16 @@ class MultiUserAggregate(UserMultiStep):
             ),
         )
 
-        def generate_user_data():
-            for user in range(self.users):
-                yield user._load_data()
+        # def generate_user_data():
+        #     for user in range(self.users):
+        #         yield user._load_data()
+        aggregate_true_user_data = torch.cat(aggregate_true_user_data, dim=0)
+        aggregate_true_user_labels = (
+            torch.cat(aggregate_true_user_labels) if len(aggregate_true_user_labels) > 0 else None
+        )
 
-        true_user_data = dict(data=generate_user_data(), labels=None, buffers=aggregate_buffers)
+        true_user_data = dict(
+            data=aggregate_true_user_data, labels=aggregate_true_user_labels, buffers=aggregate_buffers
+        )
 
         return shared_data, true_user_data

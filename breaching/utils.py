@@ -16,6 +16,7 @@ import datetime
 
 import hydra
 from omegaconf import OmegaConf, open_dict
+from omegaconf.errors import ConfigAttributeError
 
 import logging
 
@@ -226,15 +227,24 @@ def save_reconstruction(
     if metadata["modality"] == "text":
         from breaching.cases.data.datasets_text import _get_tokenizer
 
-        tokenizer = _get_tokenizer(server_payload[0]["metadata"]["tokenizer"], cache_dir=cfg.case.data.path)
+        tokenizer = _get_tokenizer(
+            server_payload[0]["metadata"]["tokenizer"],
+            server_payload[0]["metadata"]["vocab_size"],
+            cache_dir=cfg.case.data.path,
+        )
         text_rec = tokenizer.batch_decode(reconstructed_user_data["data"])
         text_ref = tokenizer.batch_decode(true_user_data["data"])
         if target_indx is not None:
             text_rec = text_rec[target_indx]
             text_ref = text_ref[target_indx]
-        filepath = os.path.join(
-            "reconstructions", f"text_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.txt"
-        )
+        try:
+            filepath = os.path.join(
+                "reconstructions", f"text_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.txt",
+            )
+        except ConfigAttributeError:  # MultiUserAggregate
+            filepath = os.path.join(
+                "reconstructions", f"text_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_range}.txt",
+            )
         with open(filepath, "w") as f:
             f.writelines(text_rec)
             if side_by_side:
@@ -255,9 +265,14 @@ def save_reconstruction(
             rec_denormalized = rec_denormalized[target_indx]
             ground_truth_denormalized = ground_truth_denormalized[target_indx]
 
-        filepath = os.path.join(
-            "reconstructions", f"img_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.png"
-        )
+        try:
+            filepath = os.path.join(
+                "reconstructions", f"img_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.png",
+            )
+        except ConfigAttributeError:  # MultiUserAggregate
+            filepath = os.path.join(
+                "reconstructions", f"img_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_range}.png",
+            )
         if not side_by_side:
             torchvision.utils.save_image(rec_denormalized, filepath)
         else:
@@ -266,7 +281,10 @@ def save_reconstruction(
 
 def dump_metrics(cfg, metrics):
     """Simple yaml dump of metric values."""
-    filepath = f"metrics_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.yaml"
+    try:
+        filepath = f"metrics_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.yaml"
+    except ConfigAttributeError:  # MultiUserAggregate
+        filepath = f"metrics_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_range}.yaml"
     sanitized_metrics = dict()
     for metric, val in metrics.items():
         try:

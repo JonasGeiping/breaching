@@ -595,6 +595,7 @@ class DecepticonAttacker(AnalyticAttacker):
         if measure == "corrcoef":
             s, e = inputs.shape
             corr = np.corrcoef(inputs.detach().cpu().numpy(), references.detach().cpu().numpy())[s:, :s]
+            corr[np.isnan(corr)] = 0
         else:
             corr = references.matmul(inputs.T) / references.norm(dim=-1)[:, None] / inputs.norm(dim=-1)[None, :]
             corr = corr.detach().numpy()
@@ -604,7 +605,7 @@ class DecepticonAttacker(AnalyticAttacker):
             log.info(f"ValueError from correlation matrix {corr}")
             if fallbacks is None:
                 log.info("Returning trivial order...")
-                row_ind, col_ind = list(range(corr.shape[1])), list(range(corr.shape[0]))
+                row_ind, col_ind = list(range(corr.shape[0])), list(range(corr.shape[0]))
             else:
                 log.info("Returning fallback order...")
                 row_ind, col_ind = list(range(corr.shape[0])), fallbacks

@@ -1,4 +1,5 @@
-"""Simple analytic attack that works for (dumb) fully connected models."""
+"""A variety of analytic attacks. Which, to be more precise more-or-less means "non"-iterative attacks,
+in differentiation from the optimization-based attacks."""
 
 import torch
 import numpy as np
@@ -158,6 +159,8 @@ class DecepticonAttacker(AnalyticAttacker):
             weight_grad = weight_grad.T.contiguous()  # Restride only due to paranoia
         else:
             weight_grad = torch.cat([shared_data[0]["gradients"][w_idx].clone() for w_idx in weight_idx])
+        weight_grad = weight_grad.to(dtype=self.setup["dtype"])  # up-case if necessary
+        bias_grad = bias_grad.to(dtype=self.setup["dtype"])  # up-case if necessary
 
         if self.cfg.sort_by_bias:
             # This variant can recover from shuffled rows under the assumption that biases would be ordered
@@ -184,7 +187,7 @@ class DecepticonAttacker(AnalyticAttacker):
             log.info(f"Reduced to {len_data * data_shape[0]} hits.")
             # print(best_guesses.indices.sort().values)
             breached_embeddings = breached_embeddings[best_guesses.indices]
-        breached_embeddings = breached_embeddings.cpu()  # Assignments run on CPU anyway
+        breached_embeddings = breached_embeddings.cpu().to(dtype=self.setup["dtype"])  # Assignments run on CPU anyway
         if (~torch.isfinite(breached_embeddings)).sum():
             raise ValueError("Invalid breached embeddings recovered.")
 
@@ -193,6 +196,7 @@ class DecepticonAttacker(AnalyticAttacker):
         pure_positions = lookup["pos_encoder"](torch.zeros_like(lookup["embedding"](dummy_inputs)))
         pure_normed_positions = lookup["norm_layer1"](pure_positions)
         positional_embeddings = pure_normed_positions.cpu().view(-1, lookup["embedding"].weight.shape[1])
+        positional_embeddings = positional_embeddings.to(dtype=self.setup["dtype"])
 
         # Step 0: Separate breached embeddings into separate sentences:
         sentence_id_components = breached_embeddings[:, :v_length]
@@ -252,8 +256,11 @@ class DecepticonAttacker(AnalyticAttacker):
             avg_costs = 0
             avg_new_corr = 0
             num_replaced_tokens = 0
-            for idx, entry in enumerate(breached_without_positions.detach().cpu().numpy()):
-                max_corr = self.vcorrcoef(all_token_embeddings.detach()[1:].cpu().numpy(), entry)
+
+            breached_tokens_np = breached_without_positions.detach().cpu().to(dtype=self.setup["dtype"]).numpy()
+            all_tokens_embeddings_np = all_token_embeddings.detach()[1:].cpu().to(dtype=self.setup["dtype"]).numpy()
+            for idx, entry in enumerate(breached_tokens_np):
+                max_corr = self.vcorrcoef(all_tokens_embeddings_np, entry)
                 val, loc = torch.as_tensor(max_corr).max(dim=0)
                 if val * self.cfg.embedding_token_weight > costs[idx]:
                     num_replaced_tokens += 1
@@ -316,6 +323,7 @@ class DecepticonAttacker(AnalyticAttacker):
                 log.info(f"Filling with {shape[0] - total_groups} random seeds...These sentences will be scrambled.")
             # Find seeds
             seeds = torch.randn(shape[0], sentence_id_components.shape[-1])  # seeds for every sentence
+            seeds = torch.zeros(shape[0], sentence_id_components.shape[-1])  # seeds for every sentence
             label_ids = initial_labels[initial_labels != -1].unique()  # Skip over -1 here
             for idx, group_label in enumerate(label_ids):
                 seeds[idx] = sentence_id_components[initial_labels == group_label].mean(dim=0)
@@ -374,7 +382,9 @@ class DecepticonAttacker(AnalyticAttacker):
 
         leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models[0].name).view(-1)
         leaked_embeddings = lookup["norm_layer1"](lookup["embedding"](leaked_tokens))
-        leaked_embeddings = leaked_embeddings.cpu().view(-1, lookup["embedding"].weight.shape[1])
+        leaked_embeddings = (
+            leaked_embeddings.cpu().view(-1, lookup["embedding"].weight.shape[1]).to(dtype=self.setup["dtype"])
+        )
 
         bias_grad = torch.cat([shared_data[0]["gradients"][b_idx].clone() for b_idx in bias_idx])
         if ff_transposed:
@@ -408,13 +418,15 @@ class DecepticonAttacker(AnalyticAttacker):
             log.info(f"Reduced to {len_data * data_shape[0]} hits.")
             # print(best_guesses.indices.sort().values)
             breached_embeddings = breached_embeddings[best_guesses.indices]
-        breached_embeddings = breached_embeddings.cpu()  # Assignments run on CPU anyway
+        breached_embeddings = breached_embeddings.cpu().to(dtype=self.setup["dtype"])  # Assignments run on CPU anyway
 
         # Get an estimation of the positional embeddings:
         dummy_inputs = torch.zeros([len_data, *data_shape], dtype=torch.long, device=self.setup["device"])
         pure_positions = lookup["pos_encoder"](torch.zeros_like(lookup["embedding"](dummy_inputs)))
         pure_normed_positions = lookup["norm_layer1"](pure_positions)
-        positional_embeddings = pure_normed_positions.cpu().view(-1, lookup["embedding"].weight.shape[1])
+        positional_embeddings = (
+            pure_normed_positions.cpu().view(-1, lookup["embedding"].weight.shape[1]).to(dtype=self.setup["dtype"])
+        )
 
         # Step 0: Separate breached embeddings into separate sentences:
         sentence_id_components = breached_embeddings[:, :v_length]
@@ -447,8 +459,10 @@ class DecepticonAttacker(AnalyticAttacker):
             avg_costs = 0
             avg_new_corr = 0
             num_replaced_tokens = 0
-            for idx, entry in enumerate(breached_embeddings.detach().cpu().numpy()):
-                max_corr = self.vcorrcoef(all_token_embeddings.detach()[1:].cpu().numpy(), entry)
+            breached_np = breached_embeddings.detach().cpu().to(dtype=self.setup["dtype"]).numpy()
+            all_token_embeddings_np = all_token_embeddings.detach()[1:].cpu().to(dtype=self.setup["dtype"]).numpy()
+            for idx, entry in enumerate(breached_np):
+                max_corr = self.vcorrcoef(breached_np, entry)
                 val, loc = torch.as_tensor(max_corr).max(dim=0)
                 if val * self.cfg.embedding_token_weight > costs[idx]:
                     num_replaced_tokens += 1
@@ -459,9 +473,11 @@ class DecepticonAttacker(AnalyticAttacker):
                 f"Replaced {num_replaced_tokens} tokens with avg. corr {avg_costs / num_replaced_tokens} "
                 f"with new tokens with avg corr {avg_new_corr / num_replaced_tokens}"
             )
-        breached_token_embeddings = lookup["norm_layer1"](
-            lookup["embedding"](recovered_tokens.to(device=self.setup["device"]))
-        )[:, v_length:-1].cpu()
+        breached_token_embeddings = (
+            lookup["norm_layer1"](lookup["embedding"](recovered_tokens.to(device=self.setup["device"])))[:, v_length:-1]
+            .cpu()
+            .to(dtype=self.setup["dtype"])
+        )
         breached_just_positions = breached_embeddings - breached_token_embeddings
         ordered_tokens = -torch.ones(len_data * data_shape[0], dtype=torch.long)
 

@@ -474,6 +474,7 @@ class _BaseAttacker:
         num_queries = len(user_data)
         token_cutoff = getattr(self.cfg, "token_cutoff", 3.5)
 
+        # have to assert that this is the real decoder bias and embedding
         if decoder_bias_parameter_idx is not None:
             bias_per_query = [shared_data["gradients"][decoder_bias_parameter_idx] for shared_data in user_data]
             assert len(bias_per_query[0]) == server_payload[0]["metadata"]["vocab_size"]
@@ -489,7 +490,7 @@ class _BaseAttacker:
             # works super well for normal stuff like transformer3 without tying
 
             # This is slightly modified analytic label recovery in the style of Wainakh
-            # have to assert that this is the decoder bias:
+
             token_list = []
             # Stage 1
             average_bias = torch.stack(bias_per_query).mean(dim=0)
@@ -521,7 +522,6 @@ class _BaseAttacker:
 
         elif self.cfg.token_strategy == "embedding-norm":
             # This works decently well for GPT which has no decoder bias
-
             token_list = []
             # Stage 1
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
@@ -558,11 +558,11 @@ class _BaseAttacker:
 
         elif self.cfg.token_strategy == "embedding-log":
             # Small variation of embedding-norm
-
             token_list = []
             # Stage 1
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             std, mean = torch.std_mean(average_wte_norm.log())
+            valid_classes = []
             while len(valid_classes) == 0:
                 cutoff = mean + token_cutoff * std
                 if not cutoff.isfinite():  # untied weights
@@ -594,6 +594,7 @@ class _BaseAttacker:
             average_bias = torch.stack(bias_per_query).mean(dim=0)
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             std, mean = torch.std_mean(average_wte_norm.log())
+            valid_classes = []
             while len(valid_classes) == 0:
                 cutoff = mean + token_cutoff * std
                 if not cutoff.isfinite():  # untied weights
@@ -616,7 +617,6 @@ class _BaseAttacker:
 
         elif self.cfg.token_strategy == "greedy-embedding":
             # Sanity check without unique token selection
-
             token_list = []
             # Stage 1
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)

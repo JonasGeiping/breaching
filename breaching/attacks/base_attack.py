@@ -472,6 +472,7 @@ class _BaseAttacker:
         embedding_parameter_idx, decoder_bias_parameter_idx = lookup_grad_indices(model_name)
         num_data_points = user_data[0]["metadata"]["num_data_points"]
         num_queries = len(user_data)
+        token_cutoff = getattr(self.cfg, "token_cutoff", 3.5)
 
         if decoder_bias_parameter_idx is not None:
             bias_per_query = [shared_data["gradients"][decoder_bias_parameter_idx] for shared_data in user_data]
@@ -497,7 +498,7 @@ class _BaseAttacker:
             token_list += [*valid_classes]
             # Supplement with missing tokens from input:
             std, mean = torch.std_mean(average_wte_norm.log())
-            cutoff = mean + 3.5 * std
+            cutoff = mean + token_cutoff * std
             if not cutoff.isfinite():  # untied weights
                 tokens_in_input = average_wte_norm.nonzero().squeeze(dim=-1)
             else:  # tied weights
@@ -523,7 +524,7 @@ class _BaseAttacker:
             # Stage 1
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             std, mean = torch.std_mean(average_wte_norm.log())
-            cutoff = mean + 3.5 * std
+            cutoff = mean + token_cutoff * std
             if not cutoff.isfinite():  # untied weights
                 valid_classes = average_wte_norm.nonzero().squeeze(dim=-1)
             else:  # tied weights
@@ -553,7 +554,7 @@ class _BaseAttacker:
             # Stage 1
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             std, mean = torch.std_mean(average_wte_norm.log())
-            cutoff = mean + 3 * std
+            cutoff = mean + token_cutoff * std
             if not cutoff.isfinite():  # tied weights
                 valid_classes = average_wte_norm.nonzero().squeeze(dim=-1)
             else:  # untied weights
@@ -578,7 +579,7 @@ class _BaseAttacker:
             average_bias = torch.stack(bias_per_query).mean(dim=0)
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             std, mean = torch.std_mean(average_wte_norm.log())
-            cutoff = mean + 3 * std
+            cutoff = mean + token_cutoff * std
             if not cutoff.isfinite():  # tied weights
                 valid_classes = average_wte_norm.nonzero().squeeze(dim=-1)
             else:  # untied weights
@@ -594,6 +595,32 @@ class _BaseAttacker:
                 average_bias[selected_idx] -= m_impact
             tokens = torch.stack(token_list)
 
+        elif self.cfg.token_strategy == "greedy-embedding":
+            # Sanity check without unique token selection
+
+            token_list = []
+            # Stage 1
+            average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
+
+            m_impact = average_wte_norm.sum() / num_missing_tokens
+            # Stage 2
+            while len(token_list) < num_missing_tokens:
+                selected_idx = average_wte_norm.argmin()
+                token_list.append(selected_idx)
+                average_bias[selected_idx] -= m_impact
+            tokens = torch.stack(token_list)
+        elif self.cfg.token_strategy == "greedy-bias":
+            # Sanity check without unique token selection
+            token_list = []
+            # Stage 1
+            average_bias = torch.stack(bias_per_query).mean(dim=0)
+            m_impact = average_bias.sum() / num_missing_tokens
+            # Stage 2
+            while len(token_list) < num_missing_tokens:
+                selected_idx = average_bias.argmin()
+                token_list.append(selected_idx)
+                average_bias[selected_idx] -= m_impact
+            tokens = torch.stack(token_list)
         else:
             raise ValueError(f"Invalid label strategy {self.cfg.token_strategy} for token recovery before attack.")
 

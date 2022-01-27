@@ -495,6 +495,8 @@ class _BaseAttacker:
             average_bias = torch.stack(bias_per_query).mean(dim=0)
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             valid_classes = (average_bias < 0).nonzero().squeeze(dim=-1)
+            if len(valid_classes) > num_missing_tokens:  # This should only happen due to numerical errors for bias
+                valid_classes = (average_bias < 0).topk(k=num_missing_tokens, largest=False).indices
             token_list += [*valid_classes]
             # Supplement with missing tokens from input:
             std, mean = torch.std_mean(average_wte_norm.log())
@@ -524,13 +526,20 @@ class _BaseAttacker:
             # Stage 1
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             std, mean = torch.std_mean(average_wte_norm.log())
-            cutoff = mean + token_cutoff * std
-            if not cutoff.isfinite():  # untied weights
-                valid_classes = average_wte_norm.nonzero().squeeze(dim=-1)
-            else:  # tied weights
-                valid_classes = (average_wte_norm.log() > cutoff).nonzero().squeeze(dim=-1)
-            if len(valid_classes) > num_missing_tokens - 1:  # Cutoff overshoot
-                valid_classes = average_wte_norm.topk(k=num_missing_tokens - 1).indices
+
+            valid_classes = []
+            while len(valid_classes) == 0:  # Loop is usually unnecessary, but can recover from a bad cutoff
+                cutoff = mean + token_cutoff * std
+                if not cutoff.isfinite():  # untied weights
+                    valid_classes = average_wte_norm.nonzero().squeeze(dim=-1)
+                else:  # tied weights
+                    valid_classes = (average_wte_norm.log() > cutoff).nonzero().squeeze(dim=-1)
+                token_cutoff *= 0.8
+            if cutoff.isfinite():
+                log.info(f"Proceeded to cut estimated token distribution at {token_cutoff / 0.8:2.2f}.")
+
+            if len(valid_classes) > num_missing_tokens:  # Cutoff overshoot
+                valid_classes = average_wte_norm.topk(k=num_missing_tokens).indices
             token_list += [*valid_classes]
 
             # top2-log rule is decent:
@@ -554,11 +563,17 @@ class _BaseAttacker:
             # Stage 1
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             std, mean = torch.std_mean(average_wte_norm.log())
-            cutoff = mean + token_cutoff * std
-            if not cutoff.isfinite():  # tied weights
-                valid_classes = average_wte_norm.nonzero().squeeze(dim=-1)
-            else:  # untied weights
-                valid_classes = (average_wte_norm.log() > cutoff).nonzero().squeeze(dim=-1)
+            while len(valid_classes) == 0:
+                cutoff = mean + token_cutoff * std
+                if not cutoff.isfinite():  # untied weights
+                    valid_classes = average_wte_norm.nonzero().squeeze(dim=-1)
+                else:  # tied weights
+                    valid_classes = (average_wte_norm.log() > cutoff).nonzero().squeeze(dim=-1)
+                token_cutoff *= 0.8
+            if cutoff.isfinite():
+                log.info(f"Proceeded to cut estimated token distribution at {token_cutoff / 0.8:2.2f}.")
+            if len(valid_classes) > num_missing_tokens:  # Cutoff overshoot
+                valid_classes = average_wte_norm.topk(k=num_missing_tokens).indices
             token_list += [*valid_classes]
 
             average_wte_norm_log = average_wte_norm.log()
@@ -579,11 +594,15 @@ class _BaseAttacker:
             average_bias = torch.stack(bias_per_query).mean(dim=0)
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             std, mean = torch.std_mean(average_wte_norm.log())
-            cutoff = mean + token_cutoff * std
-            if not cutoff.isfinite():  # tied weights
-                valid_classes = average_wte_norm.nonzero().squeeze(dim=-1)
-            else:  # untied weights
-                valid_classes = (average_wte_norm.log() > cutoff).nonzero().squeeze(dim=-1)
+            while len(valid_classes) == 0:
+                cutoff = mean + token_cutoff * std
+                if not cutoff.isfinite():  # untied weights
+                    valid_classes = average_wte_norm.nonzero().squeeze(dim=-1)
+                else:  # tied weights
+                    valid_classes = (average_wte_norm.log() > cutoff).nonzero().squeeze(dim=-1)
+                token_cutoff *= 0.8
+            if cutoff.isfinite():
+                log.info(f"Proceeded to cut estimated token distribution at {token_cutoff / 0.8:2.2f}.")
             token_list += [*valid_classes]
 
             m_impact = average_bias[valid_classes].sum() / num_missing_tokens
@@ -601,7 +620,6 @@ class _BaseAttacker:
             token_list = []
             # Stage 1
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
-
             m_impact = average_wte_norm.sum() / num_missing_tokens
             # Stage 2
             while len(token_list) < num_missing_tokens:

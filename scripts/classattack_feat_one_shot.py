@@ -10,8 +10,7 @@ import breaching
 import os
 
 import numpy as np
-import torch
-import copy
+
 from scipy import stats
 
 os.environ["HYDRA_FULL_ERROR"] = "0"
@@ -57,8 +56,7 @@ def main_launcher(cfg):
     log.info("-----------------Job finished.-------------------------------")
 
 
-def main_process(
-    process_idx, local_group_size, cfg, num_trials=100, num_to_est=900, batch_size=4):
+def main_process(process_idx, local_group_size, cfg, num_trials=100, num_to_est=900, batch_size=4):
     """This function controls the central routine."""
     local_time = time.time()
     setup = breaching.utils.system_startup(process_idx, local_group_size, cfg)
@@ -90,11 +88,13 @@ def main_process(
         cls_to_obtain = cfg.case.data.target_label
         cfg.case.user.num_data_points = batch_size
         cfg.case.data.num_data_points = cfg.case.user.num_data_points
-        extra_info = {'cls_to_obtain': cls_to_obtain}
+        extra_info = {"cls_to_obtain": cls_to_obtain}
         server.reset_model()
-        server.reconfigure_model('cls_attack', extra_info=extra_info)
-        
-        log.info(f"Now estimating features from cls {cls_to_obtain} within {num_to_est} datapoints in batch size {batch_size}.")
+        server.reconfigure_model("cls_attack", extra_info=extra_info)
+
+        log.info(
+            f"Now estimating features from cls {cls_to_obtain} within {num_to_est} datapoints in batch size {batch_size}."
+        )
         extra_info = {"cls_to_obtain": cls_to_obtain, "model": model, "loss_fn": loss_fn, "setup": setup}
         est_features, est_sample_sizes = server.estimate_feat(cfg, extra_info, num_to_est=num_to_est)
         f_indx = server.find_best_feat(est_features, est_sample_sizes, method="kstest")
@@ -102,15 +102,15 @@ def main_process(
 
         # modify the model
         server.reset_model()
-        extra_info['multiplier'] = 300
+        extra_info["multiplier"] = 300
         extra_info["feat_to_obtain"] = f_indx
-        extra_info['feat_value'] = stats.norm.ppf(0.1, est_mean, est_std)
-        server.reconfigure_model('cls_attack', extra_info=extra_info)
-        server.reconfigure_model('feature_attack', extra_info=extra_info)
+        extra_info["feat_value"] = stats.norm.ppf(0.1, est_mean, est_std)
+        server.reconfigure_model("cls_attack", extra_info=extra_info)
+        server.reconfigure_model("feature_attack", extra_info=extra_info)
         server.model = server.model.to(**server.setup)
         server_payload = server.distribute_payload()
 
-        log.info(f"Now start one-shot attack")
+        log.info("Now start one-shot attack")
 
         num_to_test = 1000 - num_to_est
         start_ind = num_to_est // 10
@@ -120,12 +120,12 @@ def main_process(
         for i in range((num_to_test // 10) - 1):
             cfg.case.user.user_idx = start_ind + i
 
-            log.info(f"----------- Now attack uer {i} ---------------")
-            
+            log.info(f"----------- Now attack user {i} ---------------")
+
             cfg.case.data.num_data_points = cfg.case.user.num_data_points
             user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
             shared_data, true_user_data = user.compute_local_updates(server_payload)
-            
+
             logtis = server.model(true_user_data["data"])[:, [cls_to_obtain]]
             num_of_catch = len(logtis[logtis <= 0])
             num_of_catches.append(num_of_catch)
@@ -134,8 +134,9 @@ def main_process(
             counter += 1
             if counter == num_trials:
                 return np.array(num_of_catches), num_trials
-    
+
     return np.array(num_of_catches), num_trials
+
 
 if __name__ == "__main__":
     main_launcher()

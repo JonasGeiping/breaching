@@ -16,7 +16,6 @@ import datetime
 
 import hydra
 from omegaconf import OmegaConf, open_dict
-from omegaconf.errors import ConfigAttributeError
 
 import logging
 
@@ -79,7 +78,7 @@ def initialize_multiprocess_log(cfg):
         cfg.original_cwd = hydra.utils.get_original_cwd()
 
 
-def save_summary(cfg, metrics, stats, local_time, counted_queries=0, original_cwd=True, table_name="breach"):
+def save_summary(cfg, metrics, stats, local_time, original_cwd=True, table_name="breach"):
     """Save two summary tables. A detailed table of iterations/loss+acc and a summary of the end results."""
     # 1) detailed table:
     for step in range(len(stats["train_loss"])):
@@ -102,7 +101,6 @@ def save_summary(cfg, metrics, stats, local_time, counted_queries=0, original_cw
         model_state=cfg.case.server.model_state,
         attack=cfg.attack.type,
         attacktype=cfg.attack.attack_type,
-        counted_queries=counted_queries,
         **{k: v for k, v in metrics.items() if k != "order"},
         score=stats["opt_value"],
         total_time=str(datetime.timedelta(seconds=local_time)).replace(",", ""),
@@ -219,7 +217,7 @@ def overview(server, user, attacker):
 
 
 def save_reconstruction(
-    reconstructed_user_data, server_payload, true_user_data, cfg, side_by_side=False, target_indx=None
+    reconstructed_user_data, server_payload, true_user_data, cfg, side_by_side=True, target_indx=None
 ):
     """If target_indx is not None, only the datapoints at target_indx will be saved to file."""
     os.makedirs("reconstructions", exist_ok=True)
@@ -237,14 +235,11 @@ def save_reconstruction(
         if target_indx is not None:
             text_rec = text_rec[target_indx]
             text_ref = text_ref[target_indx]
-        try:
-            filepath = os.path.join(
-                "reconstructions", f"text_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.txt",
-            )
-        except ConfigAttributeError:  # MultiUserAggregate
-            filepath = os.path.join(
-                "reconstructions", f"text_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_range}.txt",
-            )
+
+        filepath = os.path.join(
+            "reconstructions", f"text_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.txt"
+        )
+
         with open(filepath, "w") as f:
             f.writelines(text_rec)
             if side_by_side:
@@ -265,14 +260,10 @@ def save_reconstruction(
             rec_denormalized = rec_denormalized[target_indx]
             ground_truth_denormalized = ground_truth_denormalized[target_indx]
 
-        try:
-            filepath = os.path.join(
-                "reconstructions", f"img_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.png",
-            )
-        except ConfigAttributeError:  # MultiUserAggregate
-            filepath = os.path.join(
-                "reconstructions", f"img_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_range}.png",
-            )
+        filepath = os.path.join(
+            "reconstructions", f"img_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.png",
+        )
+
         if not side_by_side:
             torchvision.utils.save_image(rec_denormalized, filepath)
         else:
@@ -281,10 +272,8 @@ def save_reconstruction(
 
 def dump_metrics(cfg, metrics):
     """Simple yaml dump of metric values."""
-    try:
-        filepath = f"metrics_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.yaml"
-    except ConfigAttributeError:  # MultiUserAggregate
-        filepath = f"metrics_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_range}.yaml"
+
+    filepath = f"metrics_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.yaml"
     sanitized_metrics = dict()
     for metric, val in metrics.items():
         try:

@@ -20,10 +20,11 @@ def construct_user(model, loss_fn, cfg_case, setup):
         dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=cfg_case.user.user_idx)
         user = UserMultiStep(model, loss_fn, dataloader, setup, idx=cfg_case.user.user_idx, cfg_user=cfg_case.user)
     elif cfg_case.user.user_type == "multiuser_aggregate":
-        dataloaders = []
+        dataloaders, indices = [], []
         for idx in range(*cfg_case.user.user_range):
             dataloaders += [construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=idx)]
-        user = MultiUserAggregate(model, loss_fn, dataloaders, setup, cfg_case.user)
+            indices += [idx]
+        user = MultiUserAggregate(model, loss_fn, dataloaders, setup, cfg_case.user, user_indices=indices)
     return user
 
 
@@ -382,7 +383,7 @@ class MultiUserAggregate(UserMultiStep):
     self.dataloader of this class is actually quite unwieldy, due to its possible size.
     """
 
-    def __init__(self, model, loss, dataloaders, setup, cfg_user):
+    def __init__(self, model, loss, dataloaders, setup, cfg_user, user_indices):
         """Initialize but do not propagate the cfg_case.user dict further."""
         super().__init__(model, loss, dataloaders, setup, None, cfg_user)
 
@@ -390,13 +391,14 @@ class MultiUserAggregate(UserMultiStep):
 
         self.users = []
         self.user_setup = dict(dtype=setup["dtype"], device=torch.device("cpu"))  # Simulate on CPU
-        for idx in range(self.num_users):
+        for idx in user_indices:
             if self.num_local_updates > 1:
                 self.users.append(UserMultiStep(model, loss, dataloaders[idx], self.user_setup, idx, cfg_user))
             else:
                 self.users.append(UserSingleStep(model, loss, dataloaders[idx], self.user_setup, idx, cfg_user))
 
         self.dataloader = chain(*dataloaders)
+        self.user_idx = f"{user_indices[0]}_{user_indices[-1]}"  # Only for printout identification
 
     def __repr__(self):
         n = "\n"

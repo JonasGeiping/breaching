@@ -54,6 +54,7 @@ def main_process(process_idx, local_group_size, cfg):
     # This is a no-op for an honest-but-curious server, but a malicious-model server can modify the model in this step.
     server = breaching.cases.construct_server(model, loss_fn, cfg.case, setup)
     model = server.vet_model(model)
+
     # Instantiate user and attacker
     user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
     attacker = breaching.attacks.prepare_attack(model, loss_fn, cfg.attack, setup)
@@ -61,13 +62,7 @@ def main_process(process_idx, local_group_size, cfg):
     breaching.utils.overview(server, user, attacker)
 
     # Simulate a simple FL protocol
-    shared_user_data = []
-    payloads = []
-    for query_id in server.queries():
-        server_payload = server.distribute_payload(query_id)  # A malicious server can return something "fun" here
-        shared_data_per_round, true_user_data = user.compute_local_updates(server_payload)  # true_data is for analysis
-        payloads += [server_payload]
-        shared_user_data += [shared_data_per_round]
+    shared_user_data, payloads, true_user_data = server.run_protocol(user)
 
     # Run an attack using only payload information and shared data
     reconstructed_user_data, stats = attacker.reconstruct(payloads, shared_user_data, server.secrets, dryrun=cfg.dryrun)
@@ -82,7 +77,7 @@ def main_process(process_idx, local_group_size, cfg):
     # Save to output folder:
     breaching.utils.dump_metrics(cfg, metrics)
     if cfg.save_reconstruction:
-        breaching.utils.save_reconstruction(reconstructed_user_data, payloads, true_user_data, cfg, side_by_side=False)
+        breaching.utils.save_reconstruction(reconstructed_user_data, payloads, true_user_data, cfg)
 
 
 if __name__ == "__main__":

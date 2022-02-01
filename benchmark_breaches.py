@@ -66,7 +66,11 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
         local_time = time.time()
         # Select data that has not been seen before:
         cfg.case.user.user_idx += 1
-        user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
+        try:
+            user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
+        except ValueError:
+            log.info("Cannot find other valid users. Finishing benchmark.")
+            break
         if cfg.case.data.modality == "text":
             dshape = user.dataloader.dataset[0]["input_ids"].shape
             data_shape_mismatch = any([d != d_ref for d, d_ref in zip(dshape, cfg.case.data.shape)])
@@ -98,21 +102,15 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
                     cfg_case=cfg.case,
                     setup=setup,
                 )
+                # Add query metrics
+                metrics["queries"] = user.counted_queries
 
                 # Save local summary:
-                breaching.utils.save_summary(
-                    cfg, metrics, stats, time.time() - local_time, user.counted_queries, original_cwd=False
-                )
+                breaching.utils.save_summary(cfg, metrics, stats, time.time() - local_time, original_cwd=False)
                 overall_metrics.append(metrics)
                 # Save recovered data:
                 if cfg.save_reconstruction:
-                    if cfg.case.data.modality == "text":
-                        side_by_side = True
-                    else:
-                        side_by_side = False
-                    breaching.utils.save_reconstruction(
-                        reconstruction, payloads, true_user_data, cfg, side_by_side=side_by_side
-                    )
+                    breaching.utils.save_reconstruction(reconstruction, payloads, true_user_data, cfg)
                 if cfg.dryrun:
                     break
             except Exception as e:  # noqa # yeah we're that close to the deadlines
@@ -123,7 +121,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
 
     # Save global summary:
     breaching.utils.save_summary(
-        cfg, average_metrics, stats, time.time() - total_time, None, original_cwd=True, table_name="BENCHMARK_breach"
+        cfg, average_metrics, stats, time.time() - total_time, original_cwd=True, table_name="BENCHMARK_breach"
     )
 
 

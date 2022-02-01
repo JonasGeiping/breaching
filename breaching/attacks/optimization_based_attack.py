@@ -79,6 +79,12 @@ class OptimizationBasedAttacker(_BaseAttacker):
         reconstructed_data = dict(data=optimal_solution, labels=labels)
         if server_payload[0]["metadata"]["modality"] == "text":
             reconstructed_data = self._postprocess_text_data(reconstructed_data)
+        if "ClassAttack" in server_secrets:
+            # Only a subset of images was actually reconstructed:
+            true_num_data = server_secrets["ClassAttack"]["true_num_data"]
+            reconstructed_data["data"] = torch.zeros([true_num_data, *self.data_shape], **self.setup)
+            reconstructed_data["data"][server_secrets["ClassAttack"]["target_indx"]] = optimal_solution
+            reconstructed_data["labels"] = server_secrets["ClassAttack"]["all_labels"]
         return reconstructed_data, stats
 
     def _run_trial(self, rec_model, shared_data, labels, stats, trial, initial_data=None, dryrun=False):

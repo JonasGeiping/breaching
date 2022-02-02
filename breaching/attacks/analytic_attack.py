@@ -205,7 +205,7 @@ class DecepticonAttacker(AnalyticAttacker):
                 order_leaked_to_breached, _, costs = self._match_embeddings(
                     leaked_embeddings, breached_without_positions
                 )
-                recovered_tokens = leaked_tokens[order_leaked_to_breached]
+                recovered_tokens = leaked_tokens.view(-1)[order_leaked_to_breached]
             else:
                 recovered_tokens = torch.zeros(len_data * data_shape[0], dtype=torch.long)
                 costs = -float("inf") * torch.ones(len_data * data_shape[0])
@@ -221,7 +221,7 @@ class DecepticonAttacker(AnalyticAttacker):
             # First assign and remove the token id from each breached embedding
             if leaked_tokens is not None:
                 order_leaked_to_breached, _, costs = self._match_embeddings(leaked_embeddings, breached_embeddings)
-                recovered_tokens = leaked_tokens[order_leaked_to_breached]
+                recovered_tokens = leaked_tokens.view(-1)[order_leaked_to_breached]
             else:
                 recovered_tokens = torch.zeros(len(breached_embeddings), dtype=torch.long)
                 costs = -float("inf") * torch.ones(len(breached_embeddings))

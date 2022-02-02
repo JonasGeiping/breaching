@@ -1,7 +1,13 @@
 # Full environment
-# You only need to install this if you are using every part of this module.
-# Most optional packages are imported latily.
-# Usually you will notice if you're missing a specific package.
+# You only need to install this if you are using every part of this framework.
+# Most optional packages are imported lazily.
+# Usually you will be notified if you're missing a specific optional package.
+
+# Non optional:
+# - PyTorch + Torchvision
+# - Hydra-core
+# If using text: huggingface (transformers, datasets, tokenizers)
+
 name: breaching
 channels:
   - pytorch
@@ -35,4 +41,4 @@ dependencies:
       - sacrebleu
       - timm
       - ortools
-      - k-means-constrained --no-cache-dir --no-binary 0.6.0 --no-build-isolation --no-deps --force-reinstall #  this is a pain
+      - k-means-constrained --no-cache-dir --no-binary 0.6.0 --no-build-isolation --no-deps --force-reinstall #  this is a pain, but not usually necesssary

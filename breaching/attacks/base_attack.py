@@ -469,6 +469,8 @@ class _BaseAttacker:
 
         The behavior with respect to multiple queries is work in progress and subject of debate.
         """
+        if self.cfg.token_strategy is None:
+            return None
         embedding_parameter_idx, decoder_bias_parameter_idx = lookup_grad_indices(model_name)
         num_data_points = user_data[0]["metadata"]["num_data_points"]
         num_queries = len(user_data)
@@ -640,7 +642,7 @@ class _BaseAttacker:
                 average_bias[selected_idx] -= m_impact
             tokens = torch.stack(token_list)
         else:
-            raise ValueError(f"Invalid label strategy {self.cfg.token_strategy} for token recovery before attack.")
+            raise ValueError(f"Invalid strategy {self.cfg.token_strategy} for token recovery before attack.")
 
         # Always sort, order does not matter here:
         tokens = tokens.sort()[0]

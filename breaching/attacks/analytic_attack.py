@@ -145,9 +145,10 @@ class DecepticonAttacker(AnalyticAttacker):
         [model.eval() for model in rec_models]
 
         # Estimate all tokens
-        leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models[0].name).view(-1)
-        leaked_embeddings = lookup["norm_layer1"](lookup["embedding"](leaked_tokens))
-        leaked_embeddings = leaked_embeddings.cpu().view(-1, lookup["embedding"].weight.shape[1])
+        leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models[0].name)
+        if leaked_tokens is not None:
+            leaked_embeddings = lookup["norm_layer1"](lookup["embedding"](leaked_tokens.view(-1)))
+            leaked_embeddings = leaked_embeddings.cpu().view(-1, lookup["embedding"].weight.shape[1])
 
         # Extract embeddings from linear layers
         breached_embeddings = self._extract_breaches(shared_data, server_payload, server_secrets)
@@ -174,7 +175,7 @@ class DecepticonAttacker(AnalyticAttacker):
         # Match breached embeddings to positions for each sentence:
         breached_embeddings = breached_embeddings[:, v_length:-1]
         positional_embeddings = positional_embeddings[:, v_length:-1]
-        leaked_embeddings = leaked_embeddings[:, v_length:-1]
+        leaked_embeddings = leaked_embeddings[:, v_length:-1] if leaked_tokens is not None else None
 
         if self.cfg.recovery_order == "positions-first":
             # First assign and remove the position from each breached embedding
@@ -200,11 +201,17 @@ class DecepticonAttacker(AnalyticAttacker):
 
             # These are already in the right position, but which token do they belong to?
             breached_without_positions = self._separate(ordered_breached_embeddings, positional_embeddings)
-            order_leaked_to_breached, _, costs = self._match_embeddings(leaked_embeddings, breached_without_positions)
-            recovered_tokens = leaked_tokens[order_leaked_to_breached]
-            if self.cfg.embedding_token_weight > 0:
+            if leaked_tokens is not None:
+                order_leaked_to_breached, _, costs = self._match_embeddings(
+                    leaked_embeddings, breached_without_positions
+                )
+                recovered_tokens = leaked_tokens[order_leaked_to_breached]
+            else:
+                recovered_tokens = torch.zeros(len_data * data_shape[0], dtype=torch.long)
+                costs = -float("inf") * torch.ones(len_data * data_shape[0])
+            if self.cfg.embedding_token_weight > 0 or leaked_tokens is None:
                 recovered_tokens = self._supplement_from_full_vocabulary(
-                    recovered_tokens, breached_without_positions, lookup
+                    recovered_tokens, costs, breached_without_positions, v_length, lookup
                 )
 
             # Finally re-order into sentences:
@@ -212,10 +219,16 @@ class DecepticonAttacker(AnalyticAttacker):
 
         elif self.cfg.recovery_order == "tokens-first":
             # First assign and remove the token id from each breached embedding
-            order_leaked_to_breached, _, costs = self._match_embeddings(leaked_embeddings, breached_embeddings)
-            recovered_tokens = leaked_tokens[order_leaked_to_breached]
-            if self.cfg.embedding_token_weight > 0:
-                recovered_tokens = self._supplement_from_full_vocabulary(recovered_tokens, breached_embeddings, lookup)
+            if leaked_tokens is not None:
+                order_leaked_to_breached, _, costs = self._match_embeddings(leaked_embeddings, breached_embeddings)
+                recovered_tokens = leaked_tokens[order_leaked_to_breached]
+            else:
+                recovered_tokens = torch.zeros(len(breached_embeddings), dtype=torch.long)
+                costs = -float("inf") * torch.ones(len(breached_embeddings))
+            if self.cfg.embedding_token_weight > 0 or leaked_tokens is None:
+                recovered_tokens = self._supplement_from_full_vocabulary(
+                    recovered_tokens, costs, breached_embeddings, v_length, lookup
+                )
             breached_token_embeddings = (
                 lookup["norm_layer1"](lookup["embedding"](recovered_tokens.to(device=self.setup["device"])))[
                     :, v_length:-1
@@ -448,14 +461,14 @@ class DecepticonAttacker(AnalyticAttacker):
             unmixed = unmixed_normed * m_std + m_mean
         elif self.cfg.separation == "pca":  # Also decorrelation in a (not as nice) way
             N = mixed_components.shape[-1]
-            A = torch.stack([mixed_components.view(-1, N), base_components.view(-1, N)], dim=0)
-            _, _, V = torch.pca_lowrank(A - A.mean(dim=-1), q=1, center=False, niter=20)
+            A = torch.stack([mixed_components.view(-1, N), base_components.view(-1, N)], dim=1)
+            _, _, V = torch.pca_lowrank(A - A.mean(dim=-1, keepdim=True), q=1, center=False, niter=20)
             unmixed = V[:, :, 0].view_as(mixed_components)
         else:
             raise ValueError(f"Invalid separation scheme {self.cfg.separation} given.")
         return unmixed
 
-    def _supplement_from_full_vocabulary(recovered_tokens, breached_without_positions, lookup, vocab_size):
+    def _supplement_from_full_vocabulary(self, recovered_tokens, costs, breached_without_positions, v_length, lookup):
         """ Optionally: Match breached_without_positions to any embedding entries
             If the costs from the matching above are low, then this can recover lost tokens that were missed by
             .recover_token_information()
@@ -573,12 +586,23 @@ class DecepticonAttacker(AnalyticAttacker):
             sentence_labels = torch.as_tensor(idx, dtype=torch.long)
             assert sentence_labels.unique(return_counts=True)[1].max() <= shape[1], "Invalid Assignment in fcluster"
 
-        elif algorithm == "pca":
+        elif "pca" in algorithm:  # Allow for pca-direct and pca-assign (the default)
             A = sentence_id_components - sentence_id_components.mean(dim=-1, keepdim=True)
-            U, S, V = torch.pca_lowrank(A, q=shape[0], center=False, niter=20)
+            # U, S, V = torch.pca_lowrank(A, q=shape[0], center=False, niter=20) # cannot handle q> min(m, n)
+            U, S, V = torch.linalg.svd(A, full_matrices=False)
             log.info(f"Singular values in SVD: {S}")
-            seeds = V  # all sign information is lost though
-            sentence_labels = U.abs().argmax(dim=-1)  # Is this the smartest way?
+            seeds = U[:, : shape[0]].T.matmul(A)  # all sign information is lost though
+            if "direct" in algorithm:
+                # this is the naive strategy, but it can break
+                # and return more assignment per sentence than allowed
+                sentence_labels = U[:, : shape[0]].abs().argmax(dim=-1)
+            else:
+                # Replicate seeds to seq_length
+                replicated_seeds = torch.repeat_interleave(seeds, shape[1], dim=0)
+
+                # Recompute correlations based on these mean seeds
+                order_breach_to_seed, _, _ = self._match_embeddings(replicated_seeds, A)
+                sentence_labels = (order_breach_to_seed / shape[1]).to(dtype=torch.long)
             # Should use U later on to do a better collision detection
 
         else:

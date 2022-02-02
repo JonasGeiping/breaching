@@ -18,6 +18,7 @@ sort_by_bias: False
 undivided: False
 separation: subtraction # alternative: decorrelation
 backfilling: global
+backfill_removal: # None or a separation option
 breach_reduction: bias
 
 # Implementation Details

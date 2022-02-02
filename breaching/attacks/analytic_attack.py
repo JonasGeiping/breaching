@@ -186,11 +186,16 @@ class DecepticonAttacker(AnalyticAttacker):
                 ordered_breached_embeddings[sentence * data_shape[0] + order_breach_to_positions] = breached_embeddings[
                     sentence_labels == sentence
                 ]
+                if self.cfg.backfill_removal is not None:
+                    breached_embeddings[sentence_labels == sentence] = self._separate(
+                        breached_embeddings[sentence_labels == sentence],
+                        positional_embeddings[: data_shape[0]][order_breach_to_positions],
+                    )
 
             if len(breached_embeddings) < len(positional_embeddings):
                 # Then fill up the missing locations:
-                ordered_breached_embeddings = self._backfill(
-                    ordered_breached_embeddings, breached_embeddings, positional_embeddings, data_shape
+                ordered_breached_embeddings = self._backfill_embeddings(
+                    ordered_breached_embeddings, breached_embeddings, positional_embeddings, sentence_labels, data_shape
                 )
 
             # These are already in the right position, but which token do they belong to?
@@ -204,6 +209,7 @@ class DecepticonAttacker(AnalyticAttacker):
 
             # Finally re-order into sentences:
             final_tokens = recovered_tokens.view([len_data, *data_shape])
+
         elif self.cfg.recovery_order == "tokens-first":
             # First assign and remove the token id from each breached embedding
             order_leaked_to_breached, _, costs = self._match_embeddings(leaked_embeddings, breached_embeddings)
@@ -227,14 +233,25 @@ class DecepticonAttacker(AnalyticAttacker):
                 ordered_tokens[sentence * data_shape[0] + order_breach_to_positions] = recovered_tokens[
                     sentence_labels == sentence
                 ]
+                if self.cfg.backfill_removal is not None:
+                    breached_just_positions[sentence_labels == sentence] = self._separate(
+                        breached_just_positions[sentence_labels == sentence],
+                        positional_embeddings[: data_shape[0]][order_breach_to_positions],
+                    )
             # Then fill up the missing locations:
             if len(breached_just_positions) < len(positional_embeddings):
-                ordered_breached_embeddings = self._backfill(
-                    ordered_tokens, breached_embeddings, positional_embeddings, data_shape
+                ordered_tokens = self._backfill_tokens(
+                    ordered_tokens,
+                    breached_embeddings,
+                    positional_embeddings,
+                    sentence_labels,
+                    data_shape,
+                    recovered_tokens=recovered_tokens,
                 )
 
             # Finally re-order into sentences:
             final_tokens = ordered_tokens.view([len_data, *data_shape])
+
         else:
             raise ValueError(f"Invalid recovery order {self.cfg.recovery_order} given.")
 
@@ -295,7 +312,7 @@ class DecepticonAttacker(AnalyticAttacker):
             elif self.cfg.breach_reduction == "bias":
                 best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len_data * data_shape[0], largest=False)
             else:
-                raise ValueError(f"Invalid breach reduction {self.cfg.breach_reduction} specified.")
+                raise ValueError(f"Invalid breach reduction {self.cfg.breach_reduction} given.")
             log.info(f"Reduced to {len_data * data_shape[0]} hits.")
             breached_embeddings = breached_embeddings[best_guesses.indices]
         breached_embeddings = breached_embeddings.cpu().to(dtype=self.setup["dtype"])  # Assignments run on CPU anyway
@@ -303,43 +320,119 @@ class DecepticonAttacker(AnalyticAttacker):
             raise ValueError("Invalid breached embeddings recovered.")
         return breached_embeddings
 
-    def _backfill(self, ordered_inputs, fillable_embeddings, positional_embeddings, data_shape):
+    def _backfill_embeddings(
+        self, ordered_embeddings, fillable_embeddings, positional_embeddings, sentence_labels, data_shape,
+    ):
         """Fill missing positions in ordered_embeddings based on some heuristic
            with collisions from fillable_embeddings.
+           This method has a good amount of overlap with _backfill_embeddings but combining them was just a mess of
+           if inputs_are_tokens, then ...
         """
-        if ordered_inputs.ndims != fillable_embeddings.ndims:  # token inputs
-            ordered_embeddings = ordered_inputs.to(dtype=torch.float).unsqueeze(-1)
-        else:  # embedding inputs
-            ordered_embeddings = ordered_inputs
+        free_positions = (ordered_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
 
         if self.cfg.backfilling == "global":
             # Fill missing locations globally
-            free_positions = (ordered_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
             while len(free_positions) > 0:
                 miss_to_pos, selection_tensor, costs = self._match_embeddings(
                     fillable_embeddings, positional_embeddings[free_positions]
                 )
+
                 ordered_embeddings[free_positions[selection_tensor]] = fillable_embeddings[miss_to_pos]
+                if self.cfg.backfill_removal is not None:
+                    fillable_embeddings[miss_to_pos] = self._separate(
+                        fillable_embeddings[miss_to_pos], positional_embeddings[free_positions][selection_tensor],
+                    )
                 free_positions = (ordered_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
+
         elif self.cfg.backfilling == "local":
             # Fill sentence-by-sentence
-            for sentence in range(len_data):
-                embeddings = ordered_embeddings[sentence * data_shape[0] : (sentence + 1) * data_shape[0]]
-                free_positions = (embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
+            for sentence in range(data_shape[0]):
+                sentence_inputs = ordered_embeddings[sentence * data_shape[0] : (sentence + 1) * data_shape[0]]
+                free_positions = (sentence_inputs.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
                 while len(free_positions) > 0:
                     miss_to_pos, selection_tensor, costs = self._match_embeddings(
                         fillable_embeddings[sentence_labels == sentence],
                         positional_embeddings[: data_shape[0]][free_positions],
                     )
-                    embeddings[free_positions[selection_tensor]] = fillable_embeddings[sentence_labels == sentence][
-                        miss_to_pos
-                    ]
-                    free_positions = (embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
-                ordered_embeddings[sentence * data_shape[0] : (sentence + 1) * data_shape[0]] = embeddings
+                    sentence_inputs[free_positions[selection_tensor]] = fillable_embeddings[
+                        sentence_labels == sentence
+                    ][miss_to_pos]
+                    if self.cfg.backfill_removal is not None:
+                        fillable_embeddings[sentence_labels == sentence][miss_to_pos] = self._separate(
+                            fillable_embeddings[sentence_labels == sentence][miss_to_pos],
+                            positional_embeddings[: data_shape[0]][free_positions],
+                        )
+                    free_positions = (sentence_inputs.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
+                ordered_embeddings[sentence * data_shape[0] : (sentence + 1) * data_shape[0]] = sentence_inputs
+
+        elif self.cfg.backfilling == "randn":  # sanity check option
+            ordered_embeddings[free_positions] = torch.randn(
+                [len(free_positions), ordered_embeddings.shape[-1]], dtype=self.setup["dtype"]
+            )
         else:
             raise ValueError(f"Invalid backfilling heuristic {self.cfg.backfilling} given.")
 
         return ordered_embeddings
+
+    def _backfill_tokens(
+        self,
+        ordered_tokens,
+        fillable_embeddings,
+        positional_embeddings,
+        sentence_labels,
+        data_shape,
+        recovered_tokens=None,
+    ):
+        """Fill missing positions in ordered_tokens based on some heuristic
+           with collisions from fillable_embeddings.
+           recovered_tokens has to be a lookup for the tokens corresponding to fillable_embeddings
+           This method has a good amount of overlap with _backfill_embeddings but combining them was just a mess of
+           if inputs_are_tokens, then ...
+        """
+        free_positions = (ordered_tokens == -1).nonzero().squeeze(dim=1)
+
+        if self.cfg.backfilling == "global":
+            # Fill missing locations globally
+            while len(free_positions) > 0:
+                miss_to_pos, selection_tensor, costs = self._match_embeddings(
+                    fillable_embeddings, positional_embeddings[free_positions]
+                )
+                ordered_tokens[free_positions[selection_tensor]] = recovered_tokens[miss_to_pos]
+                if self.cfg.backfill_removal is not None:
+                    fillable_embeddings[miss_to_pos] = self._separate(
+                        fillable_embeddings[miss_to_pos], positional_embeddings[free_positions][selection_tensor],
+                    )
+                free_positions = (ordered_tokens == -1).nonzero().squeeze(dim=1)
+
+        elif self.cfg.backfilling == "local":
+            # Fill sentence-by-sentence
+            for sentence in range(data_shape[0]):
+                sentence_inputs = ordered_tokens[sentence * data_shape[0] : (sentence + 1) * data_shape[0]]
+                free_positions = (sentence_inputs == -1).nonzero().squeeze(dim=1)
+                while len(free_positions) > 0:
+                    miss_to_pos, selection_tensor, costs = self._match_embeddings(
+                        fillable_embeddings[sentence_labels == sentence],
+                        positional_embeddings[: data_shape[0]][free_positions],
+                    )
+                    sentence_inputs[free_positions[selection_tensor]] = recovered_tokens[sentence_labels == sentence][
+                        miss_to_pos
+                    ]
+                    if self.cfg.backfill_removal is not None:
+                        fillable_embeddings[sentence_labels == sentence][miss_to_pos] = self._separate(
+                            fillable_embeddings[sentence_labels == sentence][miss_to_pos],
+                            positional_embeddings[: data_shape[0]][free_positions],
+                        )
+                    free_positions = (sentence_inputs == -1).nonzero().squeeze(dim=1)
+                ordered_tokens[sentence * data_shape[0] : (sentence + 1) * data_shape[0]] = sentence_inputs
+
+        elif self.cfg.backfilling == "randn":  # sanity check option
+            ordered_tokens[free_positions] = torch.randint(
+                0, ordered_tokens.max(), [len(free_positions), ordered_tokens.shape[-1]], dtype=torch.long
+            )
+        else:
+            raise ValueError(f"Invalid backfilling heuristic {self.cfg.backfilling} given.")
+
+        return ordered_tokens
 
     def _separate(self, mixed_components, base_components):
         if self.cfg.separation == "subtraction":
@@ -347,7 +440,7 @@ class DecepticonAttacker(AnalyticAttacker):
         elif self.cfg.separation == "decorrelation":
             dims = dict(dim=-1, keepdim=True)
             m_std, m_mean = torch.std_mean(mixed_components, **dims)
-            b_std, b_mean = torch.std_mean(components, **dims)
+            b_std, b_mean = torch.std_mean(base_components, **dims)
             m_normed = (mixed_components - m_mean) / m_std
             b_normed = (base_components - b_mean) / b_std
             corr = (m_normed * b_normed).sum(**dims) / m_normed.norm(**dims) / b_normed.norm(**dims)
@@ -439,8 +532,7 @@ class DecepticonAttacker(AnalyticAttacker):
                 log.info(f"Filling with {shape[0] - total_groups} random seeds...These sentences will be scrambled.")
             # Find seeds
             seeds = torch.randn(shape[0], sentence_id_components.shape[-1])  # seeds for every sentence
-            seeds = torch.zeros(shape[0], sentence_id_components.shape[-1])  # seeds for every sentence
-            label_ids = initial_labels[initial_labels != -1].unique()  # Skip over -1 here
+            label_ids = initial_labels[initial_labels != -1].unique()  # Skip over -1 (which is "unassigned")
             for idx, group_label in enumerate(label_ids):
                 if "median" in algorithm:
                     seeds[idx] = sentence_id_components[initial_labels == group_label].median(dim=0).values

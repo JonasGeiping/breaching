@@ -4,7 +4,7 @@
 # Usually you will be notified if you're missing a specific optional package.
 
 # Non optional:
-# - PyTorch + Torchvision
+# - PyTorch + Torchvision + scipy
 # - Hydra-core
 # If using text: huggingface (transformers, datasets, tokenizers)
 
@@ -32,6 +32,7 @@ dependencies:
   - nltk
   - pip
   - cython
+  - scipy
   - pip:
       - hydra-core
       - kornia

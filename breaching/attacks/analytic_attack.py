@@ -440,7 +440,7 @@ class DecepticonAttacker(AnalyticAttacker):
 
         elif self.cfg.backfilling == "randn":  # sanity check option
             ordered_tokens[free_positions] = torch.randint(
-                0, ordered_tokens.max(), [len(free_positions), ordered_tokens.shape[-1]], dtype=torch.long
+                0, ordered_tokens.max(), (len(free_positions),), dtype=torch.long
             )
         else:
             raise ValueError(f"Invalid backfilling heuristic {self.cfg.backfilling} given.")

@@ -540,7 +540,7 @@ class AprilAttacker(AnalyticAttacker):
         rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)
         len_data = shared_data[0]["metadata"]["num_data_points"]  # Not strictly needed for the attack
 
-        x_patched = self.closed_form_april(rec_models[0], shared_data[0]).to(**self.setup)
+        x_patched = self.closed_form_april(rec_models[0], shared_data[0], solver=self.cfg.solver).to(**self.setup)
         x = self.recover_patch(x_patched)
         inputs = torch.max(torch.min(x, (1 - self.dm) / self.ds), -self.dm / self.ds)
 
@@ -567,7 +567,7 @@ class AprilAttacker(AnalyticAttacker):
         return new_x
 
     @staticmethod
-    def closed_form_april(model, shared_data):
+    def closed_form_april(model, shared_data, solver="gelsd"):
         """Run inversions on CPU in double precision. (gelsd only implemented for CPU)"""
         # recover patch embeddings first, (APRIL paper)
         qkv_w = model.model.blocks[0].attn.qkv.weight.detach().double().cpu()
@@ -580,7 +580,7 @@ class AprilAttacker(AnalyticAttacker):
 
         b = (q_w.T @ q_g + k_w.T @ k_g + v_w.T @ v_g).double().cpu()
         log.info(f"Attention Inversion:  ||A||={A.norm()}, ||b||={b.norm()}")
-        z = torch.linalg.lstsq(A @ A.T, A @ b, driver="gelsd", rcond=None).solution
+        z = torch.linalg.lstsq(A.T, b, driver=solver, rcond=None).solution
         z -= pos_embed
         z = z[1:]
 
@@ -591,7 +591,7 @@ class AprilAttacker(AnalyticAttacker):
 
         x = z - em_b
         log.info(f"Embedding Inversion:  ||A||={em_w.norm()}, ||b||={x.norm()}")
-        x = torch.linalg.lstsq(em_w, x.T, driver="gelsd", rcond=None).solution
+        x = torch.linalg.lstsq(em_w, x.T, driver=solver, rcond=None).solution
         x = x.reshape((3, -1, x.shape[-1]))
         x = x.transpose(1, 2)
         return x

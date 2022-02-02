@@ -176,32 +176,68 @@ class DecepticonAttacker(AnalyticAttacker):
         positional_embeddings = positional_embeddings[:, v_length:-1]
         leaked_embeddings = leaked_embeddings[:, v_length:-1]
 
-        ordered_breached_embeddings = torch.zeros_like(positional_embeddings)
-        for sentence in range(len_data):
-            order_breach_to_positions, _, costs = self._match_embeddings(
-                positional_embeddings[: data_shape[0]], breached_embeddings[sentence_labels == sentence]
-            )
-            ordered_breached_embeddings[sentence * data_shape[0] + order_breach_to_positions] = breached_embeddings[
-                sentence_labels == sentence
-            ]
+        if self.cfg.recovery_order == "positions-first":
+            # First assign and remove the position from each breached embedding
+            ordered_breached_embeddings = torch.zeros_like(positional_embeddings)
+            for sentence in range(len_data):
+                order_breach_to_positions, _, costs = self._match_embeddings(
+                    positional_embeddings[: data_shape[0]], breached_embeddings[sentence_labels == sentence]
+                )
+                ordered_breached_embeddings[sentence * data_shape[0] + order_breach_to_positions] = breached_embeddings[
+                    sentence_labels == sentence
+                ]
 
-        if len(breached_embeddings) < len(positional_embeddings):
+            if len(breached_embeddings) < len(positional_embeddings):
+                # Then fill up the missing locations:
+                ordered_breached_embeddings = self._backfill(
+                    ordered_breached_embeddings, breached_embeddings, positional_embeddings, data_shape
+                )
+
+            # These are already in the right position, but which token do they belong to?
+            breached_without_positions = self._separate(ordered_breached_embeddings, positional_embeddings)
+            order_leaked_to_breached, _, costs = self._match_embeddings(leaked_embeddings, breached_without_positions)
+            recovered_tokens = leaked_tokens[order_leaked_to_breached]
+            if self.cfg.embedding_token_weight > 0:
+                recovered_tokens = self._supplement_from_full_vocabulary(
+                    recovered_tokens, breached_without_positions, lookup
+                )
+
+            # Finally re-order into sentences:
+            final_tokens = recovered_tokens.view([len_data, *data_shape])
+        elif self.cfg.recovery_order == "tokens-first":
+            # First assign and remove the token id from each breached embedding
+            order_leaked_to_breached, _, costs = self._match_embeddings(leaked_embeddings, breached_embeddings)
+            recovered_tokens = leaked_tokens[order_leaked_to_breached]
+            if self.cfg.embedding_token_weight > 0:
+                recovered_tokens = self._supplement_from_full_vocabulary(recovered_tokens, breached_embeddings, lookup)
+            breached_token_embeddings = (
+                lookup["norm_layer1"](lookup["embedding"](recovered_tokens.to(device=self.setup["device"])))[
+                    :, v_length:-1
+                ]
+                .cpu()
+                .to(dtype=self.setup["dtype"])
+            )
+            breached_just_positions = self._separate(breached_embeddings, breached_token_embeddings)
+            ordered_tokens = -torch.ones(len_data * data_shape[0], dtype=torch.long)
+
+            for sentence in range(len_data):
+                order_breach_to_positions, _, costs = self._match_embeddings(
+                    positional_embeddings[: data_shape[0]], breached_just_positions[sentence_labels == sentence]
+                )
+                ordered_tokens[sentence * data_shape[0] + order_breach_to_positions] = recovered_tokens[
+                    sentence_labels == sentence
+                ]
             # Then fill up the missing locations:
-            ordered_breached_embeddings = self._backfill(
-                ordered_breached_embeddings, breached_embeddings, positional_embeddings, data_shape
-            )
+            if len(breached_just_positions) < len(positional_embeddings):
+                ordered_breached_embeddings = self._backfill(
+                    ordered_tokens, breached_embeddings, positional_embeddings, data_shape
+                )
 
-        # These are already in the right position, but which token do they belong to?
-        breached_without_positions = self._separate(ordered_breached_embeddings, positional_embeddings)
-        order_leaked_to_breached, _, costs = self._match_embeddings(leaked_embeddings, breached_without_positions)
-        recovered_tokens = leaked_tokens[order_leaked_to_breached]
-        if self.cfg.embedding_token_weight > 0:
-            recovered_tokens = self._supplement_from_full_vocabulary(
-                recovered_tokens, breached_without_positions, lookup
-            )
+            # Finally re-order into sentences:
+            final_tokens = ordered_tokens.view([len_data, *data_shape])
+        else:
+            raise ValueError(f"Invalid recovery order {self.cfg.recovery_order} given.")
 
-        # Finally re-order into sentences:
-        final_tokens = recovered_tokens.view([len_data, *data_shape])
         reconstructed_data = dict(data=final_tokens, labels=final_tokens)
         return reconstructed_data, stats
 
@@ -252,10 +288,14 @@ class DecepticonAttacker(AnalyticAttacker):
         len_data = shared_data[0]["metadata"]["num_data_points"]
         data_shape = server_secrets["ImprintBlock"]["data_shape"]
         if len(breached_embeddings) > len_data * data_shape[0]:
-            best_guesses = torch.topk(
-                weight_grad.mean(dim=1)[bias_grad != 0].abs(), len_data * data_shape[0], largest=True
-            )
-            # best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len_data * data_shape[0], largest=False)
+            if self.cfg.breach_reduction == "weight":
+                best_guesses = torch.topk(
+                    weight_grad.mean(dim=1)[bias_grad != 0].abs(), len_data * data_shape[0], largest=True
+                )
+            elif self.cfg.breach_reduction == "bias":
+                best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len_data * data_shape[0], largest=False)
+            else:
+                raise ValueError(f"Invalid breach reduction {self.cfg.breach_reduction} specified.")
             log.info(f"Reduced to {len_data * data_shape[0]} hits.")
             breached_embeddings = breached_embeddings[best_guesses.indices]
         breached_embeddings = breached_embeddings.cpu().to(dtype=self.setup["dtype"])  # Assignments run on CPU anyway
@@ -263,10 +303,15 @@ class DecepticonAttacker(AnalyticAttacker):
             raise ValueError("Invalid breached embeddings recovered.")
         return breached_embeddings
 
-    def _backfill(self, ordered_embeddings, fillable_embeddings, positional_embeddings, data_shape):
+    def _backfill(self, ordered_inputs, fillable_embeddings, positional_embeddings, data_shape):
         """Fill missing positions in ordered_embeddings based on some heuristic
            with collisions from fillable_embeddings.
         """
+        if ordered_inputs.ndims != fillable_embeddings.ndims:  # token inputs
+            ordered_embeddings = ordered_inputs.to(dtype=torch.float).unsqueeze(-1)
+        else:  # embedding inputs
+            ordered_embeddings = ordered_inputs
+
         if self.cfg.backfilling == "global":
             # Fill missing locations globally
             free_positions = (ordered_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
@@ -359,7 +404,7 @@ class DecepticonAttacker(AnalyticAttacker):
             labels = clustering.fit_predict(normalized_components.numpy())
             sentence_labels = torch.as_tensor(labels)
 
-        elif algorithm == "dynamic-threshold":
+        elif "dynamic-threshold" in algorithm:  # Allow for dynamic-threshold and dynamic-threshold-median
             corrs = torch.as_tensor(np.corrcoef(sentence_id_components.double().detach().numpy()))
             corrs[torch.isnan(corrs)] = 0  # Should only ever trigger in edge cases where sentence_component=0
             upper_range = [1 - 1.5 ** float(n) for n in torch.arange(-96, -16)][::-1]
@@ -397,10 +442,15 @@ class DecepticonAttacker(AnalyticAttacker):
             seeds = torch.zeros(shape[0], sentence_id_components.shape[-1])  # seeds for every sentence
             label_ids = initial_labels[initial_labels != -1].unique()  # Skip over -1 here
             for idx, group_label in enumerate(label_ids):
-                seeds[idx] = sentence_id_components[initial_labels == group_label].mean(dim=0)
-            replicated_seeds = torch.repeat_interleave(seeds, shape[1], dim=0)  # Replicate seeds to seq_length
-            # Recompute correlations based on these mean seeds
+                if "median" in algorithm:
+                    seeds[idx] = sentence_id_components[initial_labels == group_label].median(dim=0).values
+                else:
+                    seeds[idx] = sentence_id_components[initial_labels == group_label].mean(dim=0)
 
+            # Replicate seeds to seq_length
+            replicated_seeds = torch.repeat_interleave(seeds, shape[1], dim=0)
+
+            # Recompute correlations based on these mean seeds
             order_breach_to_seed, _, _ = self._match_embeddings(replicated_seeds, sentence_id_components)
             sentence_labels = (order_breach_to_seed / shape[1]).to(dtype=torch.long)
 
@@ -442,147 +492,6 @@ class DecepticonAttacker(AnalyticAttacker):
         else:
             raise ValueError(f"Invalid sentence algorithm {algorithm} given.")
         return sentence_labels
-
-    @torch.inference_mode()
-    def reconstruct_token_first(self, server_payload, shared_data, server_secrets=None, dryrun=False):
-        """Reconstruct both positions and token ids from the input sentence. Disambiguate sentences based on v_length."""
-        # Initialize stats module for later usage:
-        rec_models, tokens, stats = self.prepare_attack(server_payload, shared_data)
-        len_data = shared_data[0]["metadata"]["num_data_points"]  # Could be guessed as well
-        lookup = lookup_module_names(rec_models[0].name, rec_models[0])
-
-        if "ImprintBlock" in server_secrets.keys():
-            weight_idx = server_secrets["ImprintBlock"]["weight_idx"]
-            bias_idx = server_secrets["ImprintBlock"]["bias_idx"]
-            data_shape = server_secrets["ImprintBlock"]["data_shape"]
-            v_length = server_secrets["ImprintBlock"]["v_length"]
-            ff_transposed = server_secrets["ImprintBlock"]["ff_transposed"]
-        else:
-            raise ValueError(f"No imprint hidden in model {rec_models[0]} according to server.")
-        [model.eval() for model in rec_models]
-
-        leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models[0].name).view(-1)
-        leaked_embeddings = lookup["norm_layer1"](lookup["embedding"](leaked_tokens))
-        leaked_embeddings = (
-            leaked_embeddings.cpu().view(-1, lookup["embedding"].weight.shape[1]).to(dtype=self.setup["dtype"])
-        )
-
-        bias_grad = torch.cat([shared_data[0]["gradients"][b_idx].clone() for b_idx in bias_idx])
-        if ff_transposed:
-            weight_grad = torch.cat([shared_data[0]["gradients"][w_idx].clone() for w_idx in weight_idx], dim=1)
-            weight_grad = weight_grad.T.contiguous()  # Restride only due to paranoia
-        else:
-            weight_grad = torch.cat([shared_data[0]["gradients"][w_idx].clone() for w_idx in weight_idx])
-
-        if self.cfg.sort_by_bias:
-            # This variant can recover from shuffled rows under the assumption that biases would be ordered
-            _, order = server_payload[0]["parameters"][1].sort(descending=True)
-            bias_grad = bias_grad[order]
-            weight_grad = weight_grad[order]
-
-        if server_secrets["ImprintBlock"]["structure"] == "cumulative":
-            for i in range(0, weight_grad.shape[0] - 1):
-                weight_grad[i] -= weight_grad[i + 1]
-                bias_grad[i] -= bias_grad[i + 1]
-
-        # Here are our reconstructed positionally encoded embeddings:
-        valid_classes = bias_grad != 0
-        breached_embeddings = weight_grad[valid_classes, :] / bias_grad[valid_classes, None]
-        not_nan_positions = ~torch.isnan(breached_embeddings.sum(dim=-1))  # This should usually be all positions
-        breached_embeddings = breached_embeddings[not_nan_positions]  # just being paranoid here
-        log.info(f"Recovered {len(breached_embeddings)} embeddings with positional data from imprinted layer.")
-        if len(breached_embeddings) > len_data * data_shape[0]:
-            best_guesses = torch.topk(
-                weight_grad.mean(dim=1)[bias_grad != 0].abs(), len_data * data_shape[0], largest=True
-            )
-            best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len_data * data_shape[0], largest=False)
-            log.info(f"Reduced to {len_data * data_shape[0]} hits.")
-            # print(best_guesses.indices.sort().values)
-            breached_embeddings = breached_embeddings[best_guesses.indices]
-        breached_embeddings = breached_embeddings.cpu().to(dtype=self.setup["dtype"])  # Assignments run on CPU anyway
-
-        # Get an estimation of the positional embeddings:
-        dummy_inputs = torch.zeros([len_data, *data_shape], dtype=torch.long, device=self.setup["device"])
-        pure_positions = lookup["pos_encoder"](torch.zeros_like(lookup["embedding"](dummy_inputs)))
-        pure_normed_positions = lookup["norm_layer1"](pure_positions)
-        positional_embeddings = (
-            pure_normed_positions.cpu().view(-1, lookup["embedding"].weight.shape[1]).to(dtype=self.setup["dtype"])
-        )
-
-        # Step 0: Separate breached embeddings into separate sentences:
-        sentence_id_components = breached_embeddings[:, :v_length]
-
-        if len_data > 1:
-            sentence_labels = self._match_breaches_to_sentences(
-                sentence_id_components, [len_data, data_shape[0]], algorithm=self.cfg.sentence_algorithm
-            )
-            _, counts = sentence_labels.unique(return_counts=True)
-            log.info(f"Assigned {counts.tolist()} breached embeddings to each sentence.")
-        else:
-            sentence_labels = torch.zeros(len(breached_embeddings), dtype=torch.long)
-
-        # Match breached embeddings to positions for each sentence:
-        breached_embeddings = breached_embeddings[:, v_length:-1]
-        positional_embeddings = positional_embeddings[:, v_length:-1]
-        leaked_embeddings = leaked_embeddings[:, v_length:-1]
-
-        # First assign and remove the token id from each breached embedding
-        order_leaked_to_breached, _, costs = self._match_embeddings(leaked_embeddings, breached_embeddings)
-        recovered_tokens = leaked_tokens[order_leaked_to_breached]
-        if self.cfg.embedding_token_weight > 0:
-            # Optionally: Match breached_embeddings to any embedding entries
-            # If the costs from the matching above are low, then this can recover lost tokens that were missed by
-            # .recover_token_information()
-            vocab_size = server_payload[0]["metadata"]["vocab_size"]
-            all_token_ids = torch.arange(0, vocab_size, device=self.setup["device"])
-            all_token_embeddings = lookup["norm_layer1"](lookup["embedding"](all_token_ids))
-            all_token_embeddings = all_token_embeddings[:, v_length:-1]
-            avg_costs = 0
-            avg_new_corr = 0
-            num_replaced_tokens = 0
-            breached_np = breached_embeddings.detach().cpu().to(dtype=self.setup["dtype"]).numpy()
-            all_token_embeddings_np = all_token_embeddings.detach()[1:].cpu().to(dtype=self.setup["dtype"]).numpy()
-            for idx, entry in enumerate(breached_np):
-                max_corr = self.vcorrcoef(breached_np, entry)
-                val, loc = torch.as_tensor(max_corr).max(dim=0)
-                if val * self.cfg.embedding_token_weight > costs[idx]:
-                    num_replaced_tokens += 1
-                    avg_costs += costs[idx]
-                    avg_new_corr += val
-                    recovered_tokens[idx] = loc + 1
-            log.info(
-                f"Replaced {num_replaced_tokens} tokens with avg. corr {avg_costs / num_replaced_tokens} "
-                f"with new tokens with avg corr {avg_new_corr / num_replaced_tokens}"
-            )
-        breached_token_embeddings = (
-            lookup["norm_layer1"](lookup["embedding"](recovered_tokens.to(device=self.setup["device"])))[:, v_length:-1]
-            .cpu()
-            .to(dtype=self.setup["dtype"])
-        )
-        breached_just_positions = breached_embeddings - breached_token_embeddings
-        ordered_tokens = -torch.ones(len_data * data_shape[0], dtype=torch.long)
-
-        for sentence in range(len_data):
-            order_breach_to_positions, _, costs = self._match_embeddings(
-                positional_embeddings[: data_shape[0]], breached_just_positions[sentence_labels == sentence]
-            )
-            ordered_tokens[sentence * data_shape[0] + order_breach_to_positions] = recovered_tokens[
-                sentence_labels == sentence
-            ]
-        # Then fill up the missing locations:
-        if len(breached_just_positions) < len(positional_embeddings):
-            free_positions = (ordered_tokens == -1).nonzero().squeeze(dim=1)
-            while len(free_positions) > 0:
-                miss_to_pos, selection_tensor, costs = self._match_embeddings(
-                    breached_embeddings, positional_embeddings[free_positions]
-                )
-                ordered_tokens[free_positions[selection_tensor]] = recovered_tokens[miss_to_pos]
-                free_positions = (ordered_tokens == -1).nonzero().squeeze(dim=1)
-
-        # Finally re-order into sentences:
-        final_tokens = ordered_tokens.view([len_data, *data_shape])
-        reconstructed_data = dict(data=final_tokens, labels=final_tokens)
-        return reconstructed_data, stats
 
     def _match_embeddings(self, inputs, references, measure="corrcoef", fallbacks=None):
         if references.ndim == 1:

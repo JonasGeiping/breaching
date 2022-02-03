@@ -34,15 +34,15 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
         raw_dataset = _split_wikipedia_into_articles(raw_dataset, user_idx, return_full_dataset, min_length=25)
     elif cfg_data.name == "stackoverflow":
         raw_texts = load_stackoverflow(cfg_data.path, user_idx, return_full_dataset, split=split)
-        raw_dataset = Dataset.from_dict(dict(text=raw_texts))
+        raw_dataset = Dataset.from_dict(dict(text=raw_texts), cache_dir=cfg_data.path)
     elif cfg_data.name == "shakespeare":
         raw_texts = load_shakespeare(cfg_data.path, user_idx, return_full_dataset, split=split)
-        raw_dataset = Dataset.from_dict(dict(text=raw_texts))
+        raw_dataset = Dataset.from_dict(dict(text=raw_texts), cache_dir=cfg_data.path)
     elif cfg_data.name == "cola":
         if return_full_dataset:
-            raw_datapoint = load_dataset("glue", "cola")[split]
+            raw_datapoint = load_dataset("glue", "cola", cache_dir=cfg_data.path)[split]
         else:
-            raw_datapoint = load_dataset("glue", "cola")[split][user_idx]
+            raw_datapoint = load_dataset("glue", "cola", cache_dir=cfg_data.path)[split][user_idx]
         raw_dataset = Dataset.from_dict({k: [v] for k, v in raw_datapoint.items()})
     else:
         raise ValueError(f"Invalid text dataset {cfg_data.name} provided.")
@@ -54,8 +54,8 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
     tokenizer = _get_tokenizer(cfg_data.tokenizer, cfg_data.vocab_size, cache_dir=cfg_data.path)
     tokenize, group_texts, collate_fn = _get_preprocessing(tokenizer, cfg_data)
 
-    tokenized_dataset = raw_dataset.map(tokenize, batched=True, remove_columns=columns, load_from_cache_file=True)
-    tokenized_dataset = tokenized_dataset.map(group_texts, batched=True, load_from_cache_file=True)
+    tokenized_dataset = raw_dataset.map(tokenize, batched=True, remove_columns=columns, load_from_cache_file=False)
+    tokenized_dataset = tokenized_dataset.map(group_texts, batched=True, load_from_cache_file=False)
     # tokenized_dataset = tokenized_dataset.rename_column("input_ids", "inputs")
     tokenized_dataset.set_format("torch")
     tokenized_dataset.tokenizer = tokenizer  # Stash here
@@ -230,9 +230,11 @@ def load_shakespeare(cache_dir="~/data", user_idx=0, return_full_dataset=False, 
 
 
 """The following functions are adapted from tff at
-https://github.com/tensorflow/federated/blob/610843c724740e1b041837cc93501b609fb05d8f/tensorflow_federated/python/simulation/datasets/download.py#L31
+https://github.com/tensorflow/federated/blob/610843c724740e1b041837cc93501b609fb05d8f/
+tensorflow_federated/python/simulation/datasets/download.py#L31
 and
-https://github.com/tensorflow/federated/blob/610843c724740e1b041837cc93501b609fb05d8f/tensorflow_federated/python/simulation/datasets/sql_client_data.py#L65
+https://github.com/tensorflow/federated/blob/610843c724740e1b041837cc93501b609fb05d8f/
+tensorflow_federated/python/simulation/datasets/sql_client_data.py#L65
 """
 # Copyright 2021, The TensorFlow Federated Authors.
 #

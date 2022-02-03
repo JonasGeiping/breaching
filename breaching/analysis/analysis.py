@@ -104,7 +104,7 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
     text_metrics = dict()
 
     candidate_metrics = ["accuracy", "bleu", "rouge", "google_bleu", "sacrebleu"]
-    metrics = {name: datasets.load_metric(name) for name in candidate_metrics}
+    metrics = {name: datasets.load_metric(name, cache_dir=cfg_case.data.path) for name in candidate_metrics}
 
     tokenizer = _get_tokenizer(
         server_payload[0]["metadata"]["tokenizer"],

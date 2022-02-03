@@ -188,6 +188,7 @@ class DecepticonAttacker(AnalyticAttacker):
                     sentence_labels == sentence
                 ]
                 if self.cfg.backfill_removal is not None:
+                    # Remove filled position
                     breached_embeddings[sentence_labels == sentence] = self._separate(
                         breached_embeddings[sentence_labels == sentence],
                         positional_embeddings[: data_shape[0]][order_breach_to_positions],
@@ -247,12 +248,18 @@ class DecepticonAttacker(AnalyticAttacker):
                     sentence_labels == sentence
                 ]
                 if self.cfg.backfill_removal is not None:
-                    breached_just_positions[sentence_labels == sentence] = self._separate(
-                        breached_just_positions[sentence_labels == sentence],
+                    # Remove filled position
+                    breached_embeddings[sentence_labels == sentence] = self._separate(
+                        breached_embeddings[sentence_labels == sentence],
                         positional_embeddings[: data_shape[0]][order_breach_to_positions],
                     )
+                    # Remove filled token
+                    breached_embeddings[sentence_labels == sentence] = self._separate(
+                        breached_embeddings[sentence_labels == sentence],
+                        breached_token_embeddings[sentence_labels == sentence],
+                    )
             # Then fill up the missing locations:
-            if len(breached_just_positions) < len(positional_embeddings):
+            if len(breached_embeddings) < len(positional_embeddings):
                 ordered_tokens = self._backfill_tokens(
                     ordered_tokens,
                     breached_embeddings,
@@ -276,7 +283,7 @@ class DecepticonAttacker(AnalyticAttacker):
             * Transposing for conv-type implementations
             * Resorting biases if they were unsorted (to hide the attack)
             * Invert cumulative sum structure
-            * Do the actual extraction by weight_grad divided by bias_grad
+            * --- Do the actual extraction by weight_grad divided by bias_grad ---
             * Cast to correct data types
             * Remove extraneous hits (for example because of gradient noise)
             * Remove NaNs if any

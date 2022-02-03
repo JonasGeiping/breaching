@@ -416,7 +416,7 @@ class DecepticonAttacker(AnalyticAttacker):
                 order_breach_to_positions, selection_tensor, costs = self._match_embeddings(
                     positional_embeddings[free_positions], fillable_embeddings
                 )
-                ordered_tokens[free_positions[order_breach_to_positions]] = fillable_embeddings[selection_tensor]
+                ordered_tokens[free_positions[order_breach_to_positions]] = recovered_tokens[selection_tensor]
                 if self.cfg.backfill_removal is not None:
                     fillable_embeddings[selection_tensor] = self._separate(
                         fillable_embeddings[selection_tensor],

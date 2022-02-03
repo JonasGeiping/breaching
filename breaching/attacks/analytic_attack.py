@@ -307,14 +307,16 @@ class DecepticonAttacker(AnalyticAttacker):
         valid_classes = bias_grad != 0
         if self.cfg.undivided:
             breached_embeddings = weight_grad[valid_classes, :]
+            std, mean = torch.std_mean(breached_embeddings)
+            breached_embeddings = (breached_embeddings - mean) / (std + 1e-8)
         else:
             breached_embeddings = weight_grad[valid_classes, :] / bias_grad[valid_classes, None]
         not_nan_positions = ~torch.isnan(breached_embeddings.sum(dim=-1))  # This should usually be all positions
         breached_embeddings = breached_embeddings[not_nan_positions]  # just being paranoid here
         log.info(f"Recovered {len(breached_embeddings)} embeddings with positional data from imprinted layer.")
 
-        # Sometimes "too" many rows activate, due to gradient noise or numerical issues.
-        # In that case only a subset of most-likely-to-be-correct embeddings should be used
+        # Sometimes too many rows activate (more than expected data), due to gradient noise or numerical issues.
+        # In that case only a subset of most-likely-to-be-real embeddings should be used
         len_data = shared_data[0]["metadata"]["num_data_points"]
         data_shape = server_secrets["ImprintBlock"]["data_shape"]
         if len(breached_embeddings) > len_data * data_shape[0]:
@@ -328,7 +330,11 @@ class DecepticonAttacker(AnalyticAttacker):
                 raise ValueError(f"Invalid breach reduction {self.cfg.breach_reduction} given.")
             log.info(f"Reduced to {len_data * data_shape[0]} hits.")
             breached_embeddings = breached_embeddings[best_guesses.indices]
+
+        # Cast to CPU
         breached_embeddings = breached_embeddings.cpu().to(dtype=self.setup["dtype"])  # Assignments run on CPU anyway
+
+        # Final assertion of sensible values
         if (~torch.isfinite(breached_embeddings)).sum():
             raise ValueError("Invalid breached embeddings recovered.")
         return breached_embeddings
@@ -346,14 +352,14 @@ class DecepticonAttacker(AnalyticAttacker):
         if self.cfg.backfilling == "global":
             # Fill missing locations globally
             while len(free_positions) > 0:
-                miss_to_pos, selection_tensor, costs = self._match_embeddings(
-                    fillable_embeddings, positional_embeddings[free_positions]
+                order_breach_to_positions, selection_tensor, costs = self._match_embeddings(
+                    positional_embeddings[free_positions], fillable_embeddings
                 )
-
-                ordered_embeddings[free_positions[selection_tensor]] = fillable_embeddings[miss_to_pos]
+                ordered_embeddings[free_positions[order_breach_to_positions]] = fillable_embeddings[selection_tensor]
                 if self.cfg.backfill_removal is not None:
-                    fillable_embeddings[miss_to_pos] = self._separate(
-                        fillable_embeddings[miss_to_pos], positional_embeddings[free_positions][selection_tensor],
+                    fillable_embeddings[selection_tensor] = self._separate(
+                        fillable_embeddings[selection_tensor],
+                        positional_embeddings[free_positions][order_breach_to_positions],
                     )
                 free_positions = (ordered_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
 
@@ -363,17 +369,17 @@ class DecepticonAttacker(AnalyticAttacker):
                 sentence_inputs = ordered_embeddings[sentence * data_shape[0] : (sentence + 1) * data_shape[0]]
                 free_positions = (sentence_inputs.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
                 while len(free_positions) > 0:
-                    miss_to_pos, selection_tensor, costs = self._match_embeddings(
-                        fillable_embeddings[sentence_labels == sentence],
+                    order_breach_to_positions, selection_tensor, costs = self._match_embeddings(
                         positional_embeddings[: data_shape[0]][free_positions],
+                        fillable_embeddings[sentence_labels == sentence],
                     )
-                    sentence_inputs[free_positions[selection_tensor]] = fillable_embeddings[
+                    sentence_inputs[free_positions[order_breach_to_positions]] = fillable_embeddings[
                         sentence_labels == sentence
-                    ][miss_to_pos]
+                    ][selection_tensor]
                     if self.cfg.backfill_removal is not None:
-                        fillable_embeddings[sentence_labels == sentence][miss_to_pos] = self._separate(
-                            fillable_embeddings[sentence_labels == sentence][miss_to_pos],
-                            positional_embeddings[: data_shape[0]][free_positions],
+                        fillable_embeddings[sentence_labels == sentence][selection_tensor] = self._separate(
+                            fillable_embeddings[sentence_labels == sentence][selection_tensor],
+                            positional_embeddings[: data_shape[0]][free_positions][order_breach_to_positions],
                         )
                     free_positions = (sentence_inputs.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
                 ordered_embeddings[sentence * data_shape[0] : (sentence + 1) * data_shape[0]] = sentence_inputs
@@ -407,13 +413,14 @@ class DecepticonAttacker(AnalyticAttacker):
         if self.cfg.backfilling == "global":
             # Fill missing locations globally
             while len(free_positions) > 0:
-                miss_to_pos, selection_tensor, costs = self._match_embeddings(
-                    fillable_embeddings, positional_embeddings[free_positions]
+                order_breach_to_positions, selection_tensor, costs = self._match_embeddings(
+                    positional_embeddings[free_positions], fillable_embeddings
                 )
-                ordered_tokens[free_positions[selection_tensor]] = recovered_tokens[miss_to_pos]
+                ordered_tokens[free_positions[order_breach_to_positions]] = fillable_embeddings[selection_tensor]
                 if self.cfg.backfill_removal is not None:
-                    fillable_embeddings[miss_to_pos] = self._separate(
-                        fillable_embeddings[miss_to_pos], positional_embeddings[free_positions][selection_tensor],
+                    fillable_embeddings[selection_tensor] = self._separate(
+                        fillable_embeddings[selection_tensor],
+                        positional_embeddings[free_positions][order_breach_to_positions],
                     )
                 free_positions = (ordered_tokens == -1).nonzero().squeeze(dim=1)
 
@@ -423,17 +430,17 @@ class DecepticonAttacker(AnalyticAttacker):
                 sentence_inputs = ordered_tokens[sentence * data_shape[0] : (sentence + 1) * data_shape[0]]
                 free_positions = (sentence_inputs == -1).nonzero().squeeze(dim=1)
                 while len(free_positions) > 0:
-                    miss_to_pos, selection_tensor, costs = self._match_embeddings(
-                        fillable_embeddings[sentence_labels == sentence],
+                    order_breach_to_positions, selection_tensor, costs = self._match_embeddings(
                         positional_embeddings[: data_shape[0]][free_positions],
+                        fillable_embeddings[sentence_labels == sentence],
                     )
-                    sentence_inputs[free_positions[selection_tensor]] = recovered_tokens[sentence_labels == sentence][
-                        miss_to_pos
-                    ]
+                    sentence_inputs[free_positions[order_breach_to_positions]] = recovered_tokens[
+                        sentence_labels == sentence
+                    ][selection_tensor]
                     if self.cfg.backfill_removal is not None:
-                        fillable_embeddings[sentence_labels == sentence][miss_to_pos] = self._separate(
-                            fillable_embeddings[sentence_labels == sentence][miss_to_pos],
-                            positional_embeddings[: data_shape[0]][free_positions],
+                        fillable_embeddings[sentence_labels == sentence][selection_tensor] = self._separate(
+                            fillable_embeddings[sentence_labels == sentence][selection_tensor],
+                            positional_embeddings[: data_shape[0]][free_positions][order_breach_to_positions],
                         )
                     free_positions = (sentence_inputs == -1).nonzero().squeeze(dim=1)
                 ordered_tokens[sentence * data_shape[0] : (sentence + 1) * data_shape[0]] = sentence_inputs
@@ -450,6 +457,8 @@ class DecepticonAttacker(AnalyticAttacker):
     def _separate(self, mixed_components, base_components):
         if self.cfg.separation == "subtraction":
             unmixed = mixed_components - base_components
+        elif self.cfg.separation == "none":  # sanity check option
+            unmixed = mixed_components
         elif self.cfg.separation == "decorrelation":
             dims = dict(dim=-1, keepdim=True)
             m_std, m_mean = torch.std_mean(mixed_components, **dims)

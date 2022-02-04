@@ -69,6 +69,9 @@ def _build_dataset_vision(cfg_data, split, can_download=True):
     if cfg_data.normalize:
         dataset.mean = cfg_data.mean
         dataset.std = cfg_data.std
+    else:
+        dataset.mean = [0]
+        dataset.std = [1]
 
     # Reduce train dataset according to cfg_data.size:
     if cfg_data.size < len(dataset):
@@ -126,7 +129,7 @@ def _split_dataset_vision(dataset, cfg_data, user_idx=None, return_full_dataset=
                 target_label = 0
 
             data_ids = [idx for (idx, label) in dataset.lookup.items() if label == target_label]
-            data_ids = data_ids[user_idx * num_data_points:(user_idx + 1) * num_data_points]
+            data_ids = data_ids[user_idx * num_data_points : (user_idx + 1) * num_data_points]
             dataset = Subset(dataset, data_ids)
         elif cfg_data.partition == "random-full":  # Data might be repeated across users (e.g. meme images)
             data_per_user = len(dataset) // cfg_data.default_clients

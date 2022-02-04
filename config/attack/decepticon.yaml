@@ -19,6 +19,7 @@ undivided: False
 separation: subtraction # alternative: decorrelation
 backfilling: global
 backfill_removal: # None or a separation option
+sentence_based_backfill: False
 breach_reduction: bias
 
 # Implementation Details

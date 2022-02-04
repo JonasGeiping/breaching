@@ -172,6 +172,12 @@ class DecepticonAttacker(AnalyticAttacker):
         else:
             sentence_labels = torch.zeros(len(breached_embeddings), dtype=torch.long)
 
+        # Sentence-based backfill:
+        if self.cfg.sentence_based_backfill:
+            breached_embeddings, sentence_labels = self._sentence_backfill(
+                breached_embeddings, sentence_labels, [len_data, data_shape[0]], v_length
+            )
+
         # Match breached embeddings to positions for each sentence:
         breached_embeddings = breached_embeddings[:, v_length:-1]
         positional_embeddings = positional_embeddings[:, v_length:-1]
@@ -461,11 +467,58 @@ class DecepticonAttacker(AnalyticAttacker):
 
         return ordered_tokens
 
+    def _sentence_backfill(
+        self, breached_embeddings, sentence_labels, shape, v_length, match_t=0.75, nontrivial_t=1e-2
+    ):
+        """Backfilling based only on sentence components. This is optional."""
+        std, mean = torch.std_mean(breached_embeddings[:, :v_length], dim=-1, keepdim=True)
+        normalized_components = (breached_embeddings[:, :v_length] - mean) / (std + 1e-10)
+        seeds = torch.randn(shape[0], v_length)
+        for sentence in range(shape[0]):
+            seeds[sentence] = normalized_components[sentence_labels == sentence].median(dim=0).values
+        unmixed_components = self._separate(normalized_components, seeds[sentence_labels])
+        nontrivial_components = unmixed_components[unmixed_components.norm(dim=1) > nontrivial_t]
+        component_ids = torch.arange(0, len(breached_embeddings))[unmixed_components.norm(dim=1) > nontrivial_t]
+        log.info(f"Identified {(unmixed_components.norm(dim=1) < nontrivial_t).sum()} unique breaches.")
+
+        _, counts = sentence_labels.unique(return_counts=True)
+        free_positions = shape[1] - counts
+        while free_positions.max() > 0:
+            replicated_seeds = torch.repeat_interleave(seeds, free_positions, dim=0)
+            replicated_labels = torch.repeat_interleave(torch.arange(0, shape[0]), free_positions, dim=0)
+            order_breach_to_seed, selection_tensor, costs = self._match_embeddings(
+                nontrivial_components, replicated_seeds
+            )
+            # Accept assignments with higher correlation than 0.5
+            matches = (costs > match_t).nonzero().squeeze(dim=-1)
+
+            if len(matches) == 0:
+                break
+            else:
+                log.info(f"Found {len(matches.nonzero())} new matches with avg. corr {costs[matches].mean()}")
+            match_ids = component_ids[order_breach_to_seed][matches]
+            breached_embeddings = torch.cat([breached_embeddings, breached_embeddings[match_ids]], dim=0)
+            sentence_labels = torch.cat([sentence_labels, replicated_labels[selection_tensor][matches]], dim=0)
+
+            # Decorrelate positions:
+            # Compress slices into single-level to cope with Pytorch copying on sequential slices!
+            ids = torch.arange(0, len(nontrivial_components))[order_breach_to_seed][matches]
+            nontrivial_components[ids] = self._separate(
+                nontrivial_components[ids], replicated_seeds[selection_tensor][matches]
+            )
+            nontrivial_breaches = nontrivial_components.norm(dim=1) > nontrivial_t
+            nontrivial_components = nontrivial_components[nontrivial_breaches]
+            component_ids = component_ids[nontrivial_breaches]
+
+            _, counts = sentence_labels.unique(return_counts=True)
+            free_positions = shape[1] - counts
+        return breached_embeddings, sentence_labels
+
     def _separate(self, mixed_components, base_components):
         if self.cfg.separation == "subtraction":
             unmixed = mixed_components - base_components
         elif self.cfg.separation == "none":  # sanity check option
-            unmixed = mixed_components
+            unmixed = mixed_components.clone()
         elif self.cfg.separation == "decorrelation":
             dims = dict(dim=-1, keepdim=True)
             m_std, m_mean = torch.std_mean(mixed_components, **dims)
@@ -537,8 +590,12 @@ class DecepticonAttacker(AnalyticAttacker):
             from kmedoids import fasterpam
 
             corrs = torch.as_tensor(np.corrcoef(sentence_id_components.double().detach().numpy()))
-            medoids_result = fasterpam(corrs, shape[0])
-            sentence_labels = torch.as_tensor(medoids_result.labels.astype(np.intc), dtype=torch.long)
+            for trial in range(50):  # This is a hack to go around the missing constraint...
+                medoids_result = fasterpam(corrs, shape[0])
+                sentence_labels = torch.as_tensor(medoids_result.labels.astype(np.intc), dtype=torch.long)
+                if sentence_labels.unique(return_counts=True)[1].max() <= shape[1]:
+                    break
+            assert sentence_labels.unique(return_counts=True)[1].max() <= shape[1], "Invalid Assignment in k-medoids"
 
         elif "dynamic-threshold" in algorithm:  # Allow for dynamic-threshold, dynamic-threshold-median and "normalized"
             corrs = torch.as_tensor(np.corrcoef(sentence_id_components.double().detach().numpy()))

@@ -253,11 +253,11 @@ class DecepticonAttacker(AnalyticAttacker):
                         breached_embeddings[sentence_labels == sentence],
                         positional_embeddings[: data_shape[0]][order_breach_to_positions],
                     )
-                    # Remove filled token
-                    breached_embeddings[sentence_labels == sentence] = self._separate(
-                        breached_embeddings[sentence_labels == sentence],
-                        breached_token_embeddings[sentence_labels == sentence],
-                    )
+                    # # Remove filled token
+                    # breached_embeddings[sentence_labels == sentence] = self._separate(
+                    #     breached_embeddings[sentence_labels == sentence],
+                    #     breached_token_embeddings[sentence_labels == sentence],
+                    # )
             # Then fill up the missing locations:
             if len(breached_embeddings) < len(positional_embeddings):
                 ordered_tokens = self._backfill_tokens(
@@ -538,7 +538,7 @@ class DecepticonAttacker(AnalyticAttacker):
 
             corrs = torch.as_tensor(np.corrcoef(sentence_id_components.double().detach().numpy()))
             medoids_result = fasterpam(corrs, shape[0])
-            sentence_labels = torch.as_tensor(medoids_result.labels, dtype=torch.long)
+            sentence_labels = torch.as_tensor(medoids_result.labels.astype(np.intc), dtype=torch.long)
 
         elif "dynamic-threshold" in algorithm:  # Allow for dynamic-threshold, dynamic-threshold-median and "normalized"
             corrs = torch.as_tensor(np.corrcoef(sentence_id_components.double().detach().numpy()))

@@ -215,7 +215,7 @@ class DecepticonAttacker(AnalyticAttacker):
                     recovered_tokens, costs, breached_without_positions, v_length, lookup
                 )
 
-            # Finally re-order into sentences:
+            # Finally reshape into sentences:
             final_tokens = recovered_tokens.view([len_data, *data_shape])
 
         elif self.cfg.recovery_order == "tokens-first":
@@ -269,7 +269,7 @@ class DecepticonAttacker(AnalyticAttacker):
                     recovered_tokens=recovered_tokens,
                 )
 
-            # Finally re-order into sentences:
+            # Finally reshape into sentences:
             final_tokens = ordered_tokens.view([len_data, *data_shape])
 
         else:
@@ -519,14 +519,28 @@ class DecepticonAttacker(AnalyticAttacker):
             from k_means_constrained import KMeansConstrained
 
             clustering = KMeansConstrained(
-                n_clusters=shape[0], size_min=0, size_max=shape[1], init="k-means++", n_init=40, max_iter=900, tol=1e-6,
+                n_clusters=shape[0],
+                size_min=0,
+                size_max=min(shape[1], len(sentence_id_components)),
+                init="k-means++",
+                n_init=40,
+                max_iter=900,
+                tol=1e-6,
             )
             std, mean = torch.std_mean(sentence_id_components, dim=-1, keepdim=True)
-            normalized_components = (sentence_id_components - mean) / (std + 1e-8)
-            labels = clustering.fit_predict(normalized_components.numpy())
-            sentence_labels = torch.as_tensor(labels)
+            normalized_components = (sentence_id_components - mean) / (std + 1e-10)
 
-        elif "dynamic-threshold" in algorithm:  # Allow for dynamic-threshold and dynamic-threshold-median
+            labels = clustering.fit_predict(normalized_components.double().numpy())
+            sentence_labels = torch.as_tensor(labels, dtype=torch.long)
+
+        elif algorithm == "k-medoids":
+            from kmedoids import fasterpam
+
+            corrs = torch.as_tensor(np.corrcoef(sentence_id_components.double().detach().numpy()))
+            medoids_result = fasterpam(corrs, shape[0])
+            sentence_labels = torch.as_tensor(medoids_result.labels, dtype=torch.long)
+
+        elif "dynamic-threshold" in algorithm:  # Allow for dynamic-threshold, dynamic-threshold-median and "normalized"
             corrs = torch.as_tensor(np.corrcoef(sentence_id_components.double().detach().numpy()))
             corrs[torch.isnan(corrs)] = 0  # Should only ever trigger in edge cases where sentence_component=0
             upper_range = [1 - 1.5 ** float(n) for n in torch.arange(-96, -16)][::-1]
@@ -562,17 +576,22 @@ class DecepticonAttacker(AnalyticAttacker):
             # Find seeds
             seeds = torch.randn(shape[0], sentence_id_components.shape[-1])  # seeds for every sentence
             label_ids = initial_labels[initial_labels != -1].unique()  # Skip over -1 (which is "unassigned")
+            if "normalized" in algorithm:
+                std, mean = torch.std_mean(sentence_id_components, dim=-1, keepdim=True)
+                components = (sentence_id_components - mean) / (std + 1e-10)
+            else:
+                components = sentence_id_components
             for idx, group_label in enumerate(label_ids):
                 if "median" in algorithm:
-                    seeds[idx] = sentence_id_components[initial_labels == group_label].median(dim=0).values
+                    seeds[idx] = components[initial_labels == group_label].median(dim=0).values
                 else:
-                    seeds[idx] = sentence_id_components[initial_labels == group_label].mean(dim=0)
+                    seeds[idx] = components[initial_labels == group_label].mean(dim=0)
 
             # Replicate seeds to seq_length
             replicated_seeds = torch.repeat_interleave(seeds, shape[1], dim=0)
 
             # Recompute correlations based on these mean seeds
-            order_breach_to_seed, _, _ = self._match_embeddings(replicated_seeds, sentence_id_components)
+            order_breach_to_seed, _, _ = self._match_embeddings(replicated_seeds, components)
             sentence_labels = (order_breach_to_seed / shape[1]).to(dtype=torch.long)
 
         elif algorithm == "threshold":

@@ -42,4 +42,5 @@ dependencies:
       - sacrebleu
       - timm
       - ortools
-      - k-means-constrained --no-cache-dir --no-binary 0.6.0 --no-build-isolation --no-deps --force-reinstall #  this is a pain, but not usually necesssary
+      - kmedoids
+      - k-means-constrained --no-cache-dir --no-binary 0.6.0 --no-build-isolation --no-deps --force-reinstall #  this can be a pain ;>

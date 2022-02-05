@@ -1,7 +1,8 @@
 """Implements a malicious block that can be inserted at the front on normal models to break them."""
-from statistics import NormalDist
 import torch
+
 import math
+from statistics import NormalDist
 from scipy.stats import laplace
 
 
@@ -175,3 +176,56 @@ class OneShotBlockSparse(SparseImprintBlock):
         self.bin_sizes = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
         bins = bins[:-1]  # here we need to throw away one on the right
         return bins
+
+
+class HonestAbandonCuriosity(ImprintBlock):
+    """Replicates the attack of Boenisch et al, "When the Curious Abandon Honesty: Federated Learning Is Not Private"
+    This is a sparse ReLU block.
+    """
+
+    structure = "sparse"
+
+    def __init__(self, data_size, num_bins, mu=0, sigma=0.5, scale_factor=0.95, connection="linear"):
+        """
+        data_size is the length of the input data, num_bins is the number of inserted rows.
+        mu, sigma and scale_factor control the attack as described in the paper
+        connection is how this block should coonect back to the input shape (optional)
+        gain can scale this layer.
+        """
+        torch.nn.Module.__init__(self)
+        self.data_size = data_size
+        self.num_bins = num_bins
+
+        self.linear0 = torch.nn.Linear(data_size, num_bins)
+
+        with torch.no_grad():
+            self.linear0.weight.data = self._init_trap_weights(mu, sigma, scale_factor)
+            self.linear0.bias.data.zero_()
+
+        self.connection = connection
+        if connection == "linear":
+            self.linear2 = torch.nn.Linear(num_bins, data_size)
+            with torch.no_grad():
+                self.linear2.weight.data = torch.ones_like(self.linear2.weight.data)
+                self.linear2.bias.data.zero_()
+
+        self.nonlin = torch.nn.ReLU()
+
+    @torch.no_grad()
+    def _init_trap_weights(self, mu, sigma, scale_factor):
+        N, K = self.data_size, self.num_bins
+
+        indices = torch.argsort(torch.rand(K, N), dim=1)
+        negative_weight_indices = indices[:, : int(N / 2)]
+        positive_weight_indices = indices[:, int(N / 2) :]
+
+        sampled_weights = torch.randn(K, int(N / 2)) * sigma + mu
+
+        negative_samples = sampled_weights
+        positive_samples = -scale_factor * sampled_weights
+
+        final_weights = torch.empty(K, N)
+        final_weights.scatter_(1, negative_weight_indices, negative_samples)
+        final_weights.scatter_(1, positive_weight_indices, positive_samples)
+        print(torch.std_mean(final_weights))
+        return final_weights

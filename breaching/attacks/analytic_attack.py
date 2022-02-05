@@ -112,15 +112,20 @@ class ImprintAttacker(AnalyticAttacker):
             missing_entries = torch.zeros(len_data - inputs.shape[0], *self.data_shape, **self.setup)
             inputs = torch.cat([inputs, missing_entries], dim=0)
         else:
-            print(f"Initially produced {inputs.shape[0]} hits.")
+            log.info(f"Initially produced {inputs.shape[0]} hits.")
             # Cut additional hits:
-            # this rule is optimal for clean data with few bins:
-            # best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(),len_data, largest=False)
-            # this rule is best when faced with differential privacy:
-            best_guesses = torch.topk(weight_grad.mean(dim=1)[bias_grad != 0].abs(), len_data, largest=True)
-            print(f"Reduced to {len_data} hits.")
-            # print(best_guesses.indices.sort().values)
-            inputs = inputs[best_guesses.indices]
+            if self.cfg.breach_reduction == "bias":
+                # this rule is optimal for clean data with few bins:
+                best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len_data, largest=False)[1]
+            elif self.cfg.breach_reduction == "weight":
+                # this rule is best when faced with differential privacy:
+                best_guesses = torch.topk(weight_grad.mean(dim=1)[bias_grad != 0].abs(), len_data, largest=False)[1]
+            else:  # None #
+                # Warning: This option can mess up metrics later on (as more data is recpnstructed than exists)
+                best_guesses = torch.arange(inputs.shape[0])
+            if len(best_guesses) < len_data:
+                log.info(f"Reduced to {len_data} hits.")
+            inputs = inputs[best_guesses]
 
         reconstructed_data = dict(data=inputs, labels=labels)
         return reconstructed_data, stats

@@ -1,0 +1,24 @@
+# Malicious model attacks as described in "Robbing the Fed"
+
+name: malicious_model
+pretrained: True
+model_state: default
+provide_public_buffers: True # Send public buffers to users (this is batch norm specific)
+
+has_external_data: False
+num_queries: 1
+
+model_modification:
+  type: ImprintBlock
+  num_bins: 64
+
+  mode: 32
+  linfunc: fourier
+
+  position:
+  handle_preceding_layers: identity # if position is not None, how are the preceding layers handled? Options: identity, VAE, none
+  connection: linear # can be 'linear' connection back to input size or 'addition'
+  gain: 1.0 # dampen layer to reduce gradient magnitude
+
+model_gain: 1.0 # multiply all non-malicious layers with this value to mess with parameter magnitudes
+normalize_rounds: 0

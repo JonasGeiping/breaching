@@ -4,6 +4,7 @@ attack_type: imprint-readout
 label_strategy: # Labels are not required for this attack
 normalize_gradients: False
 
+breach_reduction: weight
 sort_by_bias: False # Only necessary if rows of the block have been shuffled
 impl:
   dtype: float

@@ -6,7 +6,7 @@ import numpy as np
 import copy
 import numbers
 
-from .malicious_modifications import ImprintBlock, SparseImprintBlock, OneShotBlock
+from .malicious_modifications import ImprintBlock, SparseImprintBlock, OneShotBlock, HonestAbandonCuriosity
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
 from .malicious_modifications.analytic_transformer_utils import (
     compute_feature_distribution,
@@ -182,6 +182,8 @@ class MaliciousModelServer(HonestServer):
             block_fn = SparseImprintBlock
         elif self.cfg_server.model_modification.type == "OneShotBlock":
             block_fn = OneShotBlock
+        elif self.cfg_server.model_modification.type == "HonestAbandonCuriosity":
+            block_fn = HonestAbandonCuriosity
         else:
             raise ValueError("Unknown modification")
 
@@ -215,45 +217,39 @@ class MaliciousModelServer(HonestServer):
     def _place_malicious_block(
         self, modified_model, block_fn, type, position=None, handle_preceding_layers=None, **kwargs
     ):
-        """The block is placed directly before the named module. If none is given, the block is placed at the start."""
+        """The block is placed directly before the named module. If none is given, the block is placed
+           before the first layer."""
         if position is None:
             input_dim = self.cfg_data.shape[0] * self.cfg_data.shape[1] * self.cfg_data.shape[2]
-            block = block_fn(input_dim, **kwargs)
-            original_name = modified_model.name
-            modified_model = torch.nn.Sequential(
-                torch.nn.Flatten(),
-                block,
-                torch.nn.Unflatten(dim=1, unflattened_size=tuple(self.cfg_data.shape)),
-                modified_model,
-            )
-            modified_model.name = original_name
-            secrets = dict(weight_idx=0, bias_idx=1, shape=tuple(self.cfg_data.shape), structure=block.structure)
-        else:
-            block_found = False
-            for name, module in modified_model.named_modules():
-                if position in name:  # give some leeway for additional containers.
-                    feature_shapes = introspect_model(modified_model, tuple(self.cfg_data.shape))
-                    data_shape = feature_shapes[name]["shape"][1:]
-                    print(f"Block inserted at feature shape {data_shape}.")
-                    module_to_be_modified = module
-                    block_found = True
-                    break
+            layers = [name for name, thing in modified_model.named_modules() if hasattr(thing, "weight")]  # a bit hacky
+            position = layers[0]
+            print(position)
 
-            if not block_found:
-                raise ValueError(f"Could not find module {position} in model to insert layer.")
-            input_dim = torch.prod(torch.as_tensor(data_shape))
-            block = block_fn(input_dim, **kwargs)
+        block_found = False
+        for name, module in modified_model.named_modules():
+            if position in name:  # give some leeway for additional containers.
+                feature_shapes = introspect_model(modified_model, tuple(self.cfg_data.shape))
+                data_shape = feature_shapes[name]["shape"][1:]
+                print(f"Block inserted at feature shape {data_shape}.")
+                module_to_be_modified = module
+                block_found = True
+                break
 
-            replacement = torch.nn.Sequential(
-                torch.nn.Flatten(), block, torch.nn.Unflatten(dim=1, unflattened_size=data_shape), module_to_be_modified
-            )
-            replace_module_by_instance(modified_model, module_to_be_modified, replacement)
-            for idx, param in enumerate(modified_model.parameters()):
-                if param is block.linear0.weight:
-                    weight_idx = idx
-                if param is block.linear0.bias:
-                    bias_idx = idx
-            secrets = dict(weight_idx=weight_idx, bias_idx=bias_idx, shape=data_shape, structure=block.structure)
+        if not block_found:
+            raise ValueError(f"Could not find module {position} in model to insert layer.")
+        input_dim = torch.prod(torch.as_tensor(data_shape))
+        block = block_fn(input_dim, **kwargs)
+
+        replacement = torch.nn.Sequential(
+            torch.nn.Flatten(), block, torch.nn.Unflatten(dim=1, unflattened_size=data_shape), module_to_be_modified
+        )
+        replace_module_by_instance(modified_model, module_to_be_modified, replacement)
+        for idx, param in enumerate(modified_model.parameters()):
+            if param is block.linear0.weight:
+                weight_idx = idx
+            if param is block.linear0.bias:
+                bias_idx = idx
+        secrets = dict(weight_idx=weight_idx, bias_idx=bias_idx, shape=data_shape, structure=block.structure)
 
         return modified_model, secrets
 

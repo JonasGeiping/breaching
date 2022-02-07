@@ -9,9 +9,9 @@ from scipy.stats import laplace
 class ImprintBlock(torch.nn.Module):
     structure = "cumulative"
 
-    def __init__(self, data_size, num_bins, connection="linear", gain=1e-3, linfunc="fourier", mode=0):
+    def __init__(self, data_shape, num_bins, connection="linear", gain=1e-3, linfunc="fourier", mode=0):
         """
-        data_size is the length of the input data
+        data_shape is the shape of the input data
         num_bins is how many "paths" to include in the model
         connection is how this block should coonect back to the input shape (optional)
 
@@ -19,9 +19,10 @@ class ImprintBlock(torch.nn.Module):
         If linfunc is fourier, then the mode parameter determines the mode of the DCT-2 that is used as linear query.
         """
         super().__init__()
-        self.data_size = data_size
+        self.data_shape = data_shape
+        self.data_size = torch.prod(torch.as_tensor(data_shape))
         self.num_bins = num_bins
-        self.linear0 = torch.nn.Linear(data_size, num_bins)
+        self.linear0 = torch.nn.Linear(self.data_size, num_bins)
 
         self.bins = self._get_bins(linfunc)
         with torch.no_grad():
@@ -30,7 +31,7 @@ class ImprintBlock(torch.nn.Module):
 
         self.connection = connection
         if connection == "linear":
-            self.linear2 = torch.nn.Linear(num_bins, data_size)
+            self.linear2 = torch.nn.Linear(num_bins, self.data_size)
             with torch.no_grad():
                 self.linear2.weight.data = torch.ones_like(self.linear2.weight.data) / gain
                 self.linear2.bias.data -= torch.as_tensor(self.bins).mean()
@@ -76,9 +77,9 @@ class ImprintBlock(torch.nn.Module):
             new_biases[i] = -self.bins[i]
         return new_biases
 
-    def forward(self, x):
+    def forward(self, x, *args, **kwargs):
         x_in = x
-        x = self.linear0(x)
+        x = self.linear0(x.flatten(start_dim=1))
         x = self.nonlin(x)
         if self.connection == "linear":
             output = self.linear2(x)
@@ -89,7 +90,7 @@ class ImprintBlock(torch.nn.Module):
             output = (x_in[:, None, :] * s).sum(dim=1)
         else:
             output = x_in + x.mean(dim=1, keepdim=True)
-        return output
+        return output.unflatten(dim=1, sizes=self.data_shape)
 
 
 class SparseImprintBlock(ImprintBlock):
@@ -98,8 +99,8 @@ class SparseImprintBlock(ImprintBlock):
     """This block is sparse instead of cumulative which is more efficient in noise/param tradeoffs but requires
     two ReLUs that construct the hard-tanh nonlinearity."""
 
-    def __init__(self, data_size, num_bins, connection="linear", gain=1e-3, linfunc="fourier", mode=0):
-        super().__init__(data_size, num_bins, connection, gain, linfunc, mode)
+    def __init__(self, data_shape, num_bins, connection="linear", gain=1e-3, linfunc="fourier", mode=0):
+        super().__init__(data_shape, num_bins, connection, gain, linfunc, mode)
         self.nonlin = torch.nn.Hardtanh(min_val=0, max_val=gain)
 
     def _get_bins(self, linfunc="avg"):
@@ -134,11 +135,11 @@ class OneShotBlock(ImprintBlock):
 
     """One-shot attack with minimal additional parameters. Can target a specific data point if its target_val is known."""
 
-    def __init__(self, data_size, num_bins, connection="linear", gain=1e-3, linfunc="fourier", mode=0, target_val=0):
+    def __init__(self, data_shape, num_bins, connection="linear", gain=1e-3, linfunc="fourier", mode=0, target_val=0):
         self.virtual_bins = num_bins
         self.target_val = target_val
         num_bins = 2
-        super().__init__(data_size, num_bins, connection, gain, linfunc, mode)
+        super().__init__(data_shape, num_bins, connection, gain, linfunc, mode)
 
     def _get_bins(self, linfunc="avg"):
         bins = []
@@ -157,14 +158,13 @@ class OneShotBlock(ImprintBlock):
 class OneShotBlockSparse(SparseImprintBlock):
     structure = "sparse"
 
-    def __init__(self, data_size, num_bins, connection="linear", gain=1e-3, linfunc="fourier", mode=0):
+    def __init__(self, data_shape, num_bins, connection="linear", gain=1e-3, linfunc="fourier", mode=0):
         """
-        data_size is the size of the input images
+        data_shape is the data_shape of the input data
         num_bins is how many "paths" to include in the model
         target_val=0 in this variant.
         """
-        super().__init__(data_size, 1, connection, gain, linfunc, mode)
-        self.data_size = data_size
+        super().__init__(data_shape, 1, connection, gain, linfunc, mode)
         self.num_bins = num_bins
 
     def _get_bins(self):
@@ -185,26 +185,27 @@ class HonestAbandonCuriosity(ImprintBlock):
 
     structure = "sparse"
 
-    def __init__(self, data_size, num_bins, mu=0, sigma=0.5, scale_factor=0.95, connection="linear"):
+    def __init__(self, data_shape, num_bins, mu=0, sigma=0.5, scale_factor=0.95, connection="linear"):
         """
-        data_size is the length of the input data, num_bins is the number of inserted rows.
+        data_shape is the shape of the input data, num_bins is the number of inserted rows.
         mu, sigma and scale_factor control the attack as described in the paper
         connection is how this block should coonect back to the input shape (optional)
         gain can scale this layer.
         """
         torch.nn.Module.__init__(self)
-        self.data_size = data_size
+        self.data_shape = data_shape
+        self.data_size = torch.prod(torch.as_tensor(data_shape))
         self.num_bins = num_bins
 
-        self.linear0 = torch.nn.Linear(data_size, num_bins)
+        self.linear0 = torch.nn.Linear(self.data_size, num_bins)
 
         with torch.no_grad():
-            self.linear0.weight.data = self._init_trap_weights(mu, sigma, scale_factor)
-            self.linear0.bias.data.zero_()
+            self.linear0.weight.data = self._init_trap_weights(sigma, scale_factor)
+            self.linear0.bias.data = self._make_biases(mu)
 
         self.connection = connection
         if connection == "linear":
-            self.linear2 = torch.nn.Linear(num_bins, data_size)
+            self.linear2 = torch.nn.Linear(num_bins, self.data_size)
             with torch.no_grad():
                 self.linear2.weight.data = torch.ones_like(self.linear2.weight.data)
                 self.linear2.bias.data.zero_()
@@ -212,14 +213,14 @@ class HonestAbandonCuriosity(ImprintBlock):
         self.nonlin = torch.nn.ReLU()
 
     @torch.no_grad()
-    def _init_trap_weights(self, mu, sigma, scale_factor):
+    def _init_trap_weights(self, sigma, scale_factor):
         N, K = self.data_size, self.num_bins
 
         indices = torch.argsort(torch.rand(K, N), dim=1)
         negative_weight_indices = indices[:, : int(N / 2)]
         positive_weight_indices = indices[:, int(N / 2) :]
 
-        sampled_weights = torch.randn(K, int(N / 2)) * sigma + mu
+        sampled_weights = torch.randn(K, int(N / 2)) * sigma
 
         negative_samples = sampled_weights
         positive_samples = -scale_factor * sampled_weights
@@ -229,3 +230,7 @@ class HonestAbandonCuriosity(ImprintBlock):
         final_weights.scatter_(1, positive_weight_indices, positive_samples)
         print(torch.std_mean(final_weights))
         return final_weights
+
+    def _make_biases(self, mu):
+        new_biases = torch.ones_like(self.linear0.bias.data) * mu
+        return new_biases

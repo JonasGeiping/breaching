@@ -3,10 +3,15 @@ import functools
 import torch
 
 
-def introspect_model(model, input_data_shape):
+def introspect_model(model, input_data_shape, modality="vision"):
     """Compute model feature shapes."""
     feature_shapes = dict()
-    setup = dict(device=next(iter(model.parameters())).device, dtype=next(iter(model.parameters())).dtype)
+    if modality == "vision":
+        setup = dict(device=next(iter(model.parameters())).device, dtype=next(iter(model.parameters())).dtype)
+    elif modality == "text":
+        setup = dict(device=next(iter(model.parameters())).device, dtype=torch.long)
+    else:
+        raise ValueError(f"Invalid modality {modality} for model introspection.")
 
     def named_hook(name):
         def hook_fn(module, input, output):

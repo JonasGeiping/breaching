@@ -71,12 +71,10 @@ class ImprintAttacker(AnalyticAttacker):
         """This is somewhat hard-coded for images, but that is not a necessity."""
         # Initialize stats module for later usage:
         rec_models, labels, stats = self.prepare_attack(server_payload, shared_data)
-        len_data = shared_data[0]["metadata"]["num_data_points"]  # Not strictly needed for the attack, used to pad/trim
 
         if "ImprintBlock" in server_secrets.keys():
             weight_idx = server_secrets["ImprintBlock"]["weight_idx"]
             bias_idx = server_secrets["ImprintBlock"]["bias_idx"]
-            data_shape = server_secrets["ImprintBlock"]["shape"]
         else:
             raise ValueError(f"No imprint hidden in model {rec_models[0]} according to server.")
 
@@ -94,25 +92,28 @@ class ImprintAttacker(AnalyticAttacker):
                 weight_grad[i] -= weight_grad[i - 1]
                 bias_grad[i] -= bias_grad[i - 1]
 
-        image_positions = bias_grad.nonzero()
+        # This is the attack:
         layer_inputs = self.invert_fc_layer(weight_grad, bias_grad, [])
 
-        if "decoder" in server_secrets["ImprintBlock"].keys():
-            inputs = server_secrets["ImprintBlock"]["decoder"](layer_inputs)
-        else:
-            inputs = layer_inputs.reshape(layer_inputs.shape[0], *data_shape)[:, :3, :, :]
-        if weight_idx > 0:  # An imprint block later in the network:
-            inputs = torch.nn.functional.interpolate(
-                inputs, size=self.data_shape[1:], mode="bicubic", align_corners=False
-            )
-        inputs = torch.max(torch.min(inputs, (1 - self.dm) / self.ds), -self.dm / self.ds)
+        # Reduce hits if necessary:
+        layer_inputs = self.reduce_hits(layer_inputs, weight_grad, bias_grad, shared_data)
 
-        if len_data >= inputs.shape[0]:
+        # Reshape images, re-identify token embeddings:
+        reconstructed_inputs = self.reformat_data(layer_inputs, rec_models, shared_data, server_payload, server_secrets)
+        reconstructed_user_data = dict(data=reconstructed_inputs, labels=labels)
+
+        return reconstructed_user_data, stats
+
+    def reduce_hits(self, layer_inputs, weight_grad, bias_grad, shared_data):
+        """In case of numerical instability or gradient noise, more bins can be hit than expected."""
+
+        len_data = shared_data[0]["metadata"]["num_data_points"]  # Not strictly needed for the attack, used to pad/trim
+        if len_data >= layer_inputs.shape[0]:
             # Fill up with zero if not enough data can be found:
-            missing_entries = torch.zeros(len_data - inputs.shape[0], *self.data_shape, **self.setup)
-            inputs = torch.cat([inputs, missing_entries], dim=0)
+            missing_entries = layer_inputs.new_zeros(len_data - layer_inputs.shape[0], *layer_inputs.shape[1:])
+            layer_inputs = torch.cat([layer_inputs, missing_entries], dim=0)
         else:
-            log.info(f"Initially produced {inputs.shape[0]} hits.")
+            log.info(f"Initially produced {layer_inputs.shape[0]} hits.")
             # Cut additional hits:
             if self.cfg.breach_reduction == "bias":
                 # this rule is optimal for clean data with few bins:
@@ -122,13 +123,36 @@ class ImprintAttacker(AnalyticAttacker):
                 best_guesses = torch.topk(weight_grad.mean(dim=1)[bias_grad != 0].abs(), len_data, largest=False)[1]
             else:  # None #
                 # Warning: This option can mess up metrics later on (as more data is recpnstructed than exists)
-                best_guesses = torch.arange(inputs.shape[0])
+                best_guesses = torch.arange(layer_inputs.shape[0])
             if len(best_guesses) < len_data:
                 log.info(f"Reduced to {len_data} hits.")
-            inputs = inputs[best_guesses]
+            layer_inputs = layer_inputs[best_guesses]
+        return layer_inputs
 
-        reconstructed_data = dict(data=inputs, labels=labels)
-        return reconstructed_data, stats
+    def reformat_data(self, layer_inputs, rec_models, shared_data, server_payload, server_secrets):
+        """After the actual attack has happened, we have to do some work to piece everything back together in the
+        desired data format."""
+
+        data_shape = server_secrets["ImprintBlock"]["shape"]
+
+        if "decoder" in server_secrets["ImprintBlock"].keys():
+            inputs = server_secrets["ImprintBlock"]["decoder"](layer_inputs)
+
+        if server_payload[0]["metadata"]["modality"] == "vision":
+            data_dtype = self.setup["dtype"]
+            inputs = layer_inputs.reshape(layer_inputs.shape[0], *data_shape)[:, :3, :, :]
+            if inputs.shape[1:] != self.data_shape:
+                interp_mode = dict(mode="bicubic", align_corners=False)
+                inputs = torch.nn.functional.interpolate(inputs, size=self.data_shape[1:], **interp_mode)
+            inputs = torch.max(torch.min(inputs, (1 - self.dm) / self.ds), -self.dm / self.ds)
+        else:
+            data_dtype = torch.long
+            inputs = layer_inputs.reshape(layer_inputs.shape[0], *data_shape)
+            if self.cfg.token_strategy is not None:
+                leaked_tokens = self.recover_token_information(shared_data, server_payload, rec_models[0].name)
+            inputs = self._postprocess_text_data(dict(data=inputs, labels=leaked_tokens), models=rec_models)["data"]
+
+        return inputs
 
 
 class DecepticonAttacker(AnalyticAttacker):

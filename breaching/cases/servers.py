@@ -19,6 +19,7 @@ from .malicious_modifications.analytic_transformer_utils import (
     make_imprint_layer,
 )
 from .models.transformer_dictionary import lookup_module_names
+from .models.language_models import LearnablePositionalEmbedding, PositionalEmbedding
 
 from .aux_training import train_encoder_decoder
 from .malicious_modifications.feat_decoders import generate_decoder
@@ -164,6 +165,15 @@ class MaliciousModelServer(HonestServer):
 
     THREAT = "Malicious (Analyst)"
 
+    CANDIDATE_FIRST_LAYERS = (
+        torch.nn.Linear,
+        torch.nn.Flatten,
+        torch.nn.Conv2d,
+        LearnablePositionalEmbedding,
+        PositionalEmbedding,
+        # Token Embeddings are not valid "first" layers and hencec not included here
+    )
+
     def __init__(
         self, model, loss, cfg_case, setup=dict(dtype=torch.float, device=torch.device("cpu")), external_dataloader=None
     ):
@@ -217,18 +227,21 @@ class MaliciousModelServer(HonestServer):
     def _place_malicious_block(
         self, modified_model, block_fn, type, position=None, handle_preceding_layers=None, **kwargs
     ):
-        """The block is placed directly before the named module. If none is given, the block is placed
-           before the first layer."""
+        """The block is placed directly before the named module given by "position".
+        If none is given, the block is placed before the first layer.
+        """
         if position is None:
-            input_dim = self.cfg_data.shape[0] * self.cfg_data.shape[1] * self.cfg_data.shape[2]
-            layers = [name for name, thing in modified_model.named_modules() if hasattr(thing, "weight")]  # a bit hacky
-            position = layers[0]
-            print(position)
+            all_module_layers = {name: module for name, module in modified_model.named_modules()}
+            for name, module in modified_model.named_modules():
+                if isinstance(module, self.CANDIDATE_FIRST_LAYERS):
+                    log.info(f"First layer determined to be {name}")
+                    position = name
+                    break
 
         block_found = False
         for name, module in modified_model.named_modules():
             if position in name:  # give some leeway for additional containers.
-                feature_shapes = introspect_model(modified_model, tuple(self.cfg_data.shape))
+                feature_shapes = introspect_model(modified_model, tuple(self.cfg_data.shape), self.cfg_data.modality)
                 data_shape = feature_shapes[name]["shape"][1:]
                 print(f"Block inserted at feature shape {data_shape}.")
                 module_to_be_modified = module
@@ -237,12 +250,10 @@ class MaliciousModelServer(HonestServer):
 
         if not block_found:
             raise ValueError(f"Could not find module {position} in model to insert layer.")
-        input_dim = torch.prod(torch.as_tensor(data_shape))
-        block = block_fn(input_dim, **kwargs)
 
-        replacement = torch.nn.Sequential(
-            torch.nn.Flatten(), block, torch.nn.Unflatten(dim=1, unflattened_size=data_shape), module_to_be_modified
-        )
+        # Insert malicious block:
+        block = block_fn(data_shape, **kwargs)
+        replacement = torch.nn.Sequential(block, module_to_be_modified)
         replace_module_by_instance(modified_model, module_to_be_modified, replacement)
         for idx, param in enumerate(modified_model.parameters()):
             if param is block.linear0.weight:

@@ -121,34 +121,45 @@ class _BaseAttacker:
         # Basic model (as also seen in DLG): Optimize in embedding space
         return rec_models, shared_data
 
-    def _postprocess_text_data(self, reconstructed_user_data):
+    def _postprocess_text_data(self, reconstructed_user_data, models=None):
         """Post-process text data to recover tokens."""
 
         def _max_similarity(recovered_embeddings, true_embeddings):
+            recovered_embeddings = recovered_embeddings - recovered_embeddings.mean(dim=-1, keepdim=True)
+            true_embeddings = true_embeddings - true_embeddings.mean(dim=-1, keepdim=True)
             norm_rec = recovered_embeddings.pow(2).sum(dim=-1)
             norm_true = true_embeddings.pow(2).sum(dim=-1)
             cosim = recovered_embeddings.matmul(true_embeddings.T) / norm_rec[:, None] / norm_true[None, :]
             return cosim.argmax(dim=1)
+
+        if hasattr(self, "embeddings"):
+            # Use extracted embeddings:
+            embedding_weight = self.embeddings[0]["weight"]
+        else:
+            # or lazily import lookup table
+            from ..cases.models.transformer_dictionary import lookup_module_names
+
+            embedding_weight = lookup_module_names(models[0].name, models[0])["embedding"].weight
 
         if self.cfg.token_recovery == "from-embedding":
             # This is the DLG strategy. Look up all inputs in embedding space.
             recovered_embeddings = reconstructed_user_data["data"]
             base_shape = recovered_embeddings.shape[0:2]
             recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])
-            true_embeddings = self.embeddings[0]["weight"]
+            true_embeddings = embedding_weight
 
             recovered_tokens = _max_similarity(recovered_embeddings, true_embeddings).view(*base_shape)
 
         elif self.cfg.token_recovery == "from-labels":
-            # Only works well in causal-lm?
+            # Only works well in some causal-lm?
             recovered_tokens = reconstructed_user_data["labels"]
         elif self.cfg.token_recovery == "from-limited-embedding":
             # Retrieve possible embeddings from gradient data
             recovered_embeddings = reconstructed_user_data["data"]
             base_shape = recovered_embeddings.shape[0:2]
             recovered_embeddings = recovered_embeddings.view(-1, recovered_embeddings.shape[-1])
-            active_embedding_ids = self.embeddings[0]["grads"].norm(dim=1).nonzero().squeeze()
-            true_embeddings = self.embeddings[0]["weight"][active_embedding_ids, :]
+            active_embedding_ids = reconstructed_user_data["labels"].unique()
+            true_embeddings = embedding_weight[active_embedding_ids, :]
             matches = _max_similarity(recovered_embeddings, true_embeddings)
             recovered_tokens = active_embedding_ids[matches].view(*base_shape)
 

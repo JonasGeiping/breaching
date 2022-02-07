@@ -89,7 +89,7 @@ class ImprintBlock(torch.nn.Module):
             s = torch.softmax(x, dim=1)[:, :, None]
             output = (x_in[:, None, :] * s).sum(dim=1)
         else:
-            output = x_in + x.mean(dim=1, keepdim=True)
+            output = x_in.flatten(start_dim=1) + x.mean(dim=1, keepdim=True)
         return output.unflatten(dim=1, sizes=self.data_shape)
 
 
@@ -228,7 +228,6 @@ class HonestAbandonCuriosity(ImprintBlock):
         final_weights = torch.empty(K, N)
         final_weights.scatter_(1, negative_weight_indices, negative_samples)
         final_weights.scatter_(1, positive_weight_indices, positive_samples)
-        print(torch.std_mean(final_weights))
         return final_weights
 
     def _make_biases(self, mu):

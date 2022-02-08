@@ -1,0 +1,20 @@
+defaults:
+  - _default_optimization_attack
+  - _self_
+type: sanitycheck
+
+objective:
+  type: cosine-similarity
+  scale: 1.0 # need to have a much smaller scale like 0.0001 for euclidean objectives
+
+optim:
+  optimizer: adam
+  signed:
+  step_size: 1
+  boxed: True
+  max_iterations: 1
+  step_size_decay: none
+
+  callback: 0 # Print objective value every callback many iterations
+
+# This is only a sanity check. No attack actually happens.

@@ -2,7 +2,8 @@
 In a FL setting this tokenizer might be trained on a public list of words and shared with all users,
 as no central party has access to the dataset.
 
-We'll use AG-News as a substitute public dataseet.
+We'll use AG-News as a substitute public dataseet for up to 62k tokens, and wikitext up to 215k tokens.
+(Not that I think a 215k token word-level tokenizer would be a great idea anyways)
 """
 
 
@@ -17,7 +18,6 @@ from tokenizers.processors import TemplateProcessing
 from tokenizers.trainers import WordLevelTrainer
 
 from datasets import load_dataset
-from ...utils import get_base_cwd
 
 
 def generate_word_level_tokenizer(vocab_size=50_000):
@@ -41,7 +41,7 @@ def generate_word_level_tokenizer(vocab_size=50_000):
 
     trainer = WordLevelTrainer(vocab_size=vocab_size, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
     tokenizer.train_from_iterator(batch_iterator(), trainer=trainer, length=len(dataset))
-    path = os.path.join(get_base_cwd(), "cache", f"word-tokenizer_{vocab_size}.json")
+    path = os.path.join("..", "..", "cache", f"word-tokenizer_{vocab_size}.json")
     tokenizer.save(path)
 
 

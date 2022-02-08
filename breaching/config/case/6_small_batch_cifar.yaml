@@ -1,0 +1,15 @@
+name: small_batch_cifar
+
+defaults:
+  - data: CIFAR10
+  - impl: default
+  - server: honest-but-curious
+  - user: local_gradient
+  - _self_
+model: ConvNet
+
+# Server and user:
+num_queries: 1
+
+user:
+  num_data_points: 8

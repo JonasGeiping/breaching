@@ -4,7 +4,6 @@ import os
 
 from itertools import chain
 import collections
-from ...utils import get_base_cwd
 
 # All language modules are import lazily
 import logging
@@ -130,7 +129,7 @@ def _get_tokenizer(tokenizer_name, vocab_size=None, cache_dir=None):
     from transformers import PreTrainedTokenizerFast, AutoTokenizer, CanineTokenizer
 
     if tokenizer_name == "word-level":
-        path = os.path.join(get_base_cwd(), "cache", f"word-tokenizer_{vocab_size}.json")
+        path = os.path.join("..", "..", "cache", f"word-tokenizer_{vocab_size}.json")
         if os.path.isfile(path):
             tokenizer = PreTrainedTokenizerFast(tokenizer_file=path)
         else:
@@ -190,7 +189,7 @@ def _split_wikipedia_into_articles(dataset, user_idx=0, return_full_dataset=Fals
 def load_stackoverflow(cache_dir="~/data", user_idx=0, return_full_dataset=False, split="train"):
     """Return the first 250 users if "return_full_dataset=True" ..."""
     if not return_full_dataset:
-        path = os.path.join(get_base_cwd(), "cache", f"stackoverflow_cache_{user_idx}.txt")
+        path = os.path.join("..", "..", "cache", f"stackoverflow_cache_{user_idx}.txt")
         try:
             with open(path, "r") as file:
                 raw_texts = list(file)
@@ -211,7 +210,7 @@ def load_stackoverflow(cache_dir="~/data", user_idx=0, return_full_dataset=False
 def load_shakespeare(cache_dir="~/data", user_idx=0, return_full_dataset=False, split="train"):
     """Return the first 250 users if "return_full_dataset=True" ..."""
     if not return_full_dataset:
-        path = os.path.join(get_base_cwd(), "cache", f"shakespeare_cache_{user_idx}.txt")
+        path = os.path.join("..", "..", "cache", f"shakespeare_cache_{user_idx}.txt")
         try:
             with open(path, "r") as file:
                 raw_texts = list(file)

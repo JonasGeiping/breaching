@@ -9,10 +9,9 @@ import torch
 import torchvision
 import breaching
 
-import hydra  # You could even skip this import and manually represent a cfg.attack variant
-
 
 class data_cfg_default:
+    modality = "vision"
     size = (1_281_167,)
     classes = 1000
     shape = (3, 224, 224)
@@ -31,8 +30,7 @@ transforms = torchvision.transforms.Compose(
 )
 
 
-@hydra.main(config_path="config/attack", config_name="invertinggradients")
-def main(cfg_attack):
+def main():
     setup = dict(device=torch.device("cpu"), dtype=torch.float)
 
     # This could be your model:
@@ -46,6 +44,7 @@ def main(cfg_attack):
     labels = torch.as_tensor(label)[None, ...]
 
     # This is the attacker:
+    cfg_attack = breaching.get_attack_config("invertinggradients")
     attacker = breaching.attacks.prepare_attack(model, loss_fn, cfg_attack, setup)
 
     # ## Simulate an attacked FL protocol

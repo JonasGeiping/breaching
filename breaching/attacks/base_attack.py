@@ -59,7 +59,7 @@ class _BaseAttacker:
         # Load server_payload into state:
         rec_models = self._construct_models_from_payload_and_buffers(server_payload, shared_data)
         shared_data = self._cast_shared_data(shared_data)
-        if metadata["modality"] == "text":
+        if metadata.modality == "text":
             rec_models, shared_data = self._prepare_for_text_data(shared_data, rec_models)
         self._rec_models = rec_models
         # Consider label information

@@ -77,7 +77,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
             pass
         optimal_solution = self._select_optimal_reconstruction(candidate_solutions, scores, stats)
         reconstructed_data = dict(data=optimal_solution, labels=labels)
-        if server_payload[0]["metadata"]["modality"] == "text":
+        if server_payload[0]["metadata"].modality == "text":
             reconstructed_data = self._postprocess_text_data(reconstructed_data)
         if "ClassAttack" in server_secrets:
             # Only a subset of images was actually reconstructed:

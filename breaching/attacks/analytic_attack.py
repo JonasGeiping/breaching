@@ -138,7 +138,7 @@ class ImprintAttacker(AnalyticAttacker):
         if "decoder" in server_secrets["ImprintBlock"].keys():
             inputs = server_secrets["ImprintBlock"]["decoder"](layer_inputs)
 
-        if server_payload[0]["metadata"]["modality"] == "vision":
+        if server_payload[0]["metadata"].modality == "vision":
             data_dtype = self.setup["dtype"]
             inputs = layer_inputs.reshape(layer_inputs.shape[0], *data_shape)[:, :3, :, :]
             if inputs.shape[1:] != self.data_shape:

@@ -29,7 +29,9 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def construct_server(model, loss_fn, cfg_case, setup, external_dataloader=None):
+def construct_server(
+    model, loss_fn, cfg_case, setup=dict(device=torch.device("cpu"), dtype=torch.float), external_dataloader=None
+):
     """Interface function."""
     if external_dataloader is None and cfg_case.server.has_external_data:
         user_split = cfg_case.data.examples_from_split

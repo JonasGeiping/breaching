@@ -19,28 +19,6 @@ os.environ["HYDRA_FULL_ERROR"] = "0"
 log = logging.getLogger(__name__)
 
 
-@hydra.main(config_path="config", config_name="cfg")
-def main_launcher(cfg):
-    """This is boiler-plate code for the launcher."""
-
-    log.info("--------------------------------------------------------------")
-    log.info("-----Launching federating learning breach experiment! --------")
-
-    launch_time = time.time()
-    if cfg.seed is None:
-        cfg.seed = torch.randint(0, 2 ** 32 - 1, (1,)).item()
-
-    log.info(OmegaConf.to_yaml(cfg))
-    breaching.utils.initialize_multiprocess_log(cfg)  # manually save log configuration
-    main_process(0, 1, cfg)
-
-    log.info("-------------------------------------------------------------")
-    log.info(
-        f"Finished computations with total train time: " f"{str(datetime.timedelta(seconds=time.time() - launch_time))}"
-    )
-    log.info("-----------------Job finished.-------------------------------")
-
-
 def main_process(process_idx, local_group_size, cfg):
     """This function controls the central routine."""
     local_time = time.time()
@@ -78,6 +56,28 @@ def main_process(process_idx, local_group_size, cfg):
     breaching.utils.dump_metrics(cfg, metrics)
     if cfg.save_reconstruction:
         breaching.utils.save_reconstruction(reconstructed_user_data, payloads, true_user_data, cfg)
+
+
+@hydra.main(config_path="breaching/config", config_name="cfg")
+def main_launcher(cfg):
+    """This is boiler-plate code for the launcher."""
+
+    log.info("--------------------------------------------------------------")
+    log.info("-----Launching federating learning breach experiment! --------")
+
+    launch_time = time.time()
+    if cfg.seed is None:
+        cfg.seed = torch.randint(0, 2 ** 32 - 1, (1,)).item()
+
+    log.info(OmegaConf.to_yaml(cfg))
+    breaching.utils.initialize_multiprocess_log(cfg)  # manually save log configuration
+    main_process(0, 1, cfg)
+
+    log.info("-------------------------------------------------------------")
+    log.info(
+        f"Finished computations with total train time: " f"{str(datetime.timedelta(seconds=time.time() - launch_time))}"
+    )
+    log.info("-----------------Job finished.-------------------------------")
 
 
 if __name__ == "__main__":

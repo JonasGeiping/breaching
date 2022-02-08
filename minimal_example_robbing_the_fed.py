@@ -18,6 +18,7 @@ from collections import namedtuple
 
 
 class data_cfg_default:
+    modality = "vision"
     size = (1_281_167,)
     classes = 1000
     shape = (3, 224, 224)
@@ -29,9 +30,13 @@ class data_cfg_default:
 class attack_cfg_default:
     type = "analytic"
     attack_type = "imprint-readout"
-    label_strategy = "random"  # Labels are not actually required for this attack
+    label_strategy = None  # Labels are not actually required for this attack
     normalize_gradients = False
     sort_by_bias = False
+    text_strategy = "no-preprocessing"
+    token_strategy = "decoder-bias"
+    token_recovery = "from-limited-embedding"
+    breach_reduction = "weight"
     impl = namedtuple("impl", ["dtype", "mixed_precision", "JIT"])("float", False, "")
 
 
@@ -53,11 +58,8 @@ def main():
     model.eval()
     loss_fn = torch.nn.CrossEntropyLoss()
     # It will be modified maliciously:
-    input_dim = data_cfg_default.shape[0] * data_cfg_default.shape[1] * data_cfg_default.shape[2]
-    block = ImprintBlock(input_dim, num_bins=4)
-    model = torch.nn.Sequential(
-        torch.nn.Flatten(), block, torch.nn.Unflatten(dim=1, unflattened_size=data_cfg_default.shape), model
-    )
+    block = ImprintBlock(data_cfg_default.shape, num_bins=4)
+    model = torch.nn.Sequential(block, model)
     secret = dict(weight_idx=0, bias_idx=1, shape=tuple(data_cfg_default.shape), structure=block.structure)
     secrets = {"ImprintBlock": secret}
 

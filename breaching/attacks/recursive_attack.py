@@ -30,8 +30,8 @@ class RecursiveAttacker(_BaseAttacker):
     def __repr__(self):
         return f"""Attacker (of type {self.__class__.__name__}) with settings:
                inversion:
-                - step size: {self.cfg.step_size}
-                - steps    : {self.cfg.step_size}
+                - step size: {self.cfg.inversion.step_size}
+                - steps    : {self.cfg.inversion.step_size}
                 """
 
     def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
@@ -58,7 +58,7 @@ class RecursiveAttacker(_BaseAttacker):
         Rewritten in minor ways to all for some additional features such as torch.nn.Sequential architectures.
         Cross-reference the original implementation when running crucial comparisons."""
         # reconstruction procedure
-        all_modules = list(model)[::-1]
+        all_modules = list(model.modules())[::-1]
 
         k = None
         last_weight = []
@@ -140,7 +140,7 @@ class RecursiveAttacker(_BaseAttacker):
         inputs = x_.reshape([1, *self.data_shape])
         return inputs
 
-    def _retrieve_feature_shapes(self, model, K):
+    def _retrieve_feature_shapes(self, model, shared_data):
         """Retrieve x_shape by hooking into the model and recording it.
 
         Feature shapes are returned in reverse order!"""
@@ -156,7 +156,7 @@ class RecursiveAttacker(_BaseAttacker):
 
         # Run the model with random data to query it
         # This requires the model to be in eval mode!
-        model(torch.randn([shared_data["metadata"]["num_data_points"], *self.data_shape], **self.setup))
+        model(torch.randn([shared_data[0]["metadata"]["num_data_points"], *self.data_shape], **self.setup))
         for hook in hooks_list:
             hook.remove()
 

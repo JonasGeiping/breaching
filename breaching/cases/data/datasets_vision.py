@@ -137,7 +137,6 @@ def _split_dataset_vision(dataset, cfg_data, user_idx=None, return_full_dataset=
             dataset = Subset(dataset, data_ids)
         elif cfg_data.partition == "random":  # Data not replicated across users. Split is deterministic over reruns!
             data_per_user = len(dataset) // cfg_data.default_clients
-
             generator = torch.Generator()
             generator.manual_seed(233)
             data_ids = torch.randperm(len(dataset))[user_idx * data_per_user : data_per_user * (user_idx + 1)]

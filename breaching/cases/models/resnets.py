@@ -37,6 +37,8 @@ def resnet_depths_to_config(depth):
     elif depth == 152:
         block = Bottleneck
         layers = [3, 8, 36, 3]
+    else:
+        raise ValueError(f"Invalid depth {depth} given.")
     return block, layers
 
 

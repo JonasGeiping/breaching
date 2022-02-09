@@ -33,10 +33,9 @@ def system_startup(process_idx, local_group_size, cfg):
         set_random_seed(cfg.seed + 10 * process_idx)
 
     dtype = getattr(torch, cfg.case.impl.dtype)  # :> dont mess this up
-    # memory_format = torch.contiguous_format if cfg.case.impl.memory == 'contiguous' else torch.channels_last
 
     device = torch.device(f"cuda:{process_idx}") if torch.cuda.is_available() else torch.device("cpu")
-    setup = dict(device=device, dtype=dtype)  # memory_format=memory_format)
+    setup = dict(device=device, dtype=dtype)
     python_version = sys.version.split(" (")[0]
     log.info(f"Platform: {sys.platform}, Python: {python_version}, PyTorch: {torch.__version__}")
     log.info(f"CPUs: {torch.get_num_threads()}, GPUs: {torch.cuda.device_count()} on {socket.gethostname()}.")

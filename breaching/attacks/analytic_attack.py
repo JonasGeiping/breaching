@@ -33,7 +33,7 @@ class AnalyticAttacker(_BaseAttacker):
         inputs_from_queries = []
         for model, user_data in zip(rec_models, shared_data):
             idx = len(user_data["gradients"]) - 1
-            for layer in list(model)[::-1]:  # Only for torch.nn.Sequential
+            for layer in list(model.modules())[::-1]:  # Only for torch.nn.Sequential
                 if isinstance(layer, torch.nn.Linear):
                     bias_grad = user_data["gradients"][idx]
                     weight_grad = user_data["gradients"][idx - 1]
@@ -41,8 +41,6 @@ class AnalyticAttacker(_BaseAttacker):
                     idx -= 2
                 elif isinstance(layer, torch.nn.Flatten):
                     inputs = layer_inputs.reshape(user_data["metadata"]["num_data_points"], *self.data_shape)
-                else:
-                    raise ValueError(f"Layer {layer} not supported for this sanity-check attack.")
             inputs_from_queries += [inputs]
 
         final_reconstruction = torch.stack(inputs_from_queries).mean(dim=0)

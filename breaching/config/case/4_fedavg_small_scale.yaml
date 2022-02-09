@@ -6,7 +6,7 @@ defaults:
   - server: honest-but-curious
   - user: local_updates
   - _self_
-model: ResNet152
+model: ResNet18
 
 # Server and user:
 num_queries: 1

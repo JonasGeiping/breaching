@@ -20,9 +20,6 @@ std:
   - 0.2564384639263153
   - 0.2761504650115967
 
-# Data-specific implementation constants:
-batch_size: 128 # this is the maximum batchsize that fits onto the GPU for gradient accumulation
-
 augmentations_train:
   RandomCrop:
     - 32
@@ -31,10 +28,12 @@ augmentations_train:
 augmentations_val:
 
 # Federated Learning specifics:
-default_clients: 10
+default_clients: 100
+partition: balanced # used for synthetic splits. Current options for synthetic split: balanced / unique-class
 examples_from_split: validation
 
-caching: # dataset is alreay cached in RAM
-# Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB
+# Data-specific implementation constants:
+batch_size: 128
+caching: False
 defaults:
-  - db: none
+  - db: none # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

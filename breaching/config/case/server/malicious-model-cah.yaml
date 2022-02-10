@@ -1,4 +1,4 @@
-# Malicious models for attacks in Boenisch et al, "When the Honest Abandon Curiosity"
+# Malicious models for attacks in Boenisch et al, "When the Curious Abandon Honesty
 
 name: malicious_model
 pretrained: True
@@ -9,7 +9,7 @@ has_external_data: False
 num_queries: 1
 
 model_modification:
-  type: HonestAbandonCuriosity
+  type: CuriousAbandonHonesty
   num_bins: 64
 
   mu: 0

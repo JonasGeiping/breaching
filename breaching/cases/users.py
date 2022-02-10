@@ -404,8 +404,12 @@ class MultiUserAggregate(UserMultiStep):
         n = "\n"
         return self.users[0].__repr__() + n + f"""    Number of aggregated users: {self.num_users}"""
 
-    def compute_local_updates(self, server_payload):
-        """Compute local updates to the given model based on server payload."""
+    def compute_local_updates(self, server_payload, return_true_user_data=False):
+        """Compute local updates to the given model based on server payload.
+
+        Collecting and returning a tensor containing all input data (as for the other users) is disabled by default.
+        (to save your RAM).
+        """
         self.counted_queries += 1
         # Compute local updates
 
@@ -424,9 +428,10 @@ class MultiUserAggregate(UserMultiStep):
             user_data, true_user_data = user.compute_local_updates(server_payload)
             user.to(**self.user_setup)
 
-            aggregate_true_user_data += [true_user_data["data"].cpu()]
-            if true_user_data["labels"] is not None:
-                aggregate_true_user_labels += [true_user_data["labels"].cpu()]
+            if return_true_user_data:
+                aggregate_true_user_data += [true_user_data["data"].cpu()]
+                if true_user_data["labels"] is not None:
+                    aggregate_true_user_labels += [true_user_data["labels"].cpu()]
             torch._foreach_sub_(user_data["gradients"], aggregate_updates)
             torch._foreach_add_(aggregate_updates, user_data["gradients"], alpha=1 / self.num_users)
 
@@ -457,16 +462,14 @@ class MultiUserAggregate(UserMultiStep):
             ),
         )
 
-        # def generate_user_data():
-        #     for user in range(self.users):
-        #         yield user._load_data()
-        aggregate_true_user_data = torch.cat(aggregate_true_user_data, dim=0)
-        aggregate_true_user_labels = (
-            torch.cat(aggregate_true_user_labels) if len(aggregate_true_user_labels) > 0 else None
-        )
+        if return_true_user_data:
+            aggregate_true_user_data = torch.cat(aggregate_true_user_data, dim=0)
+            aggregate_true_user_labels = (
+                torch.cat(aggregate_true_user_labels) if len(aggregate_true_user_labels) > 0 else None
+            )
 
-        true_user_data = dict(
-            data=aggregate_true_user_data, labels=aggregate_true_user_labels, buffers=aggregate_buffers
-        )
+            true_user_data = dict(
+                data=aggregate_true_user_data, labels=aggregate_true_user_labels, buffers=aggregate_buffers
+            )
 
         return shared_data, true_user_data

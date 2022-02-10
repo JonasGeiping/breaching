@@ -1,9 +1,9 @@
-name: industry_fed_avg
+name: industry_scale_fl
 
 defaults:
   - data: ImageNetAnimals
   - impl: default
-  - server: malicious-model
+  - server: honest-but-curious
   - user: multiuser_aggregate
   - _self_
 model: ResNet18

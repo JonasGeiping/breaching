@@ -99,7 +99,7 @@ class SparseImprintBlock(ImprintBlock):
     """This block is sparse instead of cumulative which is more efficient in noise/param tradeoffs but requires
     two ReLUs that construct the hard-tanh nonlinearity."""
 
-    def __init__(self, data_shape, num_bins, connection="linear", gain=1e-3, linfunc="fourier", mode=0):
+    def __init__(self, data_shape, num_bins, connection="linear", gain=1, linfunc="fourier", mode=0):
         super().__init__(data_shape, num_bins, connection, gain, linfunc, mode)
         self.nonlin = torch.nn.Hardtanh(min_val=0, max_val=gain)
 

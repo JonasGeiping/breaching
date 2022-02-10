@@ -1,0 +1,24 @@
+# Malicious models for attacks in Boenisch et al, "When the Curious Abandon Honesty
+
+name: malicious_model
+pretrained: True
+model_state: default
+provide_public_buffers: True # Send public buffers to users (this is batch norm specific)
+
+has_external_data: False
+num_queries: 1
+
+model_modification:
+  type: CuriousAbandonHonesty
+  num_bins: 64
+
+  mu: 0
+  sigma: 0.5
+  scale_factor: 0.95
+
+  position:
+  handle_preceding_layers: identity # if position is not None, how are the preceding layers handled? Options: identity, VAE, none
+  connection: addition # can be 'linear' connection back to input size or 'addition'
+
+model_gain: 1.0 # multiply all non-malicious layers with this value to mess with parameter magnitudes
+normalize_rounds: 0

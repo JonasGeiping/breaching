@@ -36,13 +36,17 @@ def compute_feature_distribution(model, target_layer, measurement, server):
     else:
         log.info(f"Computing feature distribution before the probe layer{target_layer} from random tokens.")
         cfg = server.cfg_data
-        weights = 1 / torch.arange(1, cfg.vocab_size + 1)  # Zipfy enough?
+        weights = torch.ones((cfg.vocab_size))  # Uniform vocabulary
+        # weights = 1 / torch.arange(1, cfg.vocab_size + 1)  # Zipfy enough?
         for i in range(50):
             # inputs = torch.randint(0, cfg.vocab_size, (cfg.batch_size, *cfg.shape), device=server.setup["device"])
             sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=cfg.batch_size * cfg.shape[0])
             samples = list(iter(sampler))
             inputs = torch.as_tensor(samples, device=server.setup["device"]).view((cfg.batch_size, *cfg.shape))
-            model(inputs)
+            try:
+                model(inputs)
+            except RuntimeError:
+                pass
             feats.append(features["linear_probe"].detach().view(inputs.shape[0] * inputs.shape[1], -1).clone())
 
     std, mu = torch.std_mean(torch.matmul(torch.cat(feats), measurement))

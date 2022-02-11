@@ -65,13 +65,20 @@ We implement a range of metrics which can be queried through `breaching.analysis
 ## Additional Topics
 
 ### Benchmarking
-A script to benchmark attacks is included as `benchmark_breaches.py`. This script will iterate over the first valid `num_trials` users, attack each separately and average the resulting metrics. This can be useful for quantitative analysis of these attacks.
+A script to benchmark attacks is included as `benchmark_breaches.py`. This script will iterate over the first valid `num_trials` users, attack each separately and average the resulting metrics. This can be useful for quantitative analysis of these attacks. The default case takes about a day to benchmark on a single GTX2080 GPU for optimization-based attacks, and less than 30 minutes for analytic attacks.
+
+### System Requirements
+All attacks can be run on both CPU/GPU (any `torch.device` actually). However, the optimization-based attacks are very compute intensive and using a GPU is highly advised. The other attacks are cheap enough to be run on CPUs (The Decepticon attack for example does most of the heavy lifting in assignment problems on CPU, for example).
+
+### Options
+It is probably best to have a look into `breaching/config` to see all possible options.
+
 
 ### Citation
 For now, please cite the respective publications for each attack and use case.
 
 ### Authors
-This framework was built by Jonas Geiping with great contributions from [Liam Fowl](https://github.com/lhfowl) and [Yuxin Wen](https://github.com/YuxinWenRick).
+This framework was built by me (Jonas Geiping), [Liam Fowl](https://github.com/lhfowl) and [Yuxin Wen](https://github.com/YuxinWenRick).
 
 ### Contact
 If you have questions, don't hesitate to open an issue here on github or write us an email.

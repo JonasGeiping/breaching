@@ -1,5 +1,5 @@
 """Load attacker code and instantiate appropriate objects."""
-
+import torch
 
 from .optimization_based_attack import OptimizationBasedAttacker
 from .multiscale_optimization_attack import MultiScaleOptimizationAttacker

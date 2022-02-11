@@ -7,7 +7,7 @@ covering examples with small and large aggregation sizes and examples both visio
 ![](examples/teaser_breaching.png)
 
 This includes implementations of recent work such as:
-* Malicous-model attacks as described in "Robbing The Fed" https://openreview.net/forum?id=fwzUgo0FM9v
+* Malicious-model attacks as described in "Robbing The Fed" https://openreview.net/forum?id=fwzUgo0FM9v
 * Attacks against transformer architectures described in "Decepticons" https://arxiv.org/abs/2201.12675
 * Fishing attacks that breach arbitrary aggregations described in https://arxiv.org/abs/2202.00580
 
@@ -17,7 +17,7 @@ But also a range of implementations of other attacks from optimization attacks (
 This repository implements two main components. A list of modular attacks under `breaching.attacks` and a list of relevant use cases (including server threat model, user setup, model architecture and dataset) under `breaching.cases`. All attacks and scenarios are highly modular and can be customized and extended through the configuration at `breaching/config`.
 
 ### Installation
-Either download this repositor (including notebooks and examples) directly using `git clone ` or install the python package via `pip install breaching` for easy access to key functionality.
+Either download this repository (including notebooks and examples) directly using `git clone` or install the python package via `pip install breaching` for easy access to key functionality.
 
 Because this framework covers several use cases across vision and language, it also accumulates a kitchen-sink of depedencies. The full list of all dependencies can be found at `environment.yml`, but is not installed by default. Install these as necessary (for example install huggingface packages only if you are interested in language applications).
 
@@ -25,15 +25,15 @@ Because this framework covers several use cases across vision and language, it a
 ### Usage
 You can load any use case by
 ```
-cfg_case = get_case_config(case="1_single_imagenet")
+cfg_case = breaching.get_case_config(case="1_single_imagenet")
 user, server, model, loss = breaching.cases.construct_case(cfg_case)
 ```
 and load any attack by
 ```
-cfg_attack = get_attack_config(attack="invertinggradients")
+cfg_attack = breaching.get_attack_config(attack="invertinggradients")
 attacker = breaching.attacks.prepare_attack(model, loss, cfg_attack)
 ```
-Then simulate a FL exchange and run the attack:
+Then simulate an FL exchange and run the attack:
 ```
 shared_user_data, payloads, true_user_data = server.run_protocol(user)
 reconstructed_user_data, stats = attacker.reconstruct(payloads, shared_user_data)
@@ -71,6 +71,7 @@ A script to benchmark attacks is included as `benchmark_breaches.py`. This scrip
 For now, please cite the respective publications for each attack and use case.
 
 ### Authors
+This framework was built by Jonas Geiping with great contributions from [Liam Fowl](https://github.com/lhfowl) and [Yuxin Wen](https://github.com/YuxinWenRick).
 
 ### Contact
 If you have questions, don't hesitate to open an issue here on github or write us an email.

@@ -33,9 +33,18 @@ and load any attack by
 cfg_attack = breaching.get_attack_config(attack="invertinggradients")
 attacker = breaching.attacks.prepare_attack(model, loss, cfg_attack)
 ```
-Then simulate an FL exchange and run the attack:
+
+This is a good spot to print out an overview over the loaded threat model and setting, maybe you would want to change some settings?
+```
+breaching.utils.overview(server, user, attacker)
+```
+
+To evaluate the attack, you can then simulate an FL exchange:
 ```
 shared_user_data, payloads, true_user_data = server.run_protocol(user)
+```
+And then run the attack (which consumes only the user update and the server state):
+```
 reconstructed_user_data, stats = attacker.reconstruct(payloads, shared_user_data)
 ```
 
@@ -55,6 +64,7 @@ A list of all included attacks with references to their original publications ca
 
 ### Datasets
 Many examples for vision attacks show `ImageNet` examples. For this to work, you need to download the *ImageNet ILSVRC2012* dataset **manually**. However, almost all attacks require only the small validation set, which can be easily downloaded onto a laptop and do not look for the whole training set. If this is not an option for you, then the `Birdsnap` dataset is a reasonably drop-in replacement for ImageNet. By default, we further only show examples from `ImageNetAnimals`, which are the first 397 classes of the ImageNet dataset. This reduces the number of weird pictures of actual people substantially. Of course `CIFAR10` and `CIFAR100` are also around.
+For these vision datasets there are several options in the literature on how to partition them for a FL simulation. We implement a range of such partitions with `data.partition`, ranging from `random` (but replicable and with no repetitions of data across users), over `balanced` (separate classes equally across users) to `unique-class` (every user owns data from a single class). When changing the partition you might also have to adjust the number of expected clients `data.default_clients` (for example, for `unique_class` there can be only `len(classes)` many users).
 
 For language data, you can load `wikitext` which we split into separate users on a per-article basis, or the `stackoverflow` and `shakespeare` FL datasets from tensorflow federated (installing `tensorflow-cpu` is required for these tensorflow-federated datasets).
 

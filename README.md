@@ -76,7 +76,7 @@ We implement a range of metrics which can be queried through `breaching.analysis
 
 ### Benchmarking
 A script to benchmark attacks is included as `benchmark_breaches.py`. This script will iterate over the first valid `num_trials` users, attack each separately and average the resulting metrics. This can be useful for quantitative analysis of these attacks. The default case takes about a day to benchmark on a single GTX2080 GPU for optimization-based attacks, and less than 30 minutes for analytic attacks.
-Using the default scripts for benchmarking and cmd-line executes also includes a bunch of convenience based mostly on `hydra`, including the creation of separate subfolders for each experiment in `outputs/`, which contain logs, metrics and optionally recovered data. Summary tables are written to `tables/`
+Using the default scripts for benchmarking and cmd-line executes also includes a bunch of convenience based mostly on `hydra`. This entails the creation of separate sub-folders for each experiment in `outputs/`. These folders contain logs, metrics and optionally recovered data for each run. Summary tables are written to `tables/`.
 
 ### System Requirements
 All attacks can be run on both CPU/GPU (any `torch.device` actually). However, the optimization-based attacks are very compute intensive and using a GPU is highly advised. The other attacks are cheap enough to be run on CPUs (The Decepticon attack for example does most of the heavy lifting in assignment problems on CPU anyway, for example).
@@ -95,7 +95,10 @@ We're especially thankful for related projects such as https://www.tensorflow.or
 For the license of our code, refer to `LICENCE.md`.
 
 ### Authors
-This framework was built by me (Jonas Geiping), [Liam Fowl](https://github.com/lhfowl) and [Yuxin Wen](https://github.com/YuxinWenRick).
+This framework was built by me ([Jonas Geiping](https://github.com/JonasGeiping)), [Liam Fowl](https://github.com/lhfowl) and [Yuxin Wen](https://github.com/YuxinWenRick) while working at the University of Maryland, College Park.
+
+### Contributing
+If you have an attack that you are interested in implementing in this framework, or a use case that is interesting to you, don't hesitate to contact us or open a pull-request.
 
 ### Contact
-If you have questions, don't hesitate to open an issue here on github or write us an email.
+If you have any questions, also don't hesitate to open an issue here on github or write us an email.

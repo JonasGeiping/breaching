@@ -1,4 +1,6 @@
-"""Data augmentations as in Amin's inversion paper."""
+"""Data augmentations as in Amin's (https://github.com/AminJun) inversion implementation
+[See model-free inversion at https://arxiv.org/abs/2201.12961]
+."""
 import torch
 import torch.nn.functional as F
 from torch.nn.modules.utils import _pair, _quadruple
@@ -27,6 +29,7 @@ class Focus(torch.nn.Module):
         x = (pert[0] + w // 2 - self.size // 2).long().clamp(min=0, max=w - self.size)
         y = (pert[1] + h // 2 - self.size // 2).long().clamp(min=0, max=h - self.size)
         return img[:, :, x : x + self.size, y : y + self.size]
+
 
 class Zoom(torch.nn.Module):
     def __init__(self, out_size=224, **kwargs):
@@ -131,6 +134,7 @@ class MedianPool2d(torch.nn.Module):
         x = x.unfold(2, self.k[0], self.stride[0]).unfold(3, self.k[1], self.stride[1])
         x = x.contiguous().view(x.size()[:4] + (-1,)).median(dim=-1)[0]
         return x
+
 
 class RandomTransform(torch.nn.Module):
     """Crop the given batch of tensors at a random location.

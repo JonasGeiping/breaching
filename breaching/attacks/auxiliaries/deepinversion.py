@@ -105,3 +105,6 @@ class DeepInversionFeatureHook:
 
     def close(self):
         self.hook.remove()
+
+
+# The long copyright note might be excessive for these few lines :>

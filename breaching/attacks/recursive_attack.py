@@ -1,5 +1,7 @@
 """This is the recursive attack "R-GAP" from Zhu and Blaschko
 "R-GAP: Recursive Gradient Attack on Privacy"
+
+and a wrapper around the original code from https://github.com/JunyiZhu-AI/R-GAP/blob/main/main.py
 """
 
 import torch

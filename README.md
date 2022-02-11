@@ -66,7 +66,7 @@ A list of all included attacks with references to their original publications ca
 Many examples for vision attacks show `ImageNet` examples. For this to work, you need to download the *ImageNet ILSVRC2012* dataset **manually**. However, almost all attacks require only the small validation set, which can be easily downloaded onto a laptop and do not look for the whole training set. If this is not an option for you, then the `Birdsnap` dataset is a reasonably drop-in replacement for ImageNet. By default, we further only show examples from `ImageNetAnimals`, which are the first 397 classes of the ImageNet dataset. This reduces the number of weird pictures of actual people substantially. Of course `CIFAR10` and `CIFAR100` are also around.
 For these vision datasets there are several options in the literature on how to partition them for a FL simulation. We implement a range of such partitions with `data.partition`, ranging from `random` (but replicable and with no repetitions of data across users), over `balanced` (separate classes equally across users) to `unique-class` (every user owns data from a single class). When changing the partition you might also have to adjust the number of expected clients `data.default_clients` (for example, for `unique_class` there can be only `len(classes)` many users).
 
-For language data, you can load `wikitext` which we split into separate users on a per-article basis, or the `stackoverflow` and `shakespeare` FL datasets from tensorflow federated (installing `tensorflow-cpu` is required for these tensorflow-federated datasets).
+For language data, you can load `wikitext` which we split into separate users on a per-article basis, or the `stackoverflow` and `shakespeare` FL datasets from tensorflow federated, which are already split into users (installing `tensorflow-cpu` is required for these tensorflow-federated datasets).
 
 ## Metrics
 
@@ -76,16 +76,23 @@ We implement a range of metrics which can be queried through `breaching.analysis
 
 ### Benchmarking
 A script to benchmark attacks is included as `benchmark_breaches.py`. This script will iterate over the first valid `num_trials` users, attack each separately and average the resulting metrics. This can be useful for quantitative analysis of these attacks. The default case takes about a day to benchmark on a single GTX2080 GPU for optimization-based attacks, and less than 30 minutes for analytic attacks.
+Using the default scripts for benchmarking and cmd-line executes also includes a bunch of convenience based mostly on `hydra`, including the creation of separate subfolders for each experiment in `outputs/`, which contain logs, metrics and optionally recovered data. Summary tables are written to `tables/`
 
 ### System Requirements
-All attacks can be run on both CPU/GPU (any `torch.device` actually). However, the optimization-based attacks are very compute intensive and using a GPU is highly advised. The other attacks are cheap enough to be run on CPUs (The Decepticon attack for example does most of the heavy lifting in assignment problems on CPU, for example).
+All attacks can be run on both CPU/GPU (any `torch.device` actually). However, the optimization-based attacks are very compute intensive and using a GPU is highly advised. The other attacks are cheap enough to be run on CPUs (The Decepticon attack for example does most of the heavy lifting in assignment problems on CPU anyway, for example).
 
 ### Options
 It is probably best to have a look into `breaching/config` to see all possible options.
 
-
 ### Citation
 For now, please cite the respective publications for each attack and use case.
+
+
+### License
+We integrate several snippets of code from other repositories and refer to the licenses included in those files for more info.
+We're especially thankful for related projects such as https://www.tensorflow.org/federated, https://github.com/NVlabs/DeepInversion, https://github.com/JunyiZhu-AI/R-GAP, https://github.com/facebookresearch/functorch from which we incorporate components.
+
+For the license of our code, refer to `LICENCE.md`.
 
 ### Authors
 This framework was built by me (Jonas Geiping), [Liam Fowl](https://github.com/lhfowl) and [Yuxin Wen](https://github.com/YuxinWenRick).

@@ -86,8 +86,8 @@ class RecursiveAttacker(_BaseAttacker):
         else:
             # Replace the old construction with a new one for multi-label classification:
             # Using a bias in the last layer:
-            bias_grad = original_dy_dx[grad_idx].numpy()
-            weight_grad = original_dy_dx[grad_idx - 1].numpy()
+            bias_grad = original_dy_dx[grad_idx].cpu().numpy()
+            weight_grad = original_dy_dx[grad_idx - 1].cpu().numpy()
             grad_idx -= 2
             valid_classes = bias_grad != 0
             layer_inputs = (weight_grad[valid_classes, :] / bias_grad[valid_classes, None]).mean(axis=0)

@@ -376,6 +376,19 @@ class UserMultiStep(UserSingleStep):
         return shared_data, true_user_data
 
 
+class ChainedDataloader:
+    def __init__(self, *dataloaders):
+        self.dataloaders = chain(*dataloaders)
+        self.d0_ref = dataloaders[0]
+
+    def __iter__(self):
+        return self.dataloaders
+
+    def __getattr__(self, name):
+        """Call this only if all attributes of Subset are exhausted."""
+        return getattr(self.d0_ref, name)
+
+
 class MultiUserAggregate(UserMultiStep):
     """A silo of users who compute local updates as in a fedSGD or fedAVG scenario and aggregate their results.
 
@@ -400,9 +413,7 @@ class MultiUserAggregate(UserMultiStep):
             else:
                 self.users.append(UserSingleStep(model, loss, dataloaders[idx], self.user_setup, idx, cfg_user))
 
-        self.dataloader = chain(*dataloaders)
-        import ipdb; ipdb.set_trace()
-        self.dataloader.dataset = dataloaders[0].dataset # Reference dataset here for access to name, mean, std only
+        self.dataloader = ChainedDataloader(*dataloaders)
         self.user_idx = f"{user_indices[0]}_{user_indices[-1]}"  # Only for printout identification
 
     def __repr__(self):

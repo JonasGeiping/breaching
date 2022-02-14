@@ -1,10 +1,9 @@
-"""Implement server code. This will be short, if the server is honest."""
+"""Implement server code. This will be short, if the server is honest, but a lot can happen for the malicious variants."""
 
 import torch
 import numpy as np
-
+from scipy import stats
 import copy
-import numbers
 
 from .malicious_modifications import ImprintBlock, SparseImprintBlock, OneShotBlock, CuriousAbandonHonesty
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
@@ -23,6 +22,15 @@ from .models.language_models import LearnablePositionalEmbedding, PositionalEmbe
 
 from .aux_training import train_encoder_decoder
 from .malicious_modifications.feat_decoders import generate_decoder
+
+from .malicious_modifications.classattack_utils import (
+    check_with_tolerance,
+    reconstruct_feature,
+    reconfigure_class_parameter_attack,
+    find_best_feat,
+    estimate_gt_stats,
+)
+
 from .data import construct_dataloader
 import logging
 
@@ -45,7 +53,7 @@ def construct_server(
     elif cfg_case.server.name == "malicious_model":
         server = MaliciousModelServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
     elif cfg_case.server.name == "class_malicious_parameters":
-        server = ClassParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
+        server = MaliciousClassParameterServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
     elif cfg_case.server.name == "malicious_transformer_parameters":
         server = MaliciousTransformerServer(model, loss_fn, cfg_case, setup, external_dataloader=dataloader)
     else:
@@ -492,7 +500,7 @@ class MaliciousTransformerServer(HonestServer):
         self.secrets["ImprintBlock"] = details
 
 
-class ClassParameterServer(HonestServer):
+class MaliciousClassParameterServer(HonestServer):
     """Modify parameters for the "class attack" which can pick out a subset of image data from a larger batch."""
 
     THREAT = "Malicious (Parameters)"
@@ -514,20 +522,21 @@ class ClassParameterServer(HonestServer):
         model = self.model  # Re-reference this everywhere
         return self.model
 
-    def wrap_indices(self, indices):
-        if isinstance(indices, numbers.Number):
-            return [indices]
-        else:
-            return list(indices)
-
     def run_protocol(self, user):
         """Helper function for modified protocols, for example due to the binary attack."""
         # get class info first (this could be skipped and replaced by an attack on all/random labels)
         server_payload = self.distribute_payload()
-        shared_data, true_user_data = user.compute_local_updates(server_payload)
 
-        t_labels = shared_data["metadata"]["labels"].detach().cpu().numpy()
-        log.info(f"Found labels {t_labels} in first query.")
+        if self.cfg_server.query_once_for_labels:
+            shared_data, true_user_data = user.compute_local_updates(server_payload)
+            # This first query is not strictly necessary, you could also attack for a random class.
+            t_labels = shared_data["metadata"]["labels"].detach().cpu().numpy()
+            log.info(f"Found labels {t_labels} in first query.")
+        else:
+            # Choose random test labels to attack
+            t_labels = np.random.choice(np.arange(0, self.cfg_data.classes), user.num_data_points)
+            log.info(f"Randomly attacking labels {t_labels}.")
+            shared_data = dict(gradients=None, buffers=None, metadata=dict())
 
         if self.cfg_server.opt_on_avg_grad:
             # optimize on averaged gradient with cls attack
@@ -538,12 +547,11 @@ class ClassParameterServer(HonestServer):
             server.reset_model()
             server.reconfigure_model("cls_attack", extra_info=extra_info)
             server_payload = server.distribute_payload()
-            shared_data, _ = user.compute_local_updates(server_payload)
+            shared_data, true_user_data = user.compute_local_updates(server_payload)
             final_shared_data = [shared_data]
             final_payload = [server_payload]
         else:
             # attack cls by cls
-            log.info("Attack cls by cls cls attack.")
             target_cls = np.unique(t_labels)[self.cfg_server.target_cls_idx]  # Could be any class
             target_indx = np.where(t_labels == target_cls)[0]
             reduced_shared_data = copy.deepcopy(shared_data)
@@ -561,7 +569,7 @@ class ClassParameterServer(HonestServer):
                 self.reconfigure_model("cls_attack", extra_info=extra_info)
 
                 server_payload = self.distribute_payload()
-                tmp_shared_data, _ = user.compute_local_updates(server_payload)
+                tmp_shared_data, true_user_data = user.compute_local_updates(server_payload)
                 reduced_shared_data["gradients"] = tmp_shared_data["gradients"]
                 final_shared_data = [reduced_shared_data]
                 final_payload = [server_payload]
@@ -587,8 +595,8 @@ class ClassParameterServer(HonestServer):
                 self.reset_model()
                 self.reconfigure_model("cls_attack", extra_info=extra_info)
                 server_payload = self.distribute_payload()
-                tmp_shared_data, _ = user.compute_local_updates(server_payload)
-                avg_feature = torch.flatten(self.reconstruct_feature(tmp_shared_data, cls_to_obtain))
+                tmp_shared_data, true_user_data = user.compute_local_updates(server_payload)
+                avg_feature = torch.flatten(reconstruct_feature(tmp_shared_data, cls_to_obtain))
 
                 single_gradient_recovered = False
 
@@ -603,7 +611,7 @@ class ClassParameterServer(HonestServer):
                     extra_info["num_target_data"] = int(
                         torch.count_nonzero((reduced_shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int))
                     )
-                    extra_info["num_data_points"] = int(cfg.case.user.num_data_points)
+                    extra_info["num_data_points"] = shared_data["metadata"]["num_data_points"]
 
                     if self.cfg_server.one_shot_ba:
                         recovered_single_gradients = self.one_shot_binary_attack(user, extra_info)
@@ -615,7 +623,8 @@ class ClassParameterServer(HonestServer):
                     else:
                         avg_feature[feat_to_obtain] = -1000
 
-                    log.info(f"Spent {user.counted_queries} user queries so far.")
+                    if not single_gradient_recovered:
+                        log.info(f"Spent {user.counted_queries} user queries so far.")
 
                 # return to the model with multiplier=1, (better with larger multiplier, but not optimizable if it is too large)
                 self.reset_model()
@@ -627,18 +636,18 @@ class ClassParameterServer(HonestServer):
 
                 # recover image by image
                 # add reversed() because the ith is always more confident than i-1th
-                grad_i = reversed(recovered_single_gradients)[self.cfg_server.grad_idx]
+                grad_i = list(reversed(recovered_single_gradients))[self.cfg_server.grad_idx]
                 log.info(
-                    f"Start recovering datapoint {self.cfg_server.grad_idx} of label"
+                    f"Start recovering datapoint {self.cfg_server.grad_idx} of label "
                     f"{reduced_shared_data['metadata']['labels'][0].item()}."
                 )
 
-                tmp_share_data = copy.deepcopy(reduced_shared_data)
-                tmp_share_data["metadata"]["num_data_points"] = 1
-                tmp_share_data["metadata"]["labels"] = reduced_shared_data["metadata"]["labels"][0:1]
-                tmp_share_data["gradients"] = grad_i
+                final_shared_data = copy.deepcopy(reduced_shared_data)
+                final_shared_data["metadata"]["num_data_points"] = 1
+                final_shared_data["metadata"]["labels"] = reduced_shared_data["metadata"]["labels"][0:1]
+                final_shared_data["gradients"] = grad_i
 
-                final_shared_data = [tmp_shared_data]
+                final_shared_data = [final_shared_data]
                 final_payload = [server_payload]
 
                 self.secrets["ClassAttack"] = dict(
@@ -647,125 +656,40 @@ class ClassParameterServer(HonestServer):
                     true_num_data=shared_data["metadata"]["num_data_points"],
                     all_labels=shared_data["metadata"]["labels"],
                 )
+
+        log.info(f"User {user.user_idx} was queries {user.counted_queries} times.")
         return final_shared_data, final_payload, true_user_data
+
+    def run_protocol_feature_estimation(self, target_user, additional_users, extra_info=None):
+        """Estimate feature based on queries to additional_users to finally attack the target_user."""
+
+        log.info(f"Estimating feature distribution based on {len(additional_users)} given additional users.")
+        if extra_info is None:
+            extra_info = dict(cls_to_obtain=self.cfg_server.target_cls_idx)
+
+        est_features, est_sample_sizes = self.estimate_feat(additional_users, extra_info)
+        f_indx = find_best_feat(est_features, est_sample_sizes, method="kstest")
+
+        est_mean, est_std = estimate_gt_stats(est_features, est_sample_sizes, indx=f_indx)
+
+        self.reset_model()
+        extra_info["multiplier"] = 300
+        extra_info["feat_to_obtain"] = f_indx
+        extra_info["feat_value"] = stats.norm.ppf(0.1, est_mean, est_std)
+        self.reconfigure_model("cls_attack", extra_info=extra_info)
+        self.reconfigure_model("feature_attack", extra_info=extra_info)
+
+        log.info("Commencing with update on target user.")
+        server_payload = self.distribute_payload()
+        shared_data, true_user_data = target_user.compute_local_updates(server_payload)
+
+        true_user_data["distribution"] = est_features[f_indx]
+
+        return [shared_data], [server_payload], true_user_data
 
     def reconfigure_model(self, model_state, extra_info={}):
         super().reconfigure_model(model_state)
-
-        if model_state == "cls_attack" and "cls_to_obtain" in extra_info:
-            cls_to_obtain = extra_info["cls_to_obtain"]
-            cls_to_obtain = self.wrap_indices(cls_to_obtain)
-
-            with torch.no_grad():
-                *_, l_w, l_b = self.model.parameters()
-
-                # linear weight
-                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype).to(l_w.device)
-                masked_param[cls_to_obtain] = torch.ones_like(l_w[cls_to_obtain], dtype=l_w.dtype).to(l_w.device) * 0.5
-                l_w.copy_(masked_param.to(l_w.device))
-
-                # linear bias
-                masked_param = torch.ones_like(l_b, dtype=l_b.dtype).to(l_b.device) * 1000
-                masked_param[cls_to_obtain] = l_b[cls_to_obtain]
-                l_b.copy_(masked_param.to(l_b.device))
-
-        if model_state == "fishing_attack" and "cls_to_obtain" in extra_info:
-            cls_to_obtain = extra_info["cls_to_obtain"]
-            b_mv = extra_info["b_mv"] if "b_mv" in extra_info else 0
-            b_mv_non = extra_info["b_mv_non"] if "b_mv_non" in extra_info else 0
-            multiplier = extra_info["multiplier"] if "multiplier" in extra_info else 1
-            cls_to_obtain = self.wrap_indices(cls_to_obtain)
-
-            with torch.no_grad():
-                *_, l_w, l_b = self.model.parameters()
-
-                # linear weight
-                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype).to(l_w.device)
-                masked_param[cls_to_obtain] = l_w[cls_to_obtain]
-                l_w.copy_(masked_param.to(l_w.device))
-
-                # linear bias
-                masked_param = torch.ones_like(l_b, dtype=l_b.dtype).to(l_b.device)
-                masked_param[cls_to_obtain] = l_b[cls_to_obtain] + b_mv
-                l_b.copy_(masked_param.to(l_b.device))
-
-                *_, l_w, l_b = self.model.parameters()
-                *_, l_w_o, l_b_o = self.original_model.parameters()
-                cls_to_obtain = int(extra_info["cls_to_obtain"])
-                l_w[:cls_to_obtain] = l_w_o[:cls_to_obtain]
-                l_w[cls_to_obtain + 1 :] = l_w_o[cls_to_obtain + 1 :]
-                l_b[:cls_to_obtain] = l_b_o[:cls_to_obtain] + b_mv_non
-                l_b[cls_to_obtain + 1 :] = l_b_o[cls_to_obtain + 1 :] + b_mv_non
-
-                l_w *= multiplier
-                l_b *= multiplier
-
-        if model_state == "feature_attack" and "cls_to_obtain" in extra_info and "feat_to_obtain" in extra_info:
-            cls_to_obtain = extra_info["cls_to_obtain"]
-            feat_to_obtain = extra_info["feat_to_obtain"]
-            cls_to_obtain = self.wrap_indices(cls_to_obtain)
-            feat_to_obtain = self.wrap_indices(feat_to_obtain)
-
-            with torch.no_grad():
-                *_, bn_w, bn_b, l_w, l_b = self.model.parameters()
-
-                if "feat_value" not in extra_info:
-                    # just turn off other features
-                    masked_param = torch.zeros_like(l_w, dtype=l_w.dtype).to(l_w.device)
-                    masked_param[cls_to_obtain, feat_to_obtain] = torch.ones_like(
-                        l_w[cls_to_obtain, feat_to_obtain], dtype=l_w.dtype
-                    )
-                    l_w.copy_(masked_param.to(l_w.device))
-                else:
-                    # do gradient amplification
-                    multiplier = extra_info["multiplier"]
-                    extra_b = extra_info["extra_b"] if "extra_b" in extra_info else 0
-                    non_target_logit = extra_info["non_target_logit"] if "non_target_logit" in extra_info else 0
-                    db_flip = extra_info["db_flip"] if "db_flip" in extra_info else 1
-
-                    masked_param = torch.zeros_like(l_w, dtype=l_w.dtype).to(l_w.device)
-                    masked_param[cls_to_obtain, feat_to_obtain] = (
-                        torch.ones_like(l_w[cls_to_obtain, feat_to_obtain], dtype=l_w.dtype).to(l_w.device)
-                        * multiplier
-                        * db_flip
-                    )
-                    l_w.copy_(masked_param.to(l_w.device))
-
-                    masked_param = torch.zeros_like(l_b, dtype=l_b.dtype).to(l_b.device) + non_target_logit
-                    masked_param[cls_to_obtain] = (
-                        torch.zeros_like(l_b[cls_to_obtain], dtype=l_b.dtype).to(l_b.device)
-                        - extra_info["feat_value"] * multiplier * db_flip
-                        + extra_b
-                    )
-                    l_b.copy_(masked_param.to(l_b.device))
-
-        if model_state == "db_attack" and "cls_to_obtain" in extra_info:
-            cls_to_obtain = extra_info["cls_to_obtain"]
-            cls_to_obtain = self.wrap_indices(cls_to_obtain)
-            db_multiplier = extra_info["db_multiplier"]
-            multiplier = extra_info["multiplier"]
-            db_flip = extra_info["db_flip"]
-
-            with torch.no_grad():
-                *_, bn_w, bn_b, l_w, l_b = self.model.parameters()
-
-                # batch norm weight
-                masked_param = bn_w
-                bn_w.copy_(masked_param.to(bn_w.device))
-
-                # batch norm bias
-                masked_param = bn_b + l_w[cls_to_obtain[0]] * db_multiplier
-                bn_b.copy_(masked_param.to(bn_b.device))
-
-                # linear weight
-                masked_param = torch.zeros_like(l_w, dtype=l_w.dtype).to(l_w.device)
-                masked_param[cls_to_obtain] = l_w[cls_to_obtain] * multiplier * db_flip
-                l_w.copy_(masked_param.to(l_w.device))
-
-                # linear bias
-                masked_param = torch.zeros_like(l_b, dtype=l_b.dtype).to(l_b.device)
-                masked_param[cls_to_obtain] = l_b[cls_to_obtain] * db_flip
-                l_b.copy_(masked_param.to(l_b.device))
+        reconfigure_class_parameter_attack(self.model, self.original_model, model_state, extra_info=extra_info)
 
     def one_shot_binary_attack(self, user, extra_info):
         cls_to_obtain = extra_info["cls_to_obtain"]
@@ -785,10 +709,10 @@ class ClassParameterServer(HonestServer):
             self.reconfigure_model("feature_attack", extra_info=extra_info)
             server_payload = self.distribute_payload()
             shared_data, _ = user.compute_local_updates(server_payload)
-            avg_feature = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
+            avg_feature = torch.flatten(reconstruct_feature(shared_data, cls_to_obtain))
             feat_value = float(avg_feature[feat_to_obtain])
 
-            if self.check_with_tolerance(feat_value, self.all_feat_value):
+            if check_with_tolerance(feat_value, self.all_feat_value):
                 curr_grad = list(shared_data["gradients"])
                 break
 
@@ -860,19 +784,18 @@ class ClassParameterServer(HonestServer):
             self.reconfigure_model("feature_attack", extra_info=extra_info)
             server_payload = self.distribute_payload()
             shared_data, _ = user.compute_local_updates(server_payload)
-            feat_0 = torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain))
+            feat_0 = torch.flatten(reconstruct_feature(shared_data, cls_to_obtain))
             feat_0_value = float(feat_0[feat_to_obtain])  # the middle includes left hand side
             feat_1_value = 2 * feat_01_value - feat_0_value
             self.counter += 1
-            # print(feat_01_value, feat_0_value, feat_1_value)
 
             feat_candidates = [feat_0_value]
 
             for feat_cand in feat_candidates:
-                if self.check_with_tolerance(feat_cand, self.visited):
+                if check_with_tolerance(feat_cand, self.visited):
                     pass
-                elif not self.check_with_tolerance(feat_cand, self.visited):
-                    if not self.check_with_tolerance(feat_01_value, self.all_feat_value):
+                elif not check_with_tolerance(feat_cand, self.visited):
+                    if not check_with_tolerance(feat_01_value, self.all_feat_value):
                         self.all_feat_value.append(feat_01_value)
                         self.feat_grad.append(list(shared_data["gradients"]))
                     new_feat_01_values.append(feat_cand)
@@ -880,7 +803,7 @@ class ClassParameterServer(HonestServer):
 
                 if len(self.all_feat_value) >= self.num_target_data:
                     return
-                # self.counter >= math.log2(self.num_target_data) * self.num_target_data:
+
                 if self.counter >= self.num_target_data ** 2:
                     log.info(f"Too many attempts ({self.counter}) on this feature!")
                     return 0
@@ -888,136 +811,27 @@ class ClassParameterServer(HonestServer):
             feat_candidates = [feat_1_value, (feat_01_value + feat_1_value) / 2, (feat_01_value + feat_0_value) / 2]
 
             for feat_cand in feat_candidates:
-                if not self.check_with_tolerance(feat_cand, self.visited):
+                if not check_with_tolerance(feat_cand, self.visited):
                     new_feat_01_values.append(feat_cand)
 
         return self.binary_attack_helper(user, extra_info, new_feat_01_values)
 
-    def check_with_tolerance(self, value, list, threshold=0.05):
-        for i in list:
-            if abs(value - i) < threshold:
-                return True
-
-        return False
-
-    def order_gradients(self, recovered_single_gradients, gt_single_gradients):
-        from scipy.optimize import linear_sum_assignment
-
-        single_gradients = []
-        num_data = len(gt_single_gradients)
-
-        for grad_i in recovered_single_gradients:
-            single_gradients.append(torch.cat([torch.flatten(i) for i in grad_i]))
-
-        similarity_matrix = torch.zeros(num_data, num_data, **self.setup)
-        for idx, x in enumerate(single_gradients):
-            for idy, y in enumerate(gt_single_gradients):
-                similarity_matrix[idy, idx] = torch.nn.CosineSimilarity(dim=0)(y, x).detach()
-
-        try:
-            _, rec_assignment = linear_sum_assignment(similarity_matrix.cpu().numpy(), maximize=True)
-        except ValueError:
-            log.info(f"ValueError from similarity matrix {similarity_matrix.cpu().numpy()}")
-            log.info("Returning trivial order...")
-            rec_assignment = list(range(num_data))
-
-        return [recovered_single_gradients[i] for i in rec_assignment]
-
-    def reconstruct_feature(self, shared_data, cls_to_obtain):
-        if type(shared_data) is not list:
-            shared_grad = shared_data["gradients"]
-        else:
-            shared_grad = shared_data
-
-        weights = shared_grad[-2]
-        bias = shared_grad[-1]
-        grads_fc_debiased = weights / bias[:, None]
-
-        if bias[cls_to_obtain] != 0:
-            return grads_fc_debiased[cls_to_obtain]
-        else:
-            return torch.zeros_like(grads_fc_debiased[0])
-
-    def cal_single_gradients(self, attacker, true_user_data):
-        true_data = true_user_data["data"]
-        num_data = len(true_data)
-        labels = true_user_data["labels"]
-        model = self.model.to(**self.setup)
-
-        single_gradients = []
-        single_losses = []
-
-        for ii in range(num_data):
-            cand_ii = true_data[ii : (ii + 1)]
-            label_ii = labels[ii : (ii + 1)]
-            model.zero_grad()
-            spoofed_loss_ii = attacker.loss_fn(model(cand_ii), label_ii)
-            attacker.objective.loss_fn = attacker.loss_fn
-            gradient_ii, _ = attacker.objective._grad_fn_single_step(model, cand_ii, label_ii)
-            gradient_ii = [g_ii.reshape(-1) for g_ii in gradient_ii]
-            gradient_ii = torch.cat(gradient_ii)
-            single_gradients.append(gradient_ii)
-            single_losses.append(spoofed_loss_ii)
-
-        return single_gradients, single_losses
-
-    def print_gradients_norm(self, single_gradients, single_losses, which_to_recover=-1, return_results=False):
-        grad_norm = []
-        losses = []
-
-        if not return_results:
-            print("grad norm         loss")
-
-        for i, gradient_ii in enumerate(single_gradients):
-            if not return_results:
-                if i == which_to_recover:
-                    print(float(torch.norm(gradient_ii)), float(single_losses[i]), "   target")
-                else:
-                    print(float(torch.norm(gradient_ii)), float(single_losses[i]))
-
-            grad_norm.append(float(torch.norm(gradient_ii)))
-            losses.append(float(single_losses[i]))
-
-        if return_results:
-            return torch.stack(grad_norm), torch.stack(losses)
-
-    def random_transoformation(self, img):
-        import torchvision.transforms as transforms
-
-        transform = transforms.Compose(
-            [
-                transforms.RandomResizedCrop(img.shape[-2:], scale=(0.5, 1.0)),
-                transforms.RandomHorizontalFlip(p=1),
-                # transforms.RandomVerticalFlip(p=1),
-                transforms.GaussianBlur(3),
-            ]
-        )
-
-        return transform(img)
-
-    def estimate_feat(self, cfg, extra_info, num_to_est=900):
-        import breaching
-        from tqdm import tqdm
-        import numpy as np
-
+    def estimate_feat(self, additional_users, extra_info):
+        """Estimate features from externally given additional users."""
         est_features = []
         sample_sizes = []
         cls_to_obtain = extra_info["cls_to_obtain"]
-        model = extra_info["model"]
-        loss_fn = extra_info["loss_fn"]
-        setup = extra_info["setup"]
+
         self.reset_model()
         self.reconfigure_model("cls_attack", extra_info=extra_info)
 
-        for i in tqdm(range(num_to_est // cfg.case.user.num_data_points)):
-            cfg.case.user.user_idx = i
-            user = breaching.cases.construct_user(model, loss_fn, cfg.case, setup)
+        for user in additional_users:
             server_payload = self.distribute_payload()
             shared_data, _ = user.compute_local_updates(server_payload)
             num_target = int(torch.count_nonzero((shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int)))
             if num_target != 0:
                 est_features.append(
-                    torch.flatten(self.reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu().numpy()
+                    torch.flatten(reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu().numpy()
                 )
                 sample_sizes.append(num_target)
 
@@ -1025,45 +839,3 @@ class ClassParameterServer(HonestServer):
         sample_sizes = np.array(sample_sizes)
 
         return est_features.T, sample_sizes
-
-    def estimate_gt_stats(self, est_features, sample_sizes, indx=0):
-        import numpy as np
-
-        aggreg_data = []
-        est_feature = est_features[indx]
-
-        for i in range(len(est_feature)):
-            feat_i = est_feature[i]
-            size_i = sample_sizes[i]
-            aggreg_data.append(feat_i * (size_i ** (1 / 2)))
-
-        return np.mean(est_feature), np.std(aggreg_data)
-
-    def find_best_feat(self, est_features, sample_sizes, method="kstest"):
-        import numpy as np
-        from scipy import stats
-
-        if "kstest" in method:
-            statistics = []
-            for i in range(len(est_features)):
-                tmp_series = est_features[i]
-                tmp_series = (tmp_series - np.mean(tmp_series)) / np.std(tmp_series)
-                statistics.append(stats.kstest(tmp_series, "norm")[0])
-
-            return np.argmin(statistics)
-        elif "most-spread" in method or "most-high-mean" in method:
-            means = []
-            stds = []
-            for i in range(len(est_features)):
-                mu, sigma = self.estimate_gt_stats(est_features, sample_sizes, indx=1)
-                means.append(mu)
-                stds.append(sigma)
-
-            if "most-spread" in method:
-                return np.argmax(stds)
-            else:
-                return np.argmax(means)
-        else:
-            raise ValueError(f"Method {method} not implemented.")
-
-        return np.argmax(p_values)

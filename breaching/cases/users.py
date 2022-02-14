@@ -141,7 +141,9 @@ class UserSingleStep(torch.nn.Module):
                     if hasattr(module, "momentum"):
                         module.momentum = None  # Force recovery without division
                 self.model.train()
-        log.info(f"Computing user update in model mode: {'training' if self.model.training else 'eval'}.")
+        log.info(
+            f"Computing user update on user {self.user_idx} in model mode: {'training' if self.model.training else 'eval'}."
+        )
 
         def _compute_batch_gradient(data):
             data[self.data_key] = (
@@ -317,6 +319,9 @@ class UserMultiStep(UserSingleStep):
                 self.model.eval()
             else:
                 self.model.train()
+        log.info(
+            f"Computing user update on user {self.user_idx} in model mode: {'training' if self.model.training else 'eval'}."
+        )
 
         optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
         seen_data_idx = 0

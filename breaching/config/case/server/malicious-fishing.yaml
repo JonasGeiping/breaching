@@ -9,5 +9,6 @@ num_queries: 1
 opt_on_avg_grad: False
 one_shot_ba: True
 
+query_once_for_labels: True
 target_cls_idx: 0
 grad_idx: 0 # which gradient to attack

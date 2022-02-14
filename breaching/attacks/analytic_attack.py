@@ -783,6 +783,12 @@ class AprilAttacker(AnalyticAttacker):
         data = torch.zeros([len_data, *self.data_shape], **self.setup)
         data[0] = inputs
         reconstructed_data = dict(data=data, labels=labels)
+        if "ClassAttack" in server_secrets:
+            # The classattack secret knows which image was reconstructed
+            true_num_data = server_secrets["ClassAttack"]["true_num_data"]
+            reconstructed_data["data"] = torch.zeros([true_num_data, *self.data_shape], **self.setup)
+            reconstructed_data["data"][server_secrets["ClassAttack"]["target_indx"]] = inputs
+            reconstructed_data["labels"] = server_secrets["ClassAttack"]["all_labels"]
         return reconstructed_data, stats
 
     @staticmethod

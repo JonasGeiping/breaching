@@ -178,7 +178,7 @@ class OneShotBlockSparse(SparseImprintBlock):
         return bins
 
 
-class HonestAbandonCuriosity(ImprintBlock):
+class CuriousAbandonHonesty(ImprintBlock):
     """Replicates the attack of Boenisch et al, "When the Curious Abandon Honesty: Federated Learning Is Not Private"
     This is a sparse ReLU block.
     """
@@ -216,7 +216,10 @@ class HonestAbandonCuriosity(ImprintBlock):
     def _init_trap_weights(self, sigma, scale_factor):
         N, K = self.data_size, self.num_bins
 
-        indices = torch.argsort(torch.rand(K, N), dim=1)
+        # indices = torch.argsort(torch.rand(K, N), dim=1) # This has insane memory requirements in pytorch
+        indices = torch.zeros((K, N), dtype=torch.long)
+        for row in range(K):
+            indices[row] = torch.randperm(N)
         negative_weight_indices = indices[:, : int(N / 2)]
         positive_weight_indices = indices[:, int(N / 2) :]
 

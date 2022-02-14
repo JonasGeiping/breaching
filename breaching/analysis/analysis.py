@@ -141,8 +141,11 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
         ]
         ref_sent_words = [re.findall(RE_split, sentence) for sentence in tokenizer.batch_decode(true_user_data["data"])]
         num_sentences = len(rec_sent_words)
-        score = metrics[name].compute(predictions=rec_sent_words, references=[ref_sent_words] * num_sentences)
-        text_metrics[name] = score[name]
+        try:
+            score = metrics[name].compute(predictions=rec_sent_words, references=[ref_sent_words] * num_sentences)
+            text_metrics[name] = score[name]
+        except ZeroDivisionError:  # huggingface BLEU breaks for a totally wrong sentence
+            text_metrics[name] = 0.0
 
     for name in ["sacrebleu", "rouge"]:
         # Metrics that operate on full sentences

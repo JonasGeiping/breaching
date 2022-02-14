@@ -55,20 +55,14 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
 
     tokenized_dataset = raw_dataset.map(tokenize, batched=True, remove_columns=columns, load_from_cache_file=False)
     tokenized_dataset = tokenized_dataset.map(group_texts, batched=True, load_from_cache_file=False)
-    # tokenized_dataset = tokenized_dataset.rename_column("input_ids", "inputs")
+
     tokenized_dataset.set_format("torch")
     tokenized_dataset.tokenizer = tokenizer  # Stash here
-    # tokenizer.model_max_length = cfg_data.shape[0]
 
     # Reduce train dataset according to cfg_data.size:
     if cfg_data.size < len(tokenized_dataset):
         tokenized_dataset = tokenized_dataset.select(range(0, cfg_data.size))
 
-    # Log a few random samples from the training set:
-    # for index in torch.randint(len(tokenized_dataset), (3,)):
-    #     sample = tokenized_dataset[index.item()]
-    #     sentence = tokenizer.decode(sample["inputs"])
-    #     log.info(f"Sample {index} of the training set: {sample} is sentence: {sentence}.")
     return tokenized_dataset, collate_fn
 
 
@@ -129,13 +123,13 @@ def _get_tokenizer(tokenizer_name, vocab_size=None, cache_dir=None):
     from transformers import PreTrainedTokenizerFast, AutoTokenizer, CanineTokenizer
 
     if tokenizer_name == "word-level":
-        path = os.path.join("..", "..", "cache", f"word-tokenizer_{vocab_size}.json")
+        path = os.path.join(cache_dir, "cache", f"word-tokenizer_{vocab_size}.json")
         if os.path.isfile(path):
             tokenizer = PreTrainedTokenizerFast(tokenizer_file=path)
         else:
             from .wordlevel_tokenizer import generate_word_level_tokenizer
 
-            generate_word_level_tokenizer(vocab_size=vocab_size)
+            generate_word_level_tokenizer(vocab_size=vocab_size, cache_dir=cache_dir)
             tokenizer = PreTrainedTokenizerFast(tokenizer_file=path, cache_dir=cache_dir)
     elif tokenizer_name == "character":
         tokenizer = CanineTokenizer.from_pretrained("google/canine-c", cache_dir=cache_dir)
@@ -188,8 +182,9 @@ def _split_wikipedia_into_articles(dataset, user_idx=0, return_full_dataset=Fals
 
 def load_stackoverflow(cache_dir="~/data", user_idx=0, return_full_dataset=False, split="train"):
     """Return the first 250 users if "return_full_dataset=True" ..."""
+    os.makedirs(os.path.join(cache_dir, "cache"), exist_ok=True)
     if not return_full_dataset:
-        path = os.path.join("..", "..", "cache", f"stackoverflow_cache_{user_idx}.txt")
+        path = os.path.join(cache_dir, "cache", f"stackoverflow_cache_{user_idx}.txt")
         try:
             with open(path, "r") as file:
                 raw_texts = list(file)
@@ -209,8 +204,9 @@ def load_stackoverflow(cache_dir="~/data", user_idx=0, return_full_dataset=False
 
 def load_shakespeare(cache_dir="~/data", user_idx=0, return_full_dataset=False, split="train"):
     """Return the first 250 users if "return_full_dataset=True" ..."""
+    os.makedirs(os.path.join(cache_dir, "cache"), exist_ok=True)
     if not return_full_dataset:
-        path = os.path.join("..", "..", "cache", f"shakespeare_cache_{user_idx}.txt")
+        path = os.path.join(cache_dir, "cache", f"shakespeare_cache_{user_idx}.txt")
         try:
             with open(path, "r") as file:
                 raw_texts = list(file)

@@ -149,7 +149,3 @@ dmypy.json
 *.ods
 
 *.json
-
-
-# unignore tensorflow cache
-!cache/*.txt

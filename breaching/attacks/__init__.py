@@ -1,5 +1,5 @@
 """Load attacker code and instantiate appropriate objects."""
-
+import torch
 
 from .optimization_based_attack import OptimizationBasedAttacker
 from .multiscale_optimization_attack import MultiScaleOptimizationAttacker
@@ -9,7 +9,7 @@ from .analytic_attack import AnalyticAttacker, ImprintAttacker, DecepticonAttack
 from .recursive_attack import RecursiveAttacker
 
 
-def prepare_attack(model, loss, cfg_attack, setup):
+def prepare_attack(model, loss, cfg_attack, setup=dict(dtype=torch.float, device=torch.device("cpu"))):
     if cfg_attack.attack_type == "optimization":
         attacker = OptimizationBasedAttacker(model, loss, cfg_attack, setup)
     elif cfg_attack.attack_type == "multiscale":

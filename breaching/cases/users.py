@@ -413,11 +413,12 @@ class MultiUserAggregate(UserMultiStep):
         self.counted_queries += 1
         # Compute local updates
 
-        server_parameters = server_payload["parameters"]
-        server_buffers = server_payload["buffers"]
+        server_payload["parameters"] = server_payload["parameters"].to(**self.setup)
+        if server_payload["buffers"] is not None:
+            server_payload["buffers"] = server_payload["buffers"].to(**self.setup)
 
-        aggregate_updates = [torch.zeros_like(p) for p in self.model.parameters()]
-        aggregate_buffers = [torch.zeros_like(b, dtype=torch.float) for b in self.model.buffers()]
+        aggregate_updates = [torch.zeros_like(p) for p in server_payload["parameters"]]
+        aggregate_buffers = [torch.zeros_like(b, dtype=torch.float) for b in server_payload["buffers"]]
         aggregate_labels = []
         aggregate_label_lists = []  # Only ever used in rare sanity checks. List of labels per local update step
         aggregate_true_user_data = []

@@ -6,7 +6,7 @@ import torch
 from collections import defaultdict
 import copy
 
-from .common import optimizer_lookup
+from .auxiliaries.common import optimizer_lookup
 from ..cases.models.transformer_dictionary import lookup_grad_indices
 
 import logging

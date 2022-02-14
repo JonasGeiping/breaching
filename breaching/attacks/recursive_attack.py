@@ -1,5 +1,7 @@
 """This is the recursive attack "R-GAP" from Zhu and Blaschko
 "R-GAP: Recursive Gradient Attack on Privacy"
+
+and a wrapper around the original code from https://github.com/JunyiZhu-AI/R-GAP/blob/main/main.py
 """
 
 import torch
@@ -86,8 +88,8 @@ class RecursiveAttacker(_BaseAttacker):
         else:
             # Replace the old construction with a new one for multi-label classification:
             # Using a bias in the last layer:
-            bias_grad = original_dy_dx[grad_idx].numpy()
-            weight_grad = original_dy_dx[grad_idx - 1].numpy()
+            bias_grad = original_dy_dx[grad_idx].cpu().numpy()
+            weight_grad = original_dy_dx[grad_idx - 1].cpu().numpy()
             grad_idx -= 2
             valid_classes = bias_grad != 0
             layer_inputs = (weight_grad[valid_classes, :] / bias_grad[valid_classes, None]).mean(axis=0)

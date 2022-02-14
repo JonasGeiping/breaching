@@ -20,11 +20,11 @@ from tokenizers.trainers import WordLevelTrainer
 from datasets import load_dataset
 
 
-def generate_word_level_tokenizer(vocab_size=50_000):
+def generate_word_level_tokenizer(vocab_size=50_000, cache_dir="~/data"):
     if vocab_size < 62_000:
-        dataset = load_dataset("ag_news", cache_dir="~/data", split="train")
+        dataset = load_dataset("ag_news", cache_dir=cache_dir, split="train")
     elif vocab_size < 215000:
-        dataset = load_dataset("wikitext", "wikitext-103-v1", cache_dir="~/data", split="train")
+        dataset = load_dataset("wikitext", "wikitext-103-v1", cache_dir=cache_dir, split="train")
     else:
         raise ValueError("Not enough data to create a word-level tokenizer of this size.")
     tokenizer = Tokenizer(WordLevel(unk_token="[UNK]"))
@@ -41,7 +41,8 @@ def generate_word_level_tokenizer(vocab_size=50_000):
 
     trainer = WordLevelTrainer(vocab_size=vocab_size, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
     tokenizer.train_from_iterator(batch_iterator(), trainer=trainer, length=len(dataset))
-    path = os.path.join("..", "..", "cache", f"word-tokenizer_{vocab_size}.json")
+    os.makedirs(os.path.join(cache_dir, "cache"), exist_ok=True)
+    path = os.path.join(cache_dir, "cache", f"word-tokenizer_{vocab_size}.json")
     tokenizer.save(path)
 
 

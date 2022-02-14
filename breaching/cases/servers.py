@@ -6,7 +6,7 @@ import numpy as np
 import copy
 import numbers
 
-from .malicious_modifications import ImprintBlock, SparseImprintBlock, OneShotBlock, HonestAbandonCuriosity
+from .malicious_modifications import ImprintBlock, SparseImprintBlock, OneShotBlock, CuriousAbandonHonesty
 from .malicious_modifications.parameter_utils import introspect_model, replace_module_by_instance
 from .malicious_modifications.analytic_transformer_utils import (
     compute_feature_distribution,
@@ -194,8 +194,8 @@ class MaliciousModelServer(HonestServer):
             block_fn = SparseImprintBlock
         elif self.cfg_server.model_modification.type == "OneShotBlock":
             block_fn = OneShotBlock
-        elif self.cfg_server.model_modification.type == "HonestAbandonCuriosity":
-            block_fn = HonestAbandonCuriosity
+        elif self.cfg_server.model_modification.type == "CuriousAbandonHonesty":
+            block_fn = CuriousAbandonHonesty
         else:
             raise ValueError("Unknown modification")
 

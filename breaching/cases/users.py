@@ -401,6 +401,8 @@ class MultiUserAggregate(UserMultiStep):
                 self.users.append(UserSingleStep(model, loss, dataloaders[idx], self.user_setup, idx, cfg_user))
 
         self.dataloader = chain(*dataloaders)
+        import ipdb; ipdb.set_trace()
+        self.dataloader.dataset = dataloaders[0].dataset # Reference dataset here for access to name, mean, std only
         self.user_idx = f"{user_indices[0]}_{user_indices[-1]}"  # Only for printout identification
 
     def __repr__(self):
@@ -429,9 +431,10 @@ class MultiUserAggregate(UserMultiStep):
 
         for user in self.users:
             user.to(**self.setup)
-            import ipdb; ipdb.set_trace()
+            user.setup = self.setup
             user_data, true_user_data = user.compute_local_updates(server_payload)
             user.to(**self.user_setup)
+            user.setup = self.user_setup
 
             if return_true_user_data:
                 aggregate_true_user_data += [true_user_data["data"].cpu()]

@@ -413,9 +413,9 @@ class MultiUserAggregate(UserMultiStep):
         self.counted_queries += 1
         # Compute local updates
 
-        server_payload["parameters"] = server_payload["parameters"].to(**self.setup)
+        server_payload["parameters"] = [p.to(**self.setup) for p in server_payload["parameters"]]
         if server_payload["buffers"] is not None:
-            server_payload["buffers"] = server_payload["buffers"].to(**self.setup)
+            server_payload["buffers"] = [b.to(**self.setup) for b in server_payload["buffers"]]
 
         aggregate_updates = [torch.zeros_like(p) for p in server_payload["parameters"]]
         aggregate_buffers = [torch.zeros_like(b, dtype=torch.float) for b in server_payload["buffers"]]
@@ -426,6 +426,7 @@ class MultiUserAggregate(UserMultiStep):
 
         for user in self.users:
             user.to(**self.setup)
+            import ipdb; ipdb.set_trace()
             user_data, true_user_data = user.compute_local_updates(server_payload)
             user.to(**self.user_setup)
 

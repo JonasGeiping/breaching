@@ -195,11 +195,14 @@ class UserSingleStep(torch.nn.Module):
             for grad in grads:
                 grad += self.generator.sample(grad.shape)
 
-    def _load_data(self):
+    def _load_data(self, setup=None):
         """Generate data from dataloader, truncated by self.num_data_points"""
         # Select data
         data_blocks = []
         num_samples = 0
+
+        if setup is None:
+            setup = self.setup
 
         for idx, data_block in enumerate(self.dataloader):
             data_blocks += [data_block]
@@ -216,7 +219,7 @@ class UserSingleStep(torch.nn.Module):
         data = dict()
         for key in data_blocks[0]:
             data[key] = torch.cat([d[key] for d in data_blocks], dim=0)[: self.num_data_points].to(
-                device=self.setup["device"]
+                device=setup["device"]
             )
         self.data_key = "input_ids" if "input_ids" in data.keys() else "inputs"
         return data

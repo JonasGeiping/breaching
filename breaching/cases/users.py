@@ -377,16 +377,18 @@ class UserMultiStep(UserSingleStep):
 
 
 class ChainedDataloader:
-    def __init__(self, *dataloaders):
-        self.dataloaders = chain(*dataloaders)
-        self.d0_ref = dataloaders[0]
+    def __init__(self, dataloaders):
+        self.dataloaders = dataloaders
 
     def __iter__(self):
-        return self.dataloaders
+        return chain(*self.dataloaders)
+
+    def __len__(self):
+        return torch.as_tensor([len(loader) for loader in self.dataloaders]).sum().item()
 
     def __getattr__(self, name):
         """Call this only if all attributes of Subset are exhausted."""
-        return getattr(self.d0_ref, name)
+        return getattr(self.dataloaders[0], name)
 
 
 class MultiUserAggregate(UserMultiStep):
@@ -413,7 +415,7 @@ class MultiUserAggregate(UserMultiStep):
             else:
                 self.users.append(UserSingleStep(model, loss, dataloaders[idx], self.user_setup, idx, cfg_user))
 
-        self.dataloader = ChainedDataloader(*dataloaders)
+        self.dataloader = ChainedDataloader(dataloaders)
         self.user_idx = f"{user_indices[0]}_{user_indices[-1]}"  # Only for printout identification
 
     def __repr__(self):

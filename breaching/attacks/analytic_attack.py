@@ -107,9 +107,10 @@ class ImprintAttacker(AnalyticAttacker):
         log.info(f"Initially produced {layer_inputs.shape[0]} hits.")
         len_data = shared_data[0]["metadata"]["num_data_points"]  # Not strictly needed for the attack, used to pad/trim
         if len_data >= layer_inputs.shape[0]:
-            # Fill up with zero if not enough data can be found:
-            missing_entries = layer_inputs.new_zeros(len_data - layer_inputs.shape[0], *layer_inputs.shape[1:])
-            layer_inputs = torch.cat([layer_inputs, missing_entries], dim=0)
+            # Fill up with zero if not enough data can be found?
+            if self.cfg.breach_padding:
+                missing_entries = layer_inputs.new_zeros(len_data - layer_inputs.shape[0], *layer_inputs.shape[1:])
+                layer_inputs = torch.cat([layer_inputs, missing_entries], dim=0)
         else:
             # Cut additional hits:
             if self.cfg.breach_reduction == "bias":

@@ -8,7 +8,9 @@ token_recovery: from-limited-embedding # Choose "from-embedding" here if not dec
 label_strategy: # Labels are not required for this attack
 normalize_gradients: False
 
+breach_padding: True # Pad with zeros if not enough data is recovered
 breach_reduction: weight
+
 sort_by_bias: False # Only necessary if rows of the block have been shuffled
 impl:
   dtype: float

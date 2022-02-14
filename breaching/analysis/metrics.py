@@ -12,8 +12,8 @@ def cw_ssim(img_batch, ref_batch, scales=5, skip_scales=None, K=1e-6, reduction=
     """Batched complex wavelet structural similarity.
 
     As in Zhou Wang and Eero P. Simoncelli, "TRANSLATION INSENSITIVE IMAGE SIMILARITY IN COMPLEX WAVELET DOMAIN"
-    Ok, not quite, this implementation does not local SSIM and averaging over local patches and uses only
-    the existing wavelet structure to provide something similar.
+    Ok, not quite, this implementation computes no local SSIM and neither averaging over local patches and uses only
+    the existing wavelet structure to provide a similar scale-invariant decomposition.
 
     skip_scales can be a list like [True, False, False, False] marking levels to be skipped.
     K is a small fudge factor.
@@ -24,7 +24,7 @@ def cw_ssim(img_batch, ref_batch, scales=5, skip_scales=None, K=1e-6, reduction=
         warnings.warn(
             "To utilize wavelet SSIM, install pytorch wavelets from https://github.com/fbcotter/pytorch_wavelets."
         )
-        return torch.as_tensor(float("NaN"))
+        return torch.as_tensor(float("NaN")), torch.as_tensor(float("NaN"))
 
     # 1) Compute wavelets:
     setup = dict(device=img_batch.device, dtype=img_batch.dtype)
@@ -115,9 +115,9 @@ def psnr_compute(img_batch, ref_batch, batched=False, factor=1.0, clip=False):
         if mse > 0 and torch.isfinite(mse):
             return 10 * torch.log10(factor ** 2 / mse)
         elif not torch.isfinite(mse):
-            return torch.tensor(float("nan"), device=img_batch.device)
+            return [torch.tensor(float("nan"), device=img_batch.device)] * 2
         else:
-            return torch.tensor(float("inf"), device=img_batch.device)
+            return [torch.tensor(float("inf"), device=img_batch.device)] * 2
     else:
         B = img_batch.shape[0]
         mse_per_example = ((img_batch.detach() - ref_batch) ** 2).view(B, -1).mean(dim=1)
@@ -141,7 +141,7 @@ def _registered_psnr_compute_kornia(img_batch, ref_batch, factor=1.0):
         from kornia.geometry import ImageRegistrator, HomographyWarper  # lazy import here as well
     except ModuleNotFoundError:
         warnings.warn("To utilize registered PSNR, install kornia.")
-        return torch.as_tensor(float("NaN"))
+        return torch.as_tensor(float("NaN")), torch.as_tensor(float("NaN"))
 
     B = img_batch.shape[0]
     default_psnrs = []
@@ -173,7 +173,7 @@ def _registered_psnr_compute_kornia_loftr(img_batch, ref_batch, factor=1.0):
         from kornia.geometry.homography import find_homography_dlt
     except ModuleNotFoundError:
         warnings.warn("To utilize this registered PSNR implementation, install kornia.")
-        return torch.as_tensor(float("NaN"))
+        return torch.as_tensor(float("NaN")), torch.as_tensor(float("NaN"))
 
     B = img_batch.shape[0]
     mse_per_example = ((img_batch.detach() - ref_batch) ** 2).view(B, -1).mean(dim=1)
@@ -202,7 +202,7 @@ def _registered_psnr_compute_skimage(img_batch, ref_batch, factor=1.0):
         import skimage.transform
     except ModuleNotFoundError:
         warnings.warn("To utilize this registered PSNR implementation, install scikit-image.")
-        return torch.as_tensor(float("NaN"))
+        return torch.as_tensor(float("NaN")), torch.as_tensor(float("NaN"))
 
     descriptor_extractor = skimage.feature.ORB(n_keypoints=800)
 

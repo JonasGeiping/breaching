@@ -13,7 +13,7 @@ from torchvision.datasets.utils import download_and_extract_archive
 import hashlib
 
 import concurrent.futures
-import requests
+
 import csv
 
 
@@ -475,6 +475,7 @@ class Birdsnap(torch.utils.data.Dataset):
 
     def scrape_images(self, missing_ids, chunk_size=8196):
         """Scrape images using the python default ThreadPool example."""
+        import requests
 
         def _load_url_and_save_image(idx, timeout):
             full_path = os.path.join(self.root, self.BASE_FOLDER, self.meta[idx]["path"])

@@ -1,4 +1,4 @@
-"""Various utility functions that can be re-used for multiple attacks."""
+"""Various regularizers that can be re-used for multiple attacks."""
 
 import torch
 

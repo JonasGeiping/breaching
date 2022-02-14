@@ -6,8 +6,7 @@ Data Config Structure (cfg_data): See config/data
 import torch
 
 from .cached_dataset import CachedDataset
-from .datasets_text import _build_and_split_dataset_text
-from .datasets_vision import _build_dataset_vision, _split_dataset_vision
+
 
 # Block ImageNet corrupt EXIF warnings
 import warnings
@@ -21,9 +20,13 @@ def construct_dataloader(cfg_data, cfg_impl, user_idx=0, return_full_dataset=Fal
     Use return_full_dataset=True to return the full dataset instead (for example for analysis).
     """
     if cfg_data.modality == "vision":
+        from .datasets_vision import _build_dataset_vision, _split_dataset_vision
+
         dataset, collate_fn = _build_dataset_vision(cfg_data, split=cfg_data.examples_from_split, can_download=True)
         dataset = _split_dataset_vision(dataset, cfg_data, user_idx, return_full_dataset)
     elif cfg_data.modality == "text":
+        from .datasets_text import _build_and_split_dataset_text
+
         dataset, collate_fn = _build_and_split_dataset_text(
             cfg_data, cfg_data.examples_from_split, user_idx, return_full_dataset,
         )

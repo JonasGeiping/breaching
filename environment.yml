@@ -5,7 +5,7 @@
 
 # Non optional:
 # - PyTorch + Torchvision + scipy
-# - Hydra-core
+# - Hydra-core + lpips
 # If using text: huggingface (transformers, datasets, tokenizers)
 
 name: breaching
@@ -43,4 +43,7 @@ dependencies:
       - timm
       - ortools
       - kmedoids
-      - k-means-constrained --no-cache-dir --no-binary 0.6.0 --no-build-isolation --no-deps --force-reinstall #  this can be a pain ;>
+      - k-means-constrained --no-binary 0.6.0 #  this can be a pain ;>
+      # You can try a combination of:
+      # pip install k-means-constrained --no-cache-dir --no-binary 0.6.0 --no-build-isolation --no-deps --force-reinstall
+      # to install this package manually

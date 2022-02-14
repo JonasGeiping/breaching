@@ -1,4 +1,4 @@
-"""This is recursive_attack.py from https://github.com/JunyiZhu-AI/R-GAP/blob/main/recursive_attack.py """
+"""This is a port of recursive_attack.py from https://github.com/JunyiZhu-AI/R-GAP/blob/main/recursive_attack.py """
 
 
 import torch

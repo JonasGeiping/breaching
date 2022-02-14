@@ -178,7 +178,7 @@ def _run_vision_metrics(
     cfg_case=None,
     setup=dict(device=torch.device("cpu"), dtype=torch.float),
 ):
-    import lpips  # lazily import this only if report is used.
+    import lpips  # lazily import this only if vision reporting is used.
 
     lpips_scorer = lpips.LPIPS(net="alex", verbose=False).to(**setup)
 

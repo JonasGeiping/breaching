@@ -19,7 +19,9 @@ This repository implements two main components. A list of modular attacks under 
 ### Installation
 Either download this repository (including notebooks and examples) directly using `git clone` or install the python package via `pip install breaching` for easy access to key functionality.
 
-Because this framework covers several use cases across vision and language, it also accumulates a kitchen-sink of depedencies. The full list of all dependencies can be found at `environment.yml`, but is not installed by default. Install these as necessary (for example install huggingface packages only if you are interested in language applications).
+Because this framework covers several use cases across vision and language, it also accumulates a kitchen-sink of dependencies. The full list of all dependencies can be found at `environment.yml` (and installed with conda by calling `conda env create --file environment.yml `), but the full list of dependencies not installed by default. Install these as necessary (for example install huggingface packages only if you are interested in language applications).
+
+You can verify your installation by running `python simulate_breach.py dryrun=True` when cloning from github.
 
 
 ### Usage
@@ -92,7 +94,7 @@ For now, please cite the respective publications for each attack and use case.
 
 ### License
 We integrate several snippets of code from other repositories and refer to the licenses included in those files for more info.
-We're especially thankful for related projects such as https://www.tensorflow.org/federated, https://github.com/NVlabs/DeepInversion, https://github.com/JunyiZhu-AI/R-GAP, https://github.com/facebookresearch/functorch from which we incorporate components.
+We're especially thankful for related projects such as https://www.tensorflow.org/federated, https://github.com/NVlabs/DeepInversion, https://github.com/JunyiZhu-AI/R-GAP, https://github.com/facebookresearch/functorch, https://github.com/ildoonet/pytorch-gradual-warmup-lr and https://github.com/nadavbh12/VQ-VAE from which we incorporate components.
 
 For the license of our code, refer to `LICENCE.md`.
 

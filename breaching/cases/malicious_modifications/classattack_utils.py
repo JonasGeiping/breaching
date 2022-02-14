@@ -211,14 +211,14 @@ def print_gradients_norm(single_gradients, single_losses, which_to_recover=-1, r
     losses = []
 
     if not return_results:
-        print("grad norm         loss")
+        print("grad norm   |   loss")
 
     for i, gradient_ii in enumerate(single_gradients):
         if not return_results:
             if i == which_to_recover:
-                print(float(torch.norm(gradient_ii)), float(single_losses[i]), "   target")
+                print(f"{float(torch.norm(gradient_ii)):2.4f} | {float(single_losses[i]):4.2f} - target")
             else:
-                print(float(torch.norm(gradient_ii)), float(single_losses[i]))
+                print(f"{float(torch.norm(gradient_ii)):2.4f} | {float(single_losses[i]):4.2f}")
 
         grad_norm.append(float(torch.norm(gradient_ii)))
         losses.append(float(single_losses[i]))

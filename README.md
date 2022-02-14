@@ -68,6 +68,8 @@ For these vision datasets there are several options in the literature on how to 
 
 For language data, you can load `wikitext` which we split into separate users on a per-article basis, or the `stackoverflow` and `shakespeare` FL datasets from tensorflow federated, which are already split into users (installing `tensorflow-cpu` is required for these tensorflow-federated datasets).
 
+Further, nothing stops you from skipping the `breaching.cases` sub-module and using your own code to load a model and dataset. An example can be found in `minimal_example.py`.
+
 ## Metrics
 
 We implement a range of metrics which can be queried through `breaching.analysis.report`. Several metrics (such as CW-SSIM and R-PSNR) require additional packages to be installed - they will warn about this. For language data we hook into a range of huggingface metrics. Overall though, we note that most of these metrics give only a partial picture of the actual severity of a breach of privacy, and are best handled with care.

@@ -27,7 +27,7 @@ Attack             | Type | Dataset | Update | Threat Model  | Publication
 [Deep Leakage from Gradients](Deep%20Leakage%20from%20Gradients%20-%20Optimization-based%20Attack%20-%20ConvNet%20CIFAR-10.ipynb)  | Optimization | CIFAR10 | fedSGD | Honest (Also optimizes labels)| [LINK](https://papers.nips.cc/paper/2019/hash/60a6c4002cc7b29142def8871531281a-Abstract.html)
 [Inverting Gradients (Basic)](Inverting%20Gradients%20-%20Optimization-based%20Attack%20-%20ResNet18%20on%20ImageNet.ipynb)  | Optimization | ImageNet | fedSGD | Honest| [LINK](https://proceedings.neurips.cc/paper/2020/hash/c4ede56bbd98819ae6112b20ac6bf145-Abstract.html)
 [Inverting Gradients (Large Batch)](Inverting%20Gradients%20-%20Optimization-based%20Attack%20-%20Large%20Batch%20CIFAR-100.ipynb)  | Optimization | CIFAR100 | fedSGD | Honest| [LINK](https://proceedings.neurips.cc/paper/2020/hash/c4ede56bbd98819ae6112b20ac6bf145-Abstract.html)
-[Inverting Gradients (local updates)](Inverting%20Gradients%20-%20Optimization-based%20Attack%20-%20ResNet18%20on%20ImageNet%20-%20Federated%20Averaging.ipynb)  | Optimization | CIFAR10 | fedAVG | Honest| [LINK](https://proceedings.neurips.cc/paper/2020/hash/c4ede56bbd98819ae6112b20ac6bf145-Abstract.html)
+[Inverting Gradients (Local Updates)](Inverting%20Gradients%20-%20Optimization-based%20Attack%20-%20ResNet18%20on%20ImageNet%20-%20Federated%20Averaging.ipynb)  | Optimization | CIFAR10 | fedAVG | Honest| [LINK](https://proceedings.neurips.cc/paper/2020/hash/c4ede56bbd98819ae6112b20ac6bf145-Abstract.html)
 [Analytic Attack (Linear Model)](Analytic%20Attack%20-%20Linear%20Model%20on%20ImageNet.ipynb)  | Analytic | ImageNet | fedSGD | Honest| Several
 [R-GAP](R-GAP%20%20-%20Recursive%20Attack%20-%20Small%20ConvNet%20on%20CIFAR-10.ipynb)  | Recursive | CIFAR10 | fedSGD | Honest| [LINK](https://openreview.net/forum?id=RSU17UoKfJF)
 [See Through Gradients](See%20through%20Gradients%20-%20Optimization-based%20Attack%20-%20ResNet50%20on%20ImageNet.ipynb)  | Optimization | ImageNet | fedSGD | Honest (but a MOCO parameter vector)| [LINK](https://openaccess.thecvf.com/content/CVPR2021/html/Yin_See_Through_Gradients_Image_Batch_Recovery_via_GradInversion_CVPR_2021_paper.html)
@@ -39,6 +39,11 @@ Attack             | Type | Dataset | Update | Threat Model  | Publication
 [Modernized Inverting Gradients](Modern%20Hyperparameters%20-%20Optimization-based%20Attack%20-%20ResNet18%20on%20ImageNet.ipynb)  | Optimization | ImageNet | fedSGD | Honest| -
 
 
-What is not quite visibile in this summary is that these attacks are improved by works that study the optimal initialization for these attacks (see [A Framework for Evaluating Gradient Leakage Attacks in Federated Learning
-](https://arxiv.org/abs/2004.10397)) and works that study label recovery algorithms ([User-Level Label Leakage from Gradients in Federated Learning
-](https://arxiv.org/abs/2105.09369)) and also a range of other work that provides commentary, metrics and additional empirical evaluations of these attacks. There is also an interesting direction of work using generative models to aid reconstruction which is not included in this framework.
+What is not quite visibile in this summary is that these attacks are improved by works that study
+* Optimal initializations for these attacks (see [A Framework for Evaluating Gradient Leakage Attacks in Federated Learning
+](https://arxiv.org/abs/2004.10397))
+* Label recovery algorithms ([User-Level Label Leakage from Gradients in Federated Learning
+](https://arxiv.org/abs/2105.09369))
+* a range of other work that provides commentary, metrics and additional empirical evaluations of these attacks.
+
+There is also an interesting direction of work using generative models to aid reconstruction which is not included in this framework.

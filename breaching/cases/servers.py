@@ -583,12 +583,12 @@ class MaliciousClassParameterServer(HonestServer):
             else:
                 # send several queries because of cls collision
                 log.info(f"Attacking label {reduced_shared_data['metadata']['labels'][0].item()} with binary attack.")
+                cls_to_obtain = int(shared_data["metadata"]["labels"][0])
                 num_collisions = (shared_data["metadata"]["labels"] == int(cls_to_obtain)).sum()
                 log.info(
-                    f"There are in total {num_collisions.item()} datapoints with label {shared_data['metadata']['labels'][0].item()}."
+                    f"There are in total {num_collisions.item()} datapoints with label {cls_to_obtain}."
                 )
 
-                cls_to_obtain = int(shared_data["metadata"]["labels"][0])
                 extra_info = {"cls_to_obtain": cls_to_obtain}
 
                 # find the starting point and the feature entry gives the max avg value

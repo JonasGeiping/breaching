@@ -585,9 +585,7 @@ class MaliciousClassParameterServer(HonestServer):
                 log.info(f"Attacking label {reduced_shared_data['metadata']['labels'][0].item()} with binary attack.")
                 cls_to_obtain = int(shared_data["metadata"]["labels"][0])
                 num_collisions = (shared_data["metadata"]["labels"] == int(cls_to_obtain)).sum()
-                log.info(
-                    f"There are in total {num_collisions.item()} datapoints with label {cls_to_obtain}."
-                )
+                log.info(f"There are in total {num_collisions.item()} datapoints with label {cls_to_obtain}.")
 
                 extra_info = {"cls_to_obtain": cls_to_obtain}
 
@@ -683,6 +681,12 @@ class MaliciousClassParameterServer(HonestServer):
         log.info("Commencing with update on target user.")
         server_payload = self.distribute_payload()
         shared_data, true_user_data = target_user.compute_local_updates(server_payload)
+
+        extra_info["multiplier"] = 1  # Reset this before optimization
+        self.reset_model()
+        self.reconfigure_model("cls_attack", extra_info=extra_info)
+        self.reconfigure_model("feature_attack", extra_info=extra_info)
+        server_payload = self.distribute_payload()
 
         true_user_data["distribution"] = est_features[f_indx]
 

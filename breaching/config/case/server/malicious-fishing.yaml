@@ -12,3 +12,5 @@ one_shot_ba: True
 query_once_for_labels: True
 target_cls_idx: 0
 grad_idx: 0 # which gradient to attack
+
+feat_multiplier: 300 # Multiplicator in attack

@@ -673,9 +673,10 @@ class MaliciousClassParameterServer(HonestServer):
         est_mean, est_std = estimate_gt_stats(est_features, est_sample_sizes, indx=f_indx)
 
         self.reset_model()
-        extra_info["multiplier"] = 300
+        extra_info["multiplier"] = self.cfg_server.feat_multiplier
         extra_info["feat_to_obtain"] = f_indx
-        extra_info["feat_value"] = stats.norm.ppf(0.1, est_mean, est_std)
+        exected_data_points = np.sum(est_sample_sizes) / len(additional_users)
+        extra_info["feat_value"] = stats.norm.ppf(1 / exected_data_points, est_mean, est_std)
         self.reconfigure_model("cls_attack", extra_info=extra_info)
         self.reconfigure_model("feature_attack", extra_info=extra_info)
 
@@ -700,7 +701,7 @@ class MaliciousClassParameterServer(HonestServer):
         self.num_target_data = num_target_data
         self.all_feat_value = []
 
-        extra_info["multiplier"] = 1000
+        extra_info["multiplier"] = self.cfg_server.feat_multiplier
         while True:
             self.all_feat_value.append(feat_value)
             extra_info["feat_value"] = feat_value
@@ -734,7 +735,7 @@ class MaliciousClassParameterServer(HonestServer):
         self.feat_grad = []
         self.visited = []
         self.counter = 0
-        extra_info["multiplier"] = 1000
+        extra_info["multiplier"] = self.cfg_server.feat_multiplier
         retval = self.binary_attack_helper(user, extra_info, [feat_value])
         if retval == 0:  # Stop early after too many attempts in binary search:
             return None
@@ -778,7 +779,7 @@ class MaliciousClassParameterServer(HonestServer):
 
         for feat_01_value in feat_01_values:
             extra_info["feat_value"] = feat_01_value
-            extra_info["multiplier"] = 1000
+            extra_info["multiplier"] = self.cfg_server.feat_multiplier
             self.reset_model()
             self.reconfigure_model("cls_attack", extra_info=extra_info)
             self.reconfigure_model("feature_attack", extra_info=extra_info)

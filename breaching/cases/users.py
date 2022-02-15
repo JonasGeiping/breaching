@@ -475,7 +475,7 @@ class MultiUserAggregate(UserMultiStep):
             buffers=aggregate_buffers if self.provide_buffers else None,
             metadata=dict(
                 num_data_points=self.num_data_points * len(self.users) if self.provide_num_data_points else None,
-                labels=torch.cat(aggregate_labels.sort()[0]) if self.provide_labels else None,
+                labels=torch.cat(aggregate_labels).sort()[0] if self.provide_labels else None,
                 num_users=self.num_users,
                 local_hyperparams=dict(
                     lr=self.local_learning_rate,

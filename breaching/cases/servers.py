@@ -657,7 +657,7 @@ class MaliciousClassParameterServer(HonestServer):
                     all_labels=shared_data["metadata"]["labels"],
                 )
 
-        log.info(f"User {user.user_idx} was queries {user.counted_queries} times.")
+        log.info(f"User {user.user_idx} was queried {user.counted_queries} times.")
         return final_shared_data, final_payload, true_user_data
 
     def run_protocol_feature_estimation(self, target_user, additional_users, extra_info=None):

@@ -583,9 +583,9 @@ class MaliciousClassParameterServer(HonestServer):
             else:
                 # send several queries because of cls collision
                 log.info(f"Attacking label {reduced_shared_data['metadata']['labels'][0].item()} with binary attack.")
+                num_collisions = (shared_data["metadata"]["labels"] == int(cls_to_obtain)).sum()
                 log.info(
-                    f"There are total {len(shared_data['metadata']['labels'])} datapoints with label"
-                    f" {shared_data['metadata']['labels'][0].item()}."
+                    f"There are in total {num_collisions.item()} datapoints with label {shared_data['metadata']['labels'][0].item()}."
                 )
 
                 cls_to_obtain = int(shared_data["metadata"]["labels"][0])

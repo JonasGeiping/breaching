@@ -465,7 +465,7 @@ class MultiUserAggregate(UserMultiStep):
                 torch._foreach_sub_(user_data["buffers"], aggregate_buffers)
                 torch._foreach_add_(aggregate_buffers, buffer_to_server, alpha=1 / self.num_users)
             if user_data["metadata"]["labels"] is not None:
-                aggregate_labels.append(user_data["metadata"]["labels"].cpu())
+                aggregate_labels.append(user_data["metadata"]["labels"])
             if params := user_data["metadata"]["local_hyperparams"] is not None:
                 if params["labels"] is not None:
                     aggregate_label_lists += [l.cpu() for l in user_data["metadata"]["local_hyperparams"]["labels"]]

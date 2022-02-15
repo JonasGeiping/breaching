@@ -21,7 +21,7 @@ Either download this repository (including notebooks and examples) directly usin
 
 Because this framework covers several use cases across vision and language, it also accumulates a kitchen-sink of dependencies. The full list of all dependencies can be found at `environment.yml` (and installed with conda by calling `conda env create --file environment.yml `), but the full list of dependencies not installed by default. Install these as necessary (for example install huggingface packages only if you are interested in language applications).
 
-You can verify your installation by running `python simulate_breach.py dryrun=True` when cloning from github.
+You can verify your installation by running `python simulate_breach.py dryrun=True`. This tests the simplest reconstruction setting with a single iteration.
 
 
 ### Usage

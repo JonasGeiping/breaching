@@ -35,3 +35,8 @@ def get_case_config(case="1_single_image_small", overrides=[]):
         cfg = hydra.compose(config_name=case, overrides=overrides)
         print(f"Investigating use case {cfg.name} with server type {cfg.server.name}.")
     return cfg
+
+
+# Variant (other OS?):
+# with hydra.initialize_config_module(config_module="breaching.config"):
+#     cfg = hydra.compose(config_name="cfg", overrides=overrides)

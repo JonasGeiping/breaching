@@ -3,3 +3,5 @@ include *.py
 include *.yaml
 recursive-include breaching *.md
 recursive-include breaching *.yaml
+global-exclude *.pyc
+global-exclude __pycache__

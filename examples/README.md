@@ -40,10 +40,12 @@ Attack             | Type | Dataset | Update | Threat Model  | Publication
 
 
 What is not quite visibile in this summary is that these attacks are improved by works that study
-* Optimal initializations for these attacks (see [A Framework for Evaluating Gradient Leakage Attacks in Federated Learning
+* Optimal initializations for these attacks ([A Framework for Evaluating Gradient Leakage Attacks in Federated Learning
 ](https://arxiv.org/abs/2004.10397))
 * Label recovery algorithms ([User-Level Label Leakage from Gradients in Federated Learning
 ](https://arxiv.org/abs/2105.09369))
-* a range of other work that provides commentary, metrics and additional empirical evaluations of these attacks.
+* Commentary, metrics and additional empirical evaluations of these attacks.
 
-There is also an interesting direction of work using generative models to aid reconstruction which is not included in this framework.
+There is also an interesting direction of work using generative models to aid reconstruction (for example [Gradient Inversion with Generative Image Prior](https://fl-icml.github.io/2021/papers/FL-ICML21_paper_75.pdf), but also going back all the way to [Deep Models Under the GAN: Information Leakage from Collaborative Deep Learning
+](https://arxiv.org/abs/1702.07464)) which is not included in this framework, as well as other FL scenarios (such as vertical FL, e.g. in [CAFE: Catastrophic Data Leakage in Vertical Federated Learning
+](https://arxiv.org/abs/2110.15122)) that are not covered here.

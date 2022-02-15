@@ -1,0 +1,41 @@
+name: Birdsnap
+modality: vision
+task: classification
+
+path: "~/data"
+size: 49829
+classes: 500
+shape:
+  - 3
+  - 224
+  - 224
+
+# Preprocessing
+normalize: True
+mean:
+  - 0.4824676726683003
+  - 0.4958928000633613
+  - 0.4501693906276023
+std:
+  - 0.13152993145090994
+  - 0.12629415442590425
+  - 0.1683450988559228
+# Data Augmentations
+augmentations_train:
+  RandomResizedCrop: 224
+  RandomHorizontalFlip: 0.5
+
+augmentations_val:
+  Resize: 256
+  CenterCrop: 224
+
+# Federated Learning specifics:
+default_clients: 500
+partition: unique-class # used for synthetic splits. Current options for synthetic split: balanced / unique-class
+examples_from_split: validation
+
+# Data-specific implementation constants:
+batch_size: 128
+caching: False
+defaults:
+  - db: none # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

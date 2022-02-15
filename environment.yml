@@ -1,0 +1,49 @@
+# Full environment
+# You only need to install this if you are using every part of this framework.
+# Most optional packages are imported lazily.
+# Usually you will be notified if you're missing a specific optional package.
+
+# Non optional:
+# - PyTorch + Torchvision + scipy
+# - Hydra-core + lpips
+# If using text: huggingface (transformers, datasets, tokenizers)
+
+name: breaching
+channels:
+  - pytorch
+  - huggingface
+  - defaults
+dependencies:
+  - python=3.9
+  - cudatoolkit=11.3
+  - pytorch=1.10.1
+  - torchvision
+  - notebook
+  - jupyter
+  - matplotlib
+  - python-lmdb
+  - scikit-learn
+  - scikit-image
+  - tensorboard
+  - torchtext
+  - transformers
+  - datasets
+  - tensorflow
+  - nltk
+  - pip
+  - cython
+  - scipy
+  - pip:
+      - hydra-core
+      - kornia
+      - lpips
+      - git+https://github.com/fbcotter/pytorch_wavelets
+      - rouge-score
+      - sacrebleu
+      - timm
+      - ortools
+      - kmedoids
+      - k-means-constrained --no-binary 0.6.0 #  this can be a pain ;>
+      # You can try a combination of:
+      # pip install k-means-constrained --no-cache-dir --no-binary 0.6.0 --no-build-isolation --no-deps --force-reinstall
+      # to install this package manually

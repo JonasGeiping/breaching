@@ -1,0 +1,7 @@
+name: honest_but_curious
+pretrained: True
+model_state: default
+provide_public_buffers: True # Send public buffers to users (this is batch norm specific)
+
+has_external_data: False
+num_queries: 1

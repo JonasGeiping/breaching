@@ -1,0 +1,20 @@
+# Attack similar to Wei et al., "A Framework for Evaluating Gradient Leakage
+# Attacks in Federated Learning"
+
+defaults:
+  - _default_optimization_attack
+  - _self_
+type: beyond-infering
+
+objective:
+  type: euclidean
+  scale: 1.0
+  task_regularization: 1.0 # The original paper minimizes task loss in L² space. This is in CrossEntropy
+
+init: patterned-16
+
+optim:
+  optimizer: L-BFGS
+  step_size: 1.0
+  boxed: True
+  max_iterations: 300

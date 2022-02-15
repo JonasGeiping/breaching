@@ -1,0 +1,17 @@
+# Minimal environment
+# Most other optional packages are imported lazily.
+# Usually you will be notified if you're missing a specific optional package.
+
+# This will be enough to run `simulate_breach.py` with default settings
+name: breaching
+channels:
+  - pytorch
+  - defaults
+dependencies:
+  - pytorch=1.10
+  - torchvision
+  - pip
+  - scipy
+  - pip:
+      - hydra-core
+      - lpips

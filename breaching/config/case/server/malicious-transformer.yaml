@@ -1,0 +1,20 @@
+name: malicious_transformer_parameters
+pretrained: False
+model_state: default
+provide_public_buffers: True # Send public buffers to users (this is batch norm specific)
+
+has_external_data: True
+num_queries: 1
+
+param_modification:
+  sequence_token_weight: 1
+  equalize_token_weight: 10 # only active for MLM tasks
+  imprint_sentence_position: 0 # positions other than 0 are not implemented for more than one head
+  softmax_skew: 100000000
+
+  attention_block_idx: 0
+  v_length: 6
+  eps: 1e-4
+
+  measurement_scale: 1.0
+  reset_embedding: False

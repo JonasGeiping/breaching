@@ -1,0 +1,16 @@
+name: class_malicious_parameters
+pretrained: True
+model_state: default
+provide_public_buffers: True # Send public buffers to users (this is batch norm specific)
+
+has_external_data: False
+num_queries: 1
+
+opt_on_avg_grad: False
+one_shot_ba: True
+
+query_once_for_labels: True
+target_cls_idx: 0
+grad_idx: 0 # which gradient to attack
+
+feat_multiplier: 300 # Multiplicator in attack

@@ -1,0 +1,31 @@
+# TAG: Gradient Attack on Transformer-based Language Models
+# Deng et al. 2021
+# proposed as attack for text with transformer models
+defaults:
+  - _default_optimization_attack
+  - _self_
+type: tag
+attack_type: joint-optimization
+label_strategy: None
+
+token_recovery: from-embedding
+init: randn-trunc # Not in the original, but helps a lot
+
+objective:
+  type: tag-euclidean
+  scale: 1.0
+  task_regularization: 0.0
+  tag_scale: 0.1
+  scale_scheme: linear # This is a guess based on similar rules working for inverting gradients
+
+optim:
+  optimizer: bert-adam
+  step_size: 0.05
+  boxed: False
+  max_iterations: 1000
+  grad_clip: 1.0
+  # Next two settings are guesses but seem to improve the baseline:
+  warmup: 50 # # This is a guess, they might be using a bert-adam optimization implementation including this
+  step_size_decay: linear # This is a guess, they might be using a bert-adam optimization implementation including this
+
+  callback: 100 # Print objective value every callback many iterations

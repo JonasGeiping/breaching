@@ -1,0 +1,9 @@
+type: analytic
+
+attack_type: analytic
+label_strategy: analytic
+normalize_gradients: False
+impl:
+  dtype: float
+  mixed_precision: False
+  JIT: # bembel with care

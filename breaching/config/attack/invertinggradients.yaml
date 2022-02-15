@@ -1,0 +1,29 @@
+defaults:
+  - _default_optimization_attack
+  - _self_
+type: invertinggradients
+
+objective:
+  type: cosine-similarity
+  scale: 1.0 # need to have a much smaller scale like 0.0001 for euclidean objectives
+
+restarts:
+  num_trials: 1
+  scoring: "cosine-similarity"
+
+optim:
+  optimizer: adam
+  signed: "hard"
+  step_size: 0.1
+  boxed: True
+  max_iterations: 24_000
+  step_size_decay: step-lr
+
+  callback: 1000 # Print objective value every callback many iterations
+
+regularization:
+  total_variation:
+    scale: 0.2
+    # 0.2 # The old version did not take the mean dx + dy as the new version, so this corresponds to 0.1 in the old repo
+    inner_exp: 1
+    outer_exp: 1

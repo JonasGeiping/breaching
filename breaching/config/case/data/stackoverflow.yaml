@@ -1,0 +1,30 @@
+name: stackoverflow
+modality: text
+task: causal-lm
+
+# only used when task=masked-lm:
+mlm_probability: 0.15
+disable_mlm: False
+
+path: "~/data"
+size: 135_818_730
+
+shape:
+  - 32 # This is sequence_length
+
+# Preprocessing
+tokenizer: GPT-2
+vocab_size: 50257
+
+# Federated Learning specifics:
+default_clients: 715 # number of unique characters in shakespeare plays
+# train: 16_068
+# test: 2_356
+partition: given # use natural data partition
+examples_from_split: test
+
+# Data-specific implementation constants:
+batch_size: 128
+caching: False
+defaults:
+  - db: none # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

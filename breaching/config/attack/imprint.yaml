@@ -1,0 +1,18 @@
+type: analytic
+
+attack_type: imprint-readout
+text_strategy: no-preprocessing # Do not cut off the embedding
+token_strategy: decoder-bias # Tokens are not strictly required for this attack. Option: Choose None here
+token_recovery: from-limited-embedding # Choose "from-embedding" here if not decoding tokens
+
+label_strategy: # Labels are not required for this attack
+normalize_gradients: False
+
+breach_padding: True # Pad with zeros if not enough data is recovered
+breach_reduction: weight
+
+sort_by_bias: False # Only necessary if rows of the block have been shuffled
+impl:
+  dtype: float
+  mixed_precision: False
+  JIT: # bembel with care

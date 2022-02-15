@@ -1,0 +1,28 @@
+name: shakespeare
+modality: text
+task: causal-lm
+
+# only used when task=masked-lm:
+mlm_probability: 0.15
+disable_mlm: False
+
+path: "~/data"
+size: 16_068
+
+shape:
+  - 32 # This is sequence_length
+
+# Preprocessing
+tokenizer: GPT-2
+vocab_size: 50257
+
+# Federated Learning specifics:
+default_clients: 715 # number of articles in dataset
+partition: given # use natural data partition
+examples_from_split: training
+
+# Data-specific implementation constants:
+batch_size: 128
+caching: False
+defaults:
+  - db: none # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

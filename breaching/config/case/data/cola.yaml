@@ -1,0 +1,29 @@
+name: cola
+modality: text
+task: classification
+
+# only used when task=masked-lm:
+mlm_probability: 0.15
+disable_mlm: False
+
+path: "~/data"
+size: 8551 # rows in training
+
+classes: 2
+shape:
+  - 25 # This is max. sequence_length
+
+# Preprocessing
+tokenizer: bert-base-uncased
+vocab_size: 30522
+
+# Federated Learning specifics:
+default_clients: 8551 # number of rows in training
+partition: given # use natural data partition
+examples_from_split: training
+
+# Data-specific implementation constants:
+batch_size: 1
+caching: False
+defaults:
+  - db: none # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

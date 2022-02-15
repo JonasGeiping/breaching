@@ -1,0 +1,39 @@
+name: CIFAR100
+modality: vision
+task: classification
+
+path: "~/data"
+size: 50_000
+classes: 100
+shape:
+  - 3
+  - 32
+  - 32
+
+normalize: True
+mean:
+  - 0.5071598291397095
+  - 0.4866936206817627
+  - 0.44120192527770996
+std:
+  - 0.2673342823982239
+  - 0.2564384639263153
+  - 0.2761504650115967
+
+augmentations_train:
+  RandomCrop:
+    - 32
+    - 4
+  RandomHorizontalFlip: 0.5
+augmentations_val:
+
+# Federated Learning specifics:
+default_clients: 100
+partition: balanced # used for synthetic splits. Current options for synthetic split: balanced / unique-class
+examples_from_split: validation
+
+# Data-specific implementation constants:
+batch_size: 128
+caching: False
+defaults:
+  - db: none # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

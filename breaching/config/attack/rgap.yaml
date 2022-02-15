@@ -1,0 +1,15 @@
+# R-GAP recursive attack from Zhu and Blaschko "R-GAP: Recursive Gradient Attack on Privacy"
+
+type: r-gap
+attack_type: recursive
+label_strategy: "wainakh-simple"
+normalize_gradients: False
+
+inversion:
+  step_size: 0.01
+  steps: 30_000
+
+impl:
+  dtype: float
+  mixed_precision: False
+  JIT: # bembel with care

@@ -1,0 +1,29 @@
+type: analytic
+
+attack_type: decepticon-readout
+text_strategy: no-preprocessing # Do not cut off the embedding
+label_strategy: # Labels are not required for this attack, but see tokens a few steps below:
+
+# Key hyperparameters:
+token_strategy: decoder-bias # This is actually the "token" recovery strategy as labels~=tokens
+token_cutoff: 1.5 # if the token strategy is "embedding-norm" and tied embeddings exist, then this is the cutoff
+embedding_token_weight: 0 # With this weight, greedy correlations to the full vocab are used in addition to leaked tokens
+sentence_algorithm: k-means # This algorithm decides how sentences are disambiguated
+
+# Experimental hyperparameters:
+# Dont worry about these for almost any normal stuff
+recovery_order: positions-first
+normalize_gradients: False
+sort_by_bias: False
+undivided: False
+separation: decorrelation # alternative: simple "subtraction" or None
+backfilling: local # or "global"
+backfill_removal: # None or a separation option
+sentence_based_backfill: False
+breach_reduction: bias
+
+# Implementation Details
+impl:
+  dtype: float
+  mixed_precision: False
+  JIT: # bembel with care

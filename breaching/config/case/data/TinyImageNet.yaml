@@ -1,0 +1,41 @@
+name: TinyImageNet
+modality: vision
+task: classification
+
+path: "~/data"
+size: 100_000
+classes: 200
+shape:
+  - 3
+  - 64
+  - 64
+
+# Preprocessing
+normalize: True
+mean:
+  - 0.4789886474609375
+  - 0.4457630515098572
+  - 0.3944724500179291
+std:
+  - 0.27698642015457153
+  - 0.2690644860267639
+  - 0.2820819020271301
+# Data Augmentations
+augmentations_train:
+  RandomCrop:
+    - 64
+    - 8
+  RandomHorizontalFlip: 0.5
+augmentations_val:
+  CenterCrop: 64
+
+# Federated Learning specifics:
+default_clients: 200
+partition: balanced # used for synthetic splits. Current options for synthetic split: balanced / unique-class
+examples_from_split: validation
+
+# Data-specific implementation constants:
+batch_size: 128
+caching: False
+defaults:
+  - db: none # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

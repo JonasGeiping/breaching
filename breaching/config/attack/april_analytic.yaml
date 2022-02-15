@@ -1,0 +1,12 @@
+type: analytic
+
+attack_type: april-analytic
+label_strategy:
+normalize_gradients: False
+
+solver: gelsd
+
+impl:
+  dtype: float
+  mixed_precision: False
+  JIT: # bembel with care

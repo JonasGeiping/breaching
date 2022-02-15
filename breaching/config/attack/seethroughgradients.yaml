@@ -1,0 +1,38 @@
+defaults:
+  - _default_optimization_attack
+  - _self_
+type: see-through-gradients
+label_strategy: yin
+
+objective:
+  type: euclidean
+  scale: 1e-4
+
+restarts:
+  num_trials: 1
+  scoring: euclidean #'registered-group-regularization' # todo: implement this option
+
+optim:
+  optimizer: adam
+  signed: False
+  step_size: 0.1
+  boxed: True
+  max_iterations: 20_000
+  step_size_decay: cosine-decay
+  langevin_noise: 0.01 # the original paper has 0.2 but the value does feel relatively large in my experiments
+  warmup: 50
+
+  callback: 1000 # Print objective value every callback many iterations
+
+regularization:
+  total_variation:
+    scale: 1e-4
+    inner_exp: 1
+    outer_exp: 1
+  norm:
+    scale: 1e-6
+    pnorm: 2
+  deep_inversion: # This is batchnorm matching to buffers provided by the user [which can be either actual stats or global]
+    scale: 0.1 #  reduce this value if user.provide_buffers=False
+  # group_regularization: # Not implemented. Unclear to me how this was implemented without accesss to the source code
+  #  scale: 0.01

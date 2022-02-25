@@ -26,7 +26,6 @@ from .malicious_modifications.feat_decoders import generate_decoder
 from .malicious_modifications.classattack_utils import (
     check_with_tolerance,
     reconstruct_feature,
-    reconfigure_class_parameter_attack,
     find_best_feat,
     estimate_gt_stats,
 )
@@ -128,6 +127,9 @@ class HonestServer:
                     module.reset_parameters()
                 if "conv" in name or "linear" in name:
                     torch.nn.init.orthogonal_(module.weight, gain=1)
+            elif model_state == "unchanged":
+                # Disregard potential to update this model
+                pass
 
     def reset_model(self):
         pass
@@ -522,8 +524,9 @@ class MaliciousClassParameterServer(HonestServer):
         model = self.model  # Re-reference this everywhere
         return self.model
 
-    def run_protocol(self, user):
-        """Helper function for modified protocols, for example due to the binary attack."""
+    def run_protocol_binary_attack(self, user):
+        """Helper function for modified protocols, this is a binary attack that will repeatedly query a user
+        with malicious server states."""
         # get class info first (this could be skipped and replaced by an attack on all/random labels)
         server_payload = self.distribute_payload()
 
@@ -543,9 +546,7 @@ class MaliciousClassParameterServer(HonestServer):
             log.info("Optimize on averaged gradient with cls attack.")
 
             # cls attack on all labels in the batch
-            extra_info = {"cls_to_obtain": t_labels}
-            server.reset_model()
-            server.reconfigure_model("cls_attack", extra_info=extra_info)
+            self.reconfigure_for_class_attack(target_classes=t_labels)
             server_payload = server.distribute_payload()
             shared_data, true_user_data = user.compute_local_updates(server_payload)
             final_shared_data = [shared_data]
@@ -562,11 +563,9 @@ class MaliciousClassParameterServer(HonestServer):
                 # simple cls attack if there is no cls collision
                 log.info(f"Attacking label {reduced_shared_data['metadata']['labels'].item()} with cls attack.")
                 cls_to_obtain = int(reduced_shared_data["metadata"]["labels"][0])
-                extra_info = {"cls_to_obtain": cls_to_obtain}
 
                 # modify the parameters first
-                self.reset_model()
-                self.reconfigure_model("cls_attack", extra_info=extra_info)
+                self.reconfigure_for_class_attack(target_classes=cls_to_obtain)
 
                 server_payload = self.distribute_payload()
                 tmp_shared_data, true_user_data = user.compute_local_updates(server_payload)
@@ -587,11 +586,8 @@ class MaliciousClassParameterServer(HonestServer):
                 num_collisions = (shared_data["metadata"]["labels"] == int(cls_to_obtain)).sum()
                 log.info(f"There are in total {num_collisions.item()} datapoints with label {cls_to_obtain}.")
 
-                extra_info = {"cls_to_obtain": cls_to_obtain}
-
                 # find the starting point and the feature entry gives the max avg value
-                self.reset_model()
-                self.reconfigure_model("cls_attack", extra_info=extra_info)
+                self.reconfigure_for_class_attack(target_classes=cls_to_obtain)
                 server_payload = self.distribute_payload()
                 tmp_shared_data, true_user_data = user.compute_local_updates(server_payload)
                 avg_feature = torch.flatten(reconstruct_feature(tmp_shared_data, cls_to_obtain))
@@ -599,37 +595,33 @@ class MaliciousClassParameterServer(HonestServer):
                 single_gradient_recovered = False
 
                 while not single_gradient_recovered:
-                    feat_to_obtain = int(torch.argmax(avg_feature))
-                    feat_value = float(avg_feature[feat_to_obtain])
+                    feature_loc = int(torch.argmax(avg_feature))
+                    feature_val = float(avg_feature[feature_loc])
+                    attack_state = dict(feature_loc=feature_loc, feature_val=feature_val)
 
                     # binary attack to recover all single gradients
-                    extra_info["feat_to_obtain"] = feat_to_obtain
-                    extra_info["feat_value"] = feat_value
-                    extra_info["multiplier"] = 1
-                    extra_info["num_target_data"] = int(
+                    attack_state["num_target_data"] = int(
                         torch.count_nonzero((reduced_shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int))
                     )
-                    extra_info["num_data_points"] = shared_data["metadata"]["num_data_points"]
+                    attack_state["num_data_points"] = shared_data["metadata"]["num_data_points"]
 
-                    if self.cfg_server.one_shot_ba:
-                        recovered_single_gradients = self.one_shot_binary_attack(user, extra_info)
+                    if self.cfg_server.one_shot_binary_attack:
+                        recovered_single_gradients = self.one_shot_binary_attack(user, cls_to_obtain, attack_state)
                     else:
-                        recovered_single_gradients = self.binary_attack(user, extra_info)
+                        recovered_single_gradients = self.binary_attack(user, cls_to_obtain, attack_state)
 
                     if recovered_single_gradients is not None:
                         single_gradient_recovered = True
                     else:
-                        avg_feature[feat_to_obtain] = -1000
+                        avg_feature[feature_loc] = -1000
 
                     if not single_gradient_recovered:
                         log.info(f"Spent {user.counted_queries} user queries so far.")
 
                 # return to the model with multiplier=1, (better with larger multiplier, but not optimizable if it is too large)
-                self.reset_model()
-                extra_info["multiplier"] = 1
-                extra_info["feat_value"] = feat_value
-                self.reconfigure_model("cls_attack", extra_info=extra_info)
-                self.reconfigure_model("feature_attack", extra_info=extra_info)
+                self.reconfigure_for_feature_attack(
+                    feature_loc, feature_val, target_classes=cls_to_obtain, reset_param_weights=True
+                )
                 server_payload = self.distribute_payload()
 
                 # recover image by image
@@ -658,189 +650,211 @@ class MaliciousClassParameterServer(HonestServer):
         log.info(f"User {user.user_idx} was queried {user.counted_queries} times.")
         return final_shared_data, final_payload, true_user_data
 
-    def run_protocol_feature_estimation(self, target_user, additional_users, extra_info=None):
+    def run_protocol_feature_estimation(self, target_user, additional_users):
         """Estimate feature based on queries to additional_users to finally attack the target_user."""
 
         log.info(f"Estimating feature distribution based on {len(additional_users)} given additional users.")
-        if extra_info is None:
-            extra_info = dict(cls_to_obtain=self.cfg_server.target_cls_idx)
 
-        est_features, est_sample_sizes = self.estimate_feat(additional_users, extra_info)
-        f_indx = find_best_feat(est_features, est_sample_sizes, method="kstest")
+        self.reconfigure_for_class_attack()
+        est_features, est_sample_sizes = self.estimate_feat(additional_users)
+        feature_loc = find_best_feat(est_features, est_sample_sizes, method="kstest")
 
         est_mean, est_std = estimate_gt_stats(est_features, est_sample_sizes, indx=f_indx)
 
-        self.reset_model()
-        extra_info["multiplier"] = self.cfg_server.feat_multiplier
-        extra_info["feat_to_obtain"] = f_indx
         exected_data_points = np.sum(est_sample_sizes) / len(additional_users)
-        extra_info["feat_value"] = stats.norm.ppf(1 / exected_data_points, est_mean, est_std)
-        self.reconfigure_model("cls_attack", extra_info=extra_info)
-        self.reconfigure_model("feature_attack", extra_info=extra_info)
+        feature_val = stats.norm.ppf(1 / exected_data_points, est_mean, est_std)
+        self.reconfigure_for_feature_attack(feature_loc, feature_val)
 
         log.info("Commencing with update on target user.")
         server_payload = self.distribute_payload()
         shared_data, true_user_data = target_user.compute_local_updates(server_payload)
 
-        extra_info["multiplier"] = 1  # Reset this before optimization
-        self.reset_model()
-        self.reconfigure_model("cls_attack", extra_info=extra_info)
-        self.reconfigure_model("feature_attack", extra_info=extra_info)
-        server_payload = self.distribute_payload()
-
+        self.reconfigure_for_feature_attack(feature_loc, feature_val, reset_param_weights=True)
         true_user_data["distribution"] = est_features[f_indx]
 
         return [shared_data], [server_payload], true_user_data
 
-    def reconfigure_model(self, model_state, extra_info={}):
-        super().reconfigure_model(model_state)
-        reconfigure_class_parameter_attack(self.model, self.original_model, model_state, extra_info=extra_info)
+    def one_shot_binary_attack(self, user, cls_to_obtain, attack_state):
+        feature_loc = attack_state["feature_loc"]
+        feature_val = attack_state["feature_val"]
+        num_data_points = attack_state["num_data_points"]
+        all_feature_val = []
 
-    def one_shot_binary_attack(self, user, extra_info):
-        cls_to_obtain = extra_info["cls_to_obtain"]
-        feat_to_obtain = extra_info["feat_to_obtain"]
-        feat_value = extra_info["feat_value"]
-        num_target_data = extra_info["num_target_data"]
-        num_data_points = extra_info["num_data_points"]
-        self.num_target_data = num_target_data
-        self.all_feat_value = []
-
-        extra_info["multiplier"] = self.cfg_server.feat_multiplier
-        while True:
-            self.all_feat_value.append(feat_value)
-            extra_info["feat_value"] = feat_value
-            self.reset_model()
-            self.reconfigure_model("cls_attack", extra_info=extra_info)
-            self.reconfigure_model("feature_attack", extra_info=extra_info)
+        feature_within_tolerance = False
+        while not feature_within_tolerance:
+            all_feature_val.append(feature_val)
+            self.reconfigure_for_feature_attack(feature_loc, feature_val, target_classes=cls_to_obtain)
             server_payload = self.distribute_payload()
             shared_data, _ = user.compute_local_updates(server_payload)
             avg_feature = torch.flatten(reconstruct_feature(shared_data, cls_to_obtain))
-            feat_value = float(avg_feature[feat_to_obtain])
+            feature_val = float(avg_feature[feature_loc])
 
-            if check_with_tolerance(feat_value, self.all_feat_value):
+            if check_with_tolerance(feature_val, all_feature_val):
                 curr_grad = list(shared_data["gradients"])
-                break
+                feature_within_tolerance = True
 
         curr_grad[-1] = curr_grad[-1] * num_data_points
-        curr_grad[:-1] = [grad_ii * num_data_points / extra_info["multiplier"] for grad_ii in curr_grad[:-1]]
-        self.all_feat_value.sort()
+        curr_grad[:-1] = [grad_ii * num_data_points / self.cfg_server.feat_multiplier for grad_ii in curr_grad[:-1]]
+        all_feature_val.sort()
 
-        return [curr_grad]
+        return [curr_grad], all_feature_val
 
-    def binary_attack(self, user, extra_info):
-        feat_value = extra_info["feat_value"]
-        num_target_data = extra_info["num_target_data"]
-        num_data_points = extra_info["num_data_points"]
-        self.num_target_data = num_target_data
-        self.all_feat_value = []
+    def binary_attack(self, user, cls_to_obtain, attack_state):
+        feature_val = attack_state["feature_val"]
+        num_target_data = attack_state["num_target_data"]
+        num_data_points = attack_state["num_data_points"]
+        all_feature_val = []
 
         # get filter feature points first
-        self.all_feat_value = []
-        self.feat_grad = []
-        self.visited = []
-        self.counter = 0
-        extra_info["multiplier"] = self.cfg_server.feat_multiplier
-        retval = self.binary_attack_helper(user, extra_info, [feat_value])
+        all_feature_val = []
+        attack_state["feat_grad"] = []
+        attack_state["visited"] = []
+        attack_state["counter"] = 0
+        retval = self.binary_attack_recursion(user, cls_to_obtain, attack_state, [feature_val], all_feature_val)
         if retval == 0:  # Stop early after too many attempts in binary search:
             return None
-        self.all_feat_value = np.array(self.all_feat_value)
-        sorted_inds = np.argsort(self.all_feat_value)
+        all_feature_val = np.array(all_feature_val)
+        sorted_inds = np.argsort(all_feature_val)
         sorted_feat_grad = []
-        self.all_feat_value = self.all_feat_value[sorted_inds]
+        all_feature_val = all_feature_val[sorted_inds]
         for i in sorted_inds:
-            sorted_feat_grad.append(self.feat_grad[i])
-        self.feat_grad = sorted_feat_grad
+            sorted_feat_grad.append(attack_state["feat_grad"][i])
+        attack_state["feat_grad"] = sorted_feat_grad
 
         # recover gradients
-        curr_grad = copy.deepcopy(list(self.feat_grad[0]))
+        curr_grad = copy.deepcopy(list(attack_state["feat_grad"][0]))
         curr_grad[-1] = curr_grad[-1] * num_data_points
-        curr_grad[:-1] = [grad_ii * num_data_points / extra_info["multiplier"] for grad_ii in curr_grad[:-1]]
+        curr_grad[:-1] = [grad_ii * num_data_points / self.cfg_server.feat_multiplier for grad_ii in curr_grad[:-1]]
         prev_grad = copy.deepcopy(curr_grad)
         single_gradients = [curr_grad]
-        for i in range(1, len(self.all_feat_value)):
-            curr_grad = copy.deepcopy(list(self.feat_grad[i]))
+        for i in range(1, len(all_feature_val)):
+            curr_grad = copy.deepcopy(list(attack_state["feat_grad"][i]))
             curr_grad[-1] = curr_grad[-1] * num_data_points
-            curr_grad[:-1] = [grad_ii * num_data_points / extra_info["multiplier"] for grad_ii in curr_grad[:-1]]
+            curr_grad[:-1] = [grad_ii * num_data_points / self.cfg_server.feat_multiplier for grad_ii in curr_grad[:-1]]
             grad_i = [grad_ii - grad_jj for grad_ii, grad_jj in zip(curr_grad, prev_grad)]
             single_gradients.append(grad_i)
             prev_grad = copy.deepcopy(curr_grad)
 
-        return single_gradients
+        return single_gradients, all_feature_val
 
-    def binary_attack_helper(self, user, extra_info, feat_01_values):
+    def binary_attack_recursion(self, user, cls_to_obtain, attack_state, feat_01_values, all_feature_val):
 
-        if len(self.all_feat_value) >= self.num_target_data:
+        if len(all_feature_val) >= attack_state["num_target_data"]:
             return 1
-        if self.counter >= self.num_target_data ** 2:
-            log.info(f"Too many attempts ({self.counter}) on this feature!")
+        if attack_state["counter"] >= attack_state["num_target_data"] ** 2:
+            log.info(f"Too many attempts ({attack_state['counter']}) on this feature!")
             return 0
 
         new_feat_01_values = []
 
         # get left and right mid point
-        cls_to_obtain = extra_info["cls_to_obtain"]
-        feat_to_obtain = extra_info["feat_to_obtain"]
+        feature_loc = attack_state["feature_loc"]
 
         for feat_01_value in feat_01_values:
-            extra_info["feat_value"] = feat_01_value
-            extra_info["multiplier"] = self.cfg_server.feat_multiplier
-            self.reset_model()
-            self.reconfigure_model("cls_attack", extra_info=extra_info)
-            self.reconfigure_model("feature_attack", extra_info=extra_info)
+            attack_state["feature_val"] = feat_01_value
+            self.reconfigure_for_feature_attack(feature_loc, feat_01_value, target_classes=cls_to_obtain)
             server_payload = self.distribute_payload()
             shared_data, _ = user.compute_local_updates(server_payload)
             feat_0 = torch.flatten(reconstruct_feature(shared_data, cls_to_obtain))
-            feat_0_value = float(feat_0[feat_to_obtain])  # the middle includes left hand side
+            feat_0_value = float(feat_0[feature_loc])  # the middle includes left hand side
             feat_1_value = 2 * feat_01_value - feat_0_value
-            self.counter += 1
+            attack_state["counter"] += 1
 
             feat_candidates = [feat_0_value]
 
             for feat_cand in feat_candidates:
-                if check_with_tolerance(feat_cand, self.visited):
+                if check_with_tolerance(feat_cand, attack_state["visited"]):
                     pass
-                elif not check_with_tolerance(feat_cand, self.visited):
-                    if not check_with_tolerance(feat_01_value, self.all_feat_value):
-                        self.all_feat_value.append(feat_01_value)
-                        self.feat_grad.append(list(shared_data["gradients"]))
+                elif not check_with_tolerance(feat_cand, attack_state["visited"]):
+                    if not check_with_tolerance(feat_01_value, all_feature_val):
+                        all_feature_val.append(feat_01_value)
+                        attack_state["feat_grad"].append(list(shared_data["gradients"]))
                     new_feat_01_values.append(feat_cand)
-                    self.visited.append(feat_cand)
+                    attack_state["visited"].append(feat_cand)
 
-                if len(self.all_feat_value) >= self.num_target_data:
+                if len(all_feature_val) >= attack_state["num_target_data"]:
                     return
 
-                if self.counter >= self.num_target_data ** 2:
-                    log.info(f"Too many attempts ({self.counter}) on this feature!")
+                if attack_state["counter"] >= attack_state["num_target_data"] ** 2:
+                    log.info(f"Too many attempts ({attack_state['counter']}) on this feature!")
                     return 0
 
             feat_candidates = [feat_1_value, (feat_01_value + feat_1_value) / 2, (feat_01_value + feat_0_value) / 2]
 
             for feat_cand in feat_candidates:
-                if not check_with_tolerance(feat_cand, self.visited):
+                if not check_with_tolerance(feat_cand, attack_state["visited"]):
                     new_feat_01_values.append(feat_cand)
 
-        return self.binary_attack_helper(user, extra_info, new_feat_01_values)
+        return self.binary_attack_recursion(user, cls_to_obtain, attack_state, feat_01_values, all_feature_val)
 
-    def estimate_feat(self, additional_users, extra_info):
+    def estimate_feat(self, additional_users, target_class=None):
         """Estimate features from externally given additional users."""
         est_features = []
         sample_sizes = []
-        cls_to_obtain = extra_info["cls_to_obtain"]
-
-        self.reset_model()
-        self.reconfigure_model("cls_attack", extra_info=extra_info)
+        if target_classes is None:
+            target_class = self.cfg_server.target_cls_idx
 
         for user in additional_users:
             server_payload = self.distribute_payload()
             shared_data, _ = user.compute_local_updates(server_payload)
-            num_target = int(torch.count_nonzero((shared_data["metadata"]["labels"] == int(cls_to_obtain)).to(int)))
+            num_target = int(torch.count_nonzero((shared_data["metadata"]["labels"] == int(target_class)).to(int)))
             if num_target != 0:
                 est_features.append(
-                    torch.flatten(reconstruct_feature(shared_data, cls_to_obtain)).detach().cpu().numpy()
+                    torch.flatten(reconstruct_feature(shared_data, target_class)).detach().cpu().numpy()
                 )
                 sample_sizes.append(num_target)
 
-        est_features = np.vstack(est_features)
-        sample_sizes = np.array(sample_sizes)
+        if len(est_features) == 0:
+            raise ValueError(f"These additional users do not own images from the target class {target_class}.")
+        else:
+            est_features = np.vstack(est_features)
+            sample_sizes = np.array(sample_sizes)
 
         return est_features.T, sample_sizes
+
+    def reconfigure_for_class_attack(self, target_classes=None, reset_param_weights=False):
+        self.reset_model()
+        if target_classes is None:
+            target_classes = [self.cfg_server.target_cls_idx]
+        cls_to_obtain = wrap_indices(target_classes)
+
+        if reset_param_weights:
+            feat_multiplier = 1
+        else:
+            feat_multiplier = self.cfg_server.feat_multiplier
+
+        with torch.no_grad():
+            *_, l_w, l_b = model.parameters()
+
+            # linear weight
+            masked_weight = torch.zeros_like(l_w)
+            masked_weight[cls_to_obtain] = feat_multiplier
+            l_w.copy_(masked_weight)
+
+            # linear bias
+            masked_bias = torch.ones_like(l_b) * self.cfg_server.bias_multiplier
+            masked_bias[cls_to_obtain] = l_b[cls_to_obtain]
+            l_b.copy_(masked_bias)
+
+    def reconfigure_for_feature_attack(self, feature_val, feature_loc, target_classes=None, reset_param_weights=False):
+        self.reset_model()
+        if target_classes is None:
+            target_classes = [self.cfg_server.target_cls_idx]
+        cls_to_obtain = wrap_indices(target_classes)
+        feature_loc = wrap_indices(feature_loc)
+
+        if reset_param_weights:
+            feat_multiplier = 1
+        else:
+            feat_multiplier = self.cfg_server.feat_multiplier
+
+        with torch.no_grad():
+            *_, l_w, l_b = model.parameters()
+
+            masked_weight = torch.zeros_like(l_w)
+            masked_weight[cls_to_obtain, feature_loc] = feat_multiplier
+            l_w.copy_(masked_weight)
+
+            masked_bias = torch.ones_like(l_b) * self.cfg_server.bias_multiplier
+            masked_bias[cls_to_obtain] = -feature_val * self.cfg_server.feat_multiplier
+            l_b.copy_(masked_bias)

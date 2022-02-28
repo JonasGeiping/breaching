@@ -19,7 +19,7 @@ feat_multiplier: 300 # Multiplicator in feature scaling
 bias_multiplier: 1000
 reset_param_weights: True
 
-reweight_collisions:
-  1.0 # optional: You can over/under-estimate the number of collisions for a feat attack.
-  # This will result in either reduced collisions (but higher chance of hitting nothing)
-  # or increased collisions that always recover something (which might be more than one data point)
+# optional: You can over/under-estimate the number of collisions for a feat attack.
+# This will result in either reduced collisions (but higher chance of hitting nothing)
+# or increased collisions that always recover something (which might be more than one data point)
+reweight_collisions: 1.0

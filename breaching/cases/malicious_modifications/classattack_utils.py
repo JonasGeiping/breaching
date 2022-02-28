@@ -20,7 +20,7 @@ def wrap_indices(indices):
         return list(indices)
 
 
-def check_with_tolerance(value, list, threshold=0.05):
+def check_with_tolerance(value, list, threshold=1e-3):
     for i in list:
         if abs(value - i) < threshold:
             return True

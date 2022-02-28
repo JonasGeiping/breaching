@@ -525,6 +525,16 @@ class MaliciousClassParameterServer(HonestServer):
         model = self.model  # Re-reference this everywhere
         return self.model
 
+    def run_protocol(self, user, additional_users=None, run_honest_protocol=False):
+        """This server is allowed to run malicious protocols."""
+        if run_honest_protocol:
+            return super().run_protocol(user)
+        else:
+            if additional_users is None:
+                return self.run_protocol_binary_attack(user)
+            else:
+                return self.run_protocol_feature_estimation(user, additional_users)
+
     def run_protocol_binary_attack(self, user):
         """Helper function for modified protocols, this is a binary attack that will repeatedly query a user
         with malicious server states."""
@@ -621,7 +631,7 @@ class MaliciousClassParameterServer(HonestServer):
 
                 # return to the model with multiplier=1, (better with larger multiplier, but not optimizable if it is too large)
                 self.reconfigure_for_feature_attack(
-                    feature_loc, feature_val, target_classes=cls_to_obtain, allow_reset_param_weights=True
+                    feature_val, feature_loc, target_classes=cls_to_obtain, allow_reset_param_weights=True
                 )
                 server_payload = self.distribute_payload()
 
@@ -666,18 +676,19 @@ class MaliciousClassParameterServer(HonestServer):
         if expected_data_points == 1:  # no collisions expected?
             feature_val = self.cfg_server.class_multiplier
         else:
-            feature_val = stats.norm.ppf(1 / expected_data_points, est_mean, est_std)
+            expected_quantile = 1 / expected_data_points * self.cfg_server.reweight_collisions
+            feature_val = stats.norm.ppf(expected_quantile, est_mean, est_std)
         log.info(
             f"Feature {feature_loc} with est. distribution mu={est_mean:2.4f},std={est_std:2.4f} "
             f"cut off with value {feature_val} due to {expected_data_points} expected data points."
         )
-        self.reconfigure_for_feature_attack(feature_loc, feature_val)
+        self.reconfigure_for_feature_attack(feature_val, feature_loc)
 
         log.info("Commencing with update on target user.")
         server_payload = self.distribute_payload()
         shared_data, true_user_data = target_user.compute_local_updates(server_payload)
 
-        self.reconfigure_for_feature_attack(feature_loc, feature_val, allow_reset_param_weights=True)
+        self.reconfigure_for_feature_attack(feature_val, feature_loc, allow_reset_param_weights=True)
         true_user_data["distribution"] = est_features[feature_loc]
 
         return [shared_data], [server_payload], true_user_data
@@ -691,12 +702,13 @@ class MaliciousClassParameterServer(HonestServer):
         feature_within_tolerance = False
         while not feature_within_tolerance:
             all_feature_val.append(feature_val)
-            self.reconfigure_for_feature_attack(feature_loc, feature_val, target_classes=cls_to_obtain)
+            log.info(f"Querying feature {feature_loc} with feature val {feature_val}.")
+            self.reconfigure_for_feature_attack(feature_val, feature_loc, target_classes=cls_to_obtain)
             server_payload = self.distribute_payload()
             shared_data, _ = user.compute_local_updates(server_payload)
             avg_feature = torch.flatten(reconstruct_feature(shared_data, cls_to_obtain))
             feature_val = float(avg_feature[feature_loc])
-
+            log.info(f"And found avg feature val {feature_val}.")
             if check_with_tolerance(feature_val, all_feature_val):
                 curr_grad = list(shared_data["gradients"])
                 feature_within_tolerance = True
@@ -758,7 +770,7 @@ class MaliciousClassParameterServer(HonestServer):
 
         for feat_01_value in feat_01_values:
             attack_state["feature_val"] = feat_01_value
-            self.reconfigure_for_feature_attack(feature_loc, feat_01_value, target_classes=cls_to_obtain)
+            self.reconfigure_for_feature_attack(feat_01_value, feature_loc, target_classes=cls_to_obtain)
             server_payload = self.distribute_payload()
             shared_data, _ = user.compute_local_updates(server_payload)
             feat_0 = torch.flatten(reconstruct_feature(shared_data, cls_to_obtain))
@@ -818,25 +830,26 @@ class MaliciousClassParameterServer(HonestServer):
 
         return est_features.T, sample_sizes
 
+    @torch.no_grad()
     def reconfigure_for_class_attack(self, target_classes=None):
         self.reset_model()
         if target_classes is None:
             target_classes = [self.cfg_server.target_cls_idx]
         cls_to_obtain = wrap_indices(target_classes)
 
-        with torch.no_grad():
-            *_, l_w, l_b = self.model.parameters()
+        *_, l_w, l_b = self.model.parameters()
 
-            # linear weight
-            masked_weight = torch.zeros_like(l_w)
-            masked_weight[cls_to_obtain] = self.cfg_server.class_multiplier
-            l_w.copy_(masked_weight)
+        # linear weight
+        masked_weight = torch.zeros_like(l_w)
+        masked_weight[cls_to_obtain] = self.cfg_server.class_multiplier
+        l_w.copy_(masked_weight)
 
-            # linear bias
-            masked_bias = torch.ones_like(l_b) * self.cfg_server.bias_multiplier
-            masked_bias[cls_to_obtain] = l_b[cls_to_obtain]
-            l_b.copy_(masked_bias)
+        # linear bias
+        masked_bias = torch.ones_like(l_b) * self.cfg_server.bias_multiplier
+        masked_bias[cls_to_obtain] = l_b[cls_to_obtain]
+        l_b.copy_(masked_bias)
 
+    @torch.no_grad()
     def reconfigure_for_feature_attack(
         self, feature_val, feature_loc, target_classes=None, allow_reset_param_weights=False
     ):
@@ -851,13 +864,12 @@ class MaliciousClassParameterServer(HonestServer):
         else:
             feat_multiplier = self.cfg_server.feat_multiplier
 
-        with torch.no_grad():
-            *_, l_w, l_b = self.model.parameters()
+        *_, l_w, l_b = self.model.parameters()
 
-            masked_weight = torch.zeros_like(l_w)
-            masked_weight[cls_to_obtain, feature_loc] = feat_multiplier
-            l_w.copy_(masked_weight)
+        masked_weight = torch.zeros_like(l_w)
+        masked_weight[cls_to_obtain, feature_loc] = feat_multiplier
+        l_w.copy_(masked_weight)
 
-            masked_bias = torch.ones_like(l_b) * self.cfg_server.bias_multiplier
-            masked_bias[cls_to_obtain] = -feature_val * self.cfg_server.feat_multiplier
-            l_b.copy_(masked_bias)
+        masked_bias = torch.ones_like(l_b) * self.cfg_server.bias_multiplier
+        masked_bias[cls_to_obtain] = -feature_val * self.cfg_server.feat_multiplier
+        l_b.copy_(masked_bias)

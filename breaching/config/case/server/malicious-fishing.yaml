@@ -14,7 +14,12 @@ target_cls_idx: 0
 grad_idx: 0 # which gradient to attack
 
 # Attack hyperparams:
-class_multiplier: 0.5
-feat_multiplier: 300 # Multiplicator in attack. This should be tiny, e.g. 0.5 for the basic class attack, but semi-large for feature attacks
+class_multiplier: 0.5 # Multiplicator when attacking separate classes
+feat_multiplier: 300 # Multiplicator in feature scaling
 bias_multiplier: 1000
 reset_param_weights: True
+
+reweight_collisions:
+  1.0 # optional: You can over/under-estimate the number of collisions for a feat attack.
+  # This will result in either reduced collisions (but higher chance of hitting nothing)
+  # or increased collisions that always recover something (which might be more than one data point)

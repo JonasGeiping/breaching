@@ -23,3 +23,4 @@ reset_param_weights: True
 # This will result in either reduced collisions (but higher chance of hitting nothing)
 # or increased collisions that always recover something (which might be more than one data point)
 reweight_collisions: 1.0
+feat_threshold: 1e-6 # When to identify two features as identical

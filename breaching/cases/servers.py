@@ -709,7 +709,7 @@ class MaliciousClassParameterServer(HonestServer):
             avg_feature = torch.flatten(reconstruct_feature(shared_data, cls_to_obtain))
             feature_val = float(avg_feature[feature_loc])
             log.info(f"And found avg feature val {feature_val}.")
-            if check_with_tolerance(feature_val, all_feature_val):
+            if check_with_tolerance(feature_val, all_feature_val, threshold=self.cfg_server.feat_threshold):
                 curr_grad = list(shared_data["gradients"])
                 feature_within_tolerance = True
 
@@ -781,10 +781,10 @@ class MaliciousClassParameterServer(HonestServer):
             feat_candidates = [feat_0_value]
 
             for feat_cand in feat_candidates:
-                if check_with_tolerance(feat_cand, attack_state["visited"]):
+                if check_with_tolerance(feat_cand, attack_state["visited"], self.cfg_server.feat_threshold):
                     pass
-                elif not check_with_tolerance(feat_cand, attack_state["visited"]):
-                    if not check_with_tolerance(feat_01_value, all_feature_val):
+                else:
+                    if not check_with_tolerance(feat_01_value, all_feature_val, self.cfg_server.feat_threshold):
                         all_feature_val.append(feat_01_value)
                         attack_state["feat_grad"].append(list(shared_data["gradients"]))
                     new_feat_01_values.append(feat_cand)
@@ -800,7 +800,7 @@ class MaliciousClassParameterServer(HonestServer):
             feat_candidates = [feat_1_value, (feat_01_value + feat_1_value) / 2, (feat_01_value + feat_0_value) / 2]
 
             for feat_cand in feat_candidates:
-                if not check_with_tolerance(feat_cand, attack_state["visited"]):
+                if not check_with_tolerance(feat_cand, attack_state["visited"], self.cfg_server.feat_threshold):
                     new_feat_01_values.append(feat_cand)
 
         return self.binary_attack_recursion(user, cls_to_obtain, attack_state, feat_01_values, all_feature_val)

@@ -663,8 +663,14 @@ class MaliciousClassParameterServer(HonestServer):
         est_mean, est_std = estimate_gt_stats(est_features, est_sample_sizes, indx=feature_loc)
 
         expected_data_points = np.sum(est_sample_sizes) / len(additional_users)
-        feature_val = stats.norm.ppf(1 / expected_data_points, est_mean, est_std)
-        print(feature_loc, est_mean, est_std, feature_val, expected_data_points)
+        if expected_data_points == 1:  # no collisions expected?
+            feature_val = self.cfg_server.class_multiplier
+        else:
+            feature_val = stats.norm.ppf(1 / expected_data_points, est_mean, est_std)
+        log.info(
+            f"Feature {feature_loc} with est. distribution mu={est_mean:2.4f},std={est_std:2.4f} "
+            f"cut off with value {feature_val} due to {expected_data_points} expected data points."
+        )
         self.reconfigure_for_feature_attack(feature_loc, feature_val)
 
         log.info("Commencing with update on target user.")
@@ -697,15 +703,13 @@ class MaliciousClassParameterServer(HonestServer):
 
         curr_grad[-1] = curr_grad[-1] * num_data_points
         curr_grad[:-1] = [grad_ii * num_data_points / self.cfg_server.feat_multiplier for grad_ii in curr_grad[:-1]]
-        all_feature_val.sort()
 
-        return [curr_grad], all_feature_val
+        return [curr_grad]
 
     def binary_attack(self, user, cls_to_obtain, attack_state):
         feature_val = attack_state["feature_val"]
         num_target_data = attack_state["num_target_data"]
         num_data_points = attack_state["num_data_points"]
-        all_feature_val = []
 
         # get filter feature points first
         all_feature_val = []
@@ -737,7 +741,7 @@ class MaliciousClassParameterServer(HonestServer):
             single_gradients.append(grad_i)
             prev_grad = copy.deepcopy(curr_grad)
 
-        return single_gradients, all_feature_val
+        return single_gradients
 
     def binary_attack_recursion(self, user, cls_to_obtain, attack_state, feat_01_values, all_feature_val):
 

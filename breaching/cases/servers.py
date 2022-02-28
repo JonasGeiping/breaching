@@ -28,6 +28,7 @@ from .malicious_modifications.classattack_utils import (
     reconstruct_feature,
     find_best_feat,
     estimate_gt_stats,
+    wrap_indices,
 )
 
 from .data import construct_dataloader
@@ -620,7 +621,7 @@ class MaliciousClassParameterServer(HonestServer):
 
                 # return to the model with multiplier=1, (better with larger multiplier, but not optimizable if it is too large)
                 self.reconfigure_for_feature_attack(
-                    feature_loc, feature_val, target_classes=cls_to_obtain, reset_param_weights=True
+                    feature_loc, feature_val, target_classes=cls_to_obtain, allow_reset_param_weights=True
                 )
                 server_payload = self.distribute_payload()
 
@@ -659,18 +660,19 @@ class MaliciousClassParameterServer(HonestServer):
         est_features, est_sample_sizes = self.estimate_feat(additional_users)
         feature_loc = find_best_feat(est_features, est_sample_sizes, method="kstest")
 
-        est_mean, est_std = estimate_gt_stats(est_features, est_sample_sizes, indx=f_indx)
+        est_mean, est_std = estimate_gt_stats(est_features, est_sample_sizes, indx=feature_loc)
 
-        exected_data_points = np.sum(est_sample_sizes) / len(additional_users)
-        feature_val = stats.norm.ppf(1 / exected_data_points, est_mean, est_std)
+        expected_data_points = np.sum(est_sample_sizes) / len(additional_users)
+        feature_val = stats.norm.ppf(1 / expected_data_points, est_mean, est_std)
+        print(feature_loc, est_mean, est_std, feature_val, expected_data_points)
         self.reconfigure_for_feature_attack(feature_loc, feature_val)
 
         log.info("Commencing with update on target user.")
         server_payload = self.distribute_payload()
         shared_data, true_user_data = target_user.compute_local_updates(server_payload)
 
-        self.reconfigure_for_feature_attack(feature_loc, feature_val, reset_param_weights=True)
-        true_user_data["distribution"] = est_features[f_indx]
+        self.reconfigure_for_feature_attack(feature_loc, feature_val, allow_reset_param_weights=True)
+        true_user_data["distribution"] = est_features[feature_loc]
 
         return [shared_data], [server_payload], true_user_data
 
@@ -791,7 +793,7 @@ class MaliciousClassParameterServer(HonestServer):
         """Estimate features from externally given additional users."""
         est_features = []
         sample_sizes = []
-        if target_classes is None:
+        if target_class is None:
             target_class = self.cfg_server.target_cls_idx
 
         for user in additional_users:
@@ -812,23 +814,18 @@ class MaliciousClassParameterServer(HonestServer):
 
         return est_features.T, sample_sizes
 
-    def reconfigure_for_class_attack(self, target_classes=None, reset_param_weights=False):
+    def reconfigure_for_class_attack(self, target_classes=None):
         self.reset_model()
         if target_classes is None:
             target_classes = [self.cfg_server.target_cls_idx]
         cls_to_obtain = wrap_indices(target_classes)
 
-        if reset_param_weights:
-            feat_multiplier = 1
-        else:
-            feat_multiplier = self.cfg_server.feat_multiplier
-
         with torch.no_grad():
-            *_, l_w, l_b = model.parameters()
+            *_, l_w, l_b = self.model.parameters()
 
             # linear weight
             masked_weight = torch.zeros_like(l_w)
-            masked_weight[cls_to_obtain] = feat_multiplier
+            masked_weight[cls_to_obtain] = self.cfg_server.class_multiplier
             l_w.copy_(masked_weight)
 
             # linear bias
@@ -836,20 +833,22 @@ class MaliciousClassParameterServer(HonestServer):
             masked_bias[cls_to_obtain] = l_b[cls_to_obtain]
             l_b.copy_(masked_bias)
 
-    def reconfigure_for_feature_attack(self, feature_val, feature_loc, target_classes=None, reset_param_weights=False):
+    def reconfigure_for_feature_attack(
+        self, feature_val, feature_loc, target_classes=None, allow_reset_param_weights=False
+    ):
         self.reset_model()
         if target_classes is None:
             target_classes = [self.cfg_server.target_cls_idx]
         cls_to_obtain = wrap_indices(target_classes)
         feature_loc = wrap_indices(feature_loc)
 
-        if reset_param_weights:
+        if allow_reset_param_weights and self.cfg_server.reset_param_weights:
             feat_multiplier = 1
         else:
             feat_multiplier = self.cfg_server.feat_multiplier
 
         with torch.no_grad():
-            *_, l_w, l_b = model.parameters()
+            *_, l_w, l_b = self.model.parameters()
 
             masked_weight = torch.zeros_like(l_w)
             masked_weight[cls_to_obtain, feature_loc] = feat_multiplier

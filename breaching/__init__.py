@@ -15,13 +15,13 @@ import hydra
 
 def get_config(overrides=[]):
     """Return default hydra config."""
-    with hydra.initialize(config_path="config"):
+    with hydra.initialize(version_base="1.1", config_path="config"):
         cfg = hydra.compose(config_name="cfg", overrides=overrides)
         print(f"Investigating use case {cfg.case.name} with server type {cfg.case.server.name}.")
     return cfg
 
 
-def get_attack_config(attack="invertinggradients", overrides=[]):
+def get_attack_config(version_base="1.1", attack="invertinggradients", overrides=[]):
     """Return default hydra config for a given attack."""
     with hydra.initialize(config_path="config/attack"):
         cfg = hydra.compose(config_name=attack, overrides=overrides)
@@ -29,7 +29,7 @@ def get_attack_config(attack="invertinggradients", overrides=[]):
     return cfg
 
 
-def get_case_config(case="1_single_image_small", overrides=[]):
+def get_case_config(version_base="1.1", case="1_single_image_small", overrides=[]):
     """Return default hydra config for a given attack."""
     with hydra.initialize(config_path="config/case"):
         cfg = hydra.compose(config_name=case, overrides=overrides)

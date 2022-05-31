@@ -103,7 +103,7 @@ def main_process(process_idx, local_group_size, cfg, num_trials=100):
     )
 
 
-@hydra.main(config_path="breaching/config", config_name="cfg")
+@hydra.main(version_base="1.1", config_path="breaching/config", config_name="cfg")
 def main_launcher(cfg):
     """This is boiler-plate code for the launcher."""
 

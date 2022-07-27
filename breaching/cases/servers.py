@@ -437,6 +437,9 @@ class MaliciousTransformerServer(HonestServer):
             # self.model.pos_encoder.embedding.weight.data[:, v_length : v_length * 4] = 0
             # embedding.weight.data[:, v_length * 4 :] = 0
 
+        with torch.no_grad():
+            lookup["norm_layer1"].bias += 100
+            lookup["norm_layer1"].weight *= 1
         # Modify the first attention mechanism in the model:
         # Set QKV modifications in-place:
         set_MHA(

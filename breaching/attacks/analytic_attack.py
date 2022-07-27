@@ -359,11 +359,18 @@ class DecepticonAttacker(AnalyticAttacker):
         # In that case only a subset of most-likely-to-be-real embeddings should be used
         len_data = shared_data[0]["metadata"]["num_data_points"]
         data_shape = server_secrets["ImprintBlock"]["data_shape"]
+        print(weight_grad.mean(dim=1).topk(k=64)[0])
+        print(weight_grad.abs().mean(dim=1).topk(k=64)[0])
         if len(breached_embeddings) > len_data * data_shape[0]:
             if self.cfg.breach_reduction == "weight":
                 best_guesses = torch.topk(
                     weight_grad.mean(dim=1)[bias_grad != 0].abs(), len_data * data_shape[0], largest=True
                 )
+            elif self.cfg.breach_reduction == "total-weight":
+                best_guesses = torch.topk(
+                    weight_grad.pow(2).sum(dim=1)[bias_grad != 0], len_data * data_shape[0], largest=True
+                )
+                
             elif self.cfg.breach_reduction == "bias":
                 best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len_data * data_shape[0], largest=False)
             else:
@@ -733,7 +740,7 @@ class DecepticonAttacker(AnalyticAttacker):
             references = references[None, :]
         if measure == "corrcoef":
             s, e = inputs.shape
-            corr = np.corrcoef(inputs.detach().cpu().numpy(), references.detach().cpu().numpy())[s:, :s]
+            corr = np.abs(np.corrcoef(inputs.detach().cpu().numpy(), references.detach().cpu().numpy())[s:, :s])
             corr[np.isnan(corr)] = 0
         else:
             corr = references.matmul(inputs.T) / references.norm(dim=-1)[:, None] / inputs.norm(dim=-1)[None, :]

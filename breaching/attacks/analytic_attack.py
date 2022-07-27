@@ -215,7 +215,9 @@ class DecepticonAttacker(AnalyticAttacker):
             ordered_breached_embeddings = torch.zeros_like(positional_embeddings)
             for sentence in range(len_data):
                 order_breach_to_positions, _, costs = self._match_embeddings(
-                    positional_embeddings[: data_shape[0]], breached_embeddings[sentence_labels == sentence]
+                    positional_embeddings[: data_shape[0]],
+                    breached_embeddings[sentence_labels == sentence],
+                    measure=self.cfg.matcher,
                 )
                 ordered_breached_embeddings[sentence * data_shape[0] + order_breach_to_positions] = breached_embeddings[
                     sentence_labels == sentence
@@ -237,7 +239,9 @@ class DecepticonAttacker(AnalyticAttacker):
             breached_without_positions = self._separate(ordered_breached_embeddings, positional_embeddings)
             if leaked_tokens is not None:
                 order_leaked_to_breached, _, costs = self._match_embeddings(
-                    leaked_embeddings, breached_without_positions
+                    leaked_embeddings,
+                    breached_without_positions,
+                    measure=self.cfg.matcher,
                 )
                 recovered_tokens = leaked_tokens.view(-1)[order_leaked_to_breached]
             else:
@@ -254,7 +258,9 @@ class DecepticonAttacker(AnalyticAttacker):
         elif self.cfg.recovery_order == "tokens-first":
             # First assign and remove the token id from each breached embedding
             if leaked_tokens is not None:
-                order_leaked_to_breached, _, costs = self._match_embeddings(leaked_embeddings, breached_embeddings)
+                order_leaked_to_breached, _, costs = self._match_embeddings(
+                    leaked_embeddings, breached_embeddings, measure=self.cfg.matcher
+                )
                 recovered_tokens = leaked_tokens.view(-1)[order_leaked_to_breached]
             else:
                 recovered_tokens = torch.zeros(len(breached_embeddings), dtype=torch.long)
@@ -275,7 +281,9 @@ class DecepticonAttacker(AnalyticAttacker):
 
             for sentence in range(len_data):
                 order_breach_to_positions, _, costs = self._match_embeddings(
-                    positional_embeddings[: data_shape[0]], breached_just_positions[sentence_labels == sentence]
+                    positional_embeddings[: data_shape[0]],
+                    breached_just_positions[sentence_labels == sentence],
+                    measure=self.cfg.matcher,
                 )
                 ordered_tokens[sentence * data_shape[0] + order_breach_to_positions] = recovered_tokens[
                     sentence_labels == sentence
@@ -359,8 +367,8 @@ class DecepticonAttacker(AnalyticAttacker):
         # In that case only a subset of most-likely-to-be-real embeddings should be used
         len_data = shared_data[0]["metadata"]["num_data_points"]
         data_shape = server_secrets["ImprintBlock"]["data_shape"]
-        print(weight_grad.mean(dim=1).topk(k=64)[0])
-        print(weight_grad.abs().mean(dim=1).topk(k=64)[0])
+        # print(weight_grad.mean(dim=1).topk(k=64)[0])
+        # print(weight_grad.abs().mean(dim=1).topk(k=64)[0])
         if len(breached_embeddings) > len_data * data_shape[0]:
             if self.cfg.breach_reduction == "weight":
                 best_guesses = torch.topk(
@@ -370,7 +378,7 @@ class DecepticonAttacker(AnalyticAttacker):
                 best_guesses = torch.topk(
                     weight_grad.pow(2).sum(dim=1)[bias_grad != 0], len_data * data_shape[0], largest=True
                 )
-                
+
             elif self.cfg.breach_reduction == "bias":
                 best_guesses = torch.topk(bias_grad[bias_grad != 0].abs(), len_data * data_shape[0], largest=False)
             else:
@@ -387,7 +395,12 @@ class DecepticonAttacker(AnalyticAttacker):
         return breached_embeddings
 
     def _backfill_embeddings(
-        self, ordered_embeddings, fillable_embeddings, positional_embeddings, sentence_labels, data_shape,
+        self,
+        ordered_embeddings,
+        fillable_embeddings,
+        positional_embeddings,
+        sentence_labels,
+        data_shape,
     ):
         """Fill missing positions in ordered_embeddings based on some heuristic
         with collisions from fillable_embeddings.
@@ -400,7 +413,7 @@ class DecepticonAttacker(AnalyticAttacker):
             # Fill missing locations globally
             while len(free_positions) > 0:
                 order_breach_to_positions, selection_tensor, costs = self._match_embeddings(
-                    positional_embeddings[free_positions], fillable_embeddings
+                    positional_embeddings[free_positions], fillable_embeddings, measure=self.cfg.matcher
                 )
                 ordered_embeddings[free_positions[order_breach_to_positions]] = fillable_embeddings[selection_tensor]
                 if self.cfg.backfill_removal is not None:
@@ -419,6 +432,7 @@ class DecepticonAttacker(AnalyticAttacker):
                     order_breach_to_positions, selection_tensor, costs = self._match_embeddings(
                         positional_embeddings[: data_shape[0]][free_positions],
                         fillable_embeddings[sentence_labels == sentence],
+                        measure=self.cfg.matcher,
                     )
                     sentence_inputs[free_positions[order_breach_to_positions]] = fillable_embeddings[
                         sentence_labels == sentence
@@ -461,7 +475,7 @@ class DecepticonAttacker(AnalyticAttacker):
             # Fill missing locations globally
             while len(free_positions) > 0:
                 order_breach_to_positions, selection_tensor, costs = self._match_embeddings(
-                    positional_embeddings[free_positions], fillable_embeddings
+                    positional_embeddings[free_positions], fillable_embeddings, measure=self.cfg.matcher
                 )
                 ordered_tokens[free_positions[order_breach_to_positions]] = recovered_tokens[selection_tensor]
                 if self.cfg.backfill_removal is not None:
@@ -480,6 +494,7 @@ class DecepticonAttacker(AnalyticAttacker):
                     order_breach_to_positions, selection_tensor, costs = self._match_embeddings(
                         positional_embeddings[: data_shape[0]][free_positions],
                         fillable_embeddings[sentence_labels == sentence],
+                        measure=self.cfg.matcher,
                     )
                     sentence_inputs[free_positions[order_breach_to_positions]] = recovered_tokens[
                         sentence_labels == sentence
@@ -521,7 +536,7 @@ class DecepticonAttacker(AnalyticAttacker):
             replicated_seeds = torch.repeat_interleave(seeds, free_positions, dim=0)
             replicated_labels = torch.repeat_interleave(torch.arange(0, shape[0]), free_positions, dim=0)
             order_breach_to_seed, selection_tensor, costs = self._match_embeddings(
-                nontrivial_components, replicated_seeds
+                nontrivial_components, replicated_seeds, measure=self.cfg.matcher
             )
             # Accept assignments with higher correlation than 0.5
             matches = (costs > match_t).nonzero().squeeze(dim=-1)
@@ -682,7 +697,7 @@ class DecepticonAttacker(AnalyticAttacker):
             replicated_seeds = torch.repeat_interleave(seeds, shape[1], dim=0)
 
             # Recompute correlations based on these mean seeds
-            order_breach_to_seed, _, _ = self._match_embeddings(replicated_seeds, components)
+            order_breach_to_seed, _, _ = self._match_embeddings(replicated_seeds, components, measure=self.cfg.matcher)
             sentence_labels = (order_breach_to_seed / shape[1]).to(dtype=torch.long)
 
         elif algorithm == "threshold":
@@ -727,7 +742,7 @@ class DecepticonAttacker(AnalyticAttacker):
                 replicated_seeds = torch.repeat_interleave(seeds, shape[1], dim=0)
 
                 # Recompute correlations based on these mean seeds
-                order_breach_to_seed, _, _ = self._match_embeddings(replicated_seeds, A)
+                order_breach_to_seed, _, _ = self._match_embeddings(replicated_seeds, A, measure=self.cfg.matcher)
                 sentence_labels = (order_breach_to_seed / shape[1]).to(dtype=torch.long)
             # Should use U later on to do a better collision detection
 

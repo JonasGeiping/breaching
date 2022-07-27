@@ -58,7 +58,7 @@ def main_process(process_idx, local_group_size, cfg):
         breaching.utils.save_reconstruction(reconstructed_user_data, payloads, true_user_data, cfg)
 
 
-@hydra.main(config_path="breaching/config", config_name="cfg")
+@hydra.main(config_path="breaching/config", config_name="cfg", version_base="1.1")
 def main_launcher(cfg):
     """This is boiler-plate code for the launcher."""
 
@@ -67,7 +67,7 @@ def main_launcher(cfg):
 
     launch_time = time.time()
     if cfg.seed is None:
-        cfg.seed = torch.randint(0, 2 ** 32 - 1, (1,)).item()
+        cfg.seed = torch.randint(0, 2**32 - 1, (1,)).item()
 
     log.info(OmegaConf.to_yaml(cfg))
     breaching.utils.initialize_multiprocess_log(cfg)  # manually save log configuration

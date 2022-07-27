@@ -21,6 +21,7 @@ backfilling: local # or "global"
 backfill_removal: # None or a separation option
 sentence_based_backfill: False
 breach_reduction: bias
+matcher: corrcoef
 
 # Implementation Details
 impl:

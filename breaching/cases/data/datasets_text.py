@@ -14,9 +14,9 @@ log = logging.getLogger(__name__)
 def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_dataset=False):
     # os.environ["TOKENIZERS_PARALLELISM"] = "false"
     cfg_data.path = os.path.expanduser(cfg_data.path)
-    from datasets import load_dataset, Dataset, set_progress_bar_enabled
+    from datasets import load_dataset, Dataset, disable_progress_bar
 
-    set_progress_bar_enabled(False)
+    disable_progress_bar()
 
     if user_idx is None:
         user_idx = torch.randint(0, cfg_data.default_clients, (1,)).item()
@@ -260,7 +260,7 @@ def url_basename(origin: str) -> str:
 def _fetch_lzma_file(origin: str, filename: str):
     """Fetches a LZMA compressed file and decompresses on the fly."""
     # Read and decompress in approximately megabyte chunks.
-    chunk_size = 2 ** 20
+    chunk_size = 2**20
     decompressor = lzma.LZMADecompressor()
     with urllib.request.urlopen(origin) as in_stream, open(filename, "wb") as out_stream:
         length = in_stream.headers.get("content-length")
@@ -289,14 +289,14 @@ def _load_sql_database(origin_url, cache_dir="~/data"):
 
 def _fetch_client_id(database_filepath, user_idx, split_name=None):
     """Fetches the list of client_ids.
-  Args:
-    database_filepath: A path to a SQL database.
-    user_idx: A numerical index to this user
-    split_name: An optional split name to filter on. If `None`, all client ids
-      are returned.
-  Returns:
-    An iterator of string client ids.
-  """
+    Args:
+      database_filepath: A path to a SQL database.
+      user_idx: A numerical index to this user
+      split_name: An optional split name to filter on. If `None`, all client ids
+        are returned.
+    Returns:
+      An iterator of string client ids.
+    """
     connection = sqlite3.connect(database_filepath)
     query = "SELECT DISTINCT client_id FROM client_metadata"
     if split_name is not None:

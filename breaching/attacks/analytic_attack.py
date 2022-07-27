@@ -313,13 +313,13 @@ class DecepticonAttacker(AnalyticAttacker):
 
     def _extract_breaches(self, shared_data, server_payload, server_secrets):
         """Extract breached embeddings from linear layers. Handles some of the ugly complexity like
-            * Transposing for conv-type implementations
-            * Resorting biases if they were unsorted (to hide the attack)
-            * Invert cumulative sum structure
-            * --- Do the actual extraction by weight_grad divided by bias_grad ---
-            * Cast to correct data types
-            * Remove extraneous hits (for example because of gradient noise)
-            * Remove NaNs if any
+        * Transposing for conv-type implementations
+        * Resorting biases if they were unsorted (to hide the attack)
+        * Invert cumulative sum structure
+        * --- Do the actual extraction by weight_grad divided by bias_grad ---
+        * Cast to correct data types
+        * Remove extraneous hits (for example because of gradient noise)
+        * Remove NaNs if any
         """
         weight_idx = server_secrets["ImprintBlock"]["weight_idx"]
         bias_idx = server_secrets["ImprintBlock"]["bias_idx"]
@@ -390,9 +390,9 @@ class DecepticonAttacker(AnalyticAttacker):
         self, ordered_embeddings, fillable_embeddings, positional_embeddings, sentence_labels, data_shape,
     ):
         """Fill missing positions in ordered_embeddings based on some heuristic
-           with collisions from fillable_embeddings.
-           This method has a good amount of overlap with _backfill_embeddings but combining them was just a mess of
-           if inputs_are_tokens, then ...
+        with collisions from fillable_embeddings.
+        This method has a good amount of overlap with _backfill_embeddings but combining them was just a mess of
+        if inputs_are_tokens, then ...
         """
         free_positions = (ordered_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
 
@@ -450,10 +450,10 @@ class DecepticonAttacker(AnalyticAttacker):
         recovered_tokens=None,
     ):
         """Fill missing positions in ordered_tokens based on some heuristic
-           with collisions from fillable_embeddings.
-           recovered_tokens has to be a lookup for the tokens corresponding to fillable_embeddings
-           This method has a good amount of overlap with _backfill_embeddings but combining them was just a mess of
-           if inputs_are_tokens, then ...
+        with collisions from fillable_embeddings.
+        recovered_tokens has to be a lookup for the tokens corresponding to fillable_embeddings
+        This method has a good amount of overlap with _backfill_embeddings but combining them was just a mess of
+        if inputs_are_tokens, then ...
         """
         free_positions = (ordered_tokens == -1).nonzero().squeeze(dim=1)
 
@@ -572,9 +572,9 @@ class DecepticonAttacker(AnalyticAttacker):
         return unmixed
 
     def _supplement_from_full_vocabulary(self, recovered_tokens, costs, breached_without_positions, v_length, lookup):
-        """ Optionally: Match breached_without_positions to any embedding entries
-            If the costs from the matching above are low, then this can recover lost tokens that were missed by
-            .recover_token_information()
+        """Optionally: Match breached_without_positions to any embedding entries
+        If the costs from the matching above are low, then this can recover lost tokens that were missed by
+        .recover_token_information()
         """
         vocab_size = lookup["embedding"].weight.shape[0]
         all_token_ids = torch.arange(0, vocab_size, device=self.setup["device"])
@@ -739,6 +739,10 @@ class DecepticonAttacker(AnalyticAttacker):
         if references.ndim == 1:
             references = references[None, :]
         if measure == "corrcoef":
+            s, e = inputs.shape
+            corr = np.abs(np.corrcoef(inputs.detach().cpu().numpy(), references.detach().cpu().numpy())[s:, :s])
+            corr[np.isnan(corr)] = 0
+        elif measure == "abs-corrcoef":
             s, e = inputs.shape
             corr = np.abs(np.corrcoef(inputs.detach().cpu().numpy(), references.detach().cpu().numpy())[s:, :s])
             corr[np.isnan(corr)] = 0

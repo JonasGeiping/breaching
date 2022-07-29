@@ -34,13 +34,16 @@ def system_startup(process_idx, local_group_size, cfg):
 
     dtype = getattr(torch, cfg.case.impl.dtype)  # :> dont mess this up
 
-    device = torch.device(f"cuda:{process_idx}") if torch.cuda.is_available() else torch.device("cpu")
+    if cfg.case.impl.enable_gpu_acc and torch.cuda.is_available():
+        device = torch.device(f"cuda:{process_idx}")
+    else:
+        device = torch.device("cpu")
     setup = dict(device=device, dtype=dtype)
     python_version = sys.version.split(" (")[0]
     log.info(f"Platform: {sys.platform}, Python: {python_version}, PyTorch: {torch.__version__}")
     log.info(f"CPUs: {torch.get_num_threads()}, GPUs: {torch.cuda.device_count()} on {socket.gethostname()}.")
 
-    if torch.cuda.is_available():
+    if cfg.case.impl.enable_gpu_acc and torch.cuda.is_available():
         torch.cuda.set_device(process_idx)
         log.info(f"GPU : {torch.cuda.get_device_name(device=device)}")
 
@@ -251,7 +254,9 @@ def save_reconstruction(
             dm = torch.as_tensor(metadata.mean)[None, :, None, None]
             ds = torch.as_tensor(metadata.std)[None, :, None, None]
         else:
-            dm, ds = torch.tensor(0,), torch.tensor(1)
+            dm, ds = torch.tensor(
+                0,
+            ), torch.tensor(1)
 
         rec_denormalized = torch.clamp(reconstructed_user_data["data"].cpu() * ds + dm, 0, 1)
         ground_truth_denormalized = torch.clamp(true_user_data["data"].cpu() * ds + dm, 0, 1)
@@ -260,7 +265,8 @@ def save_reconstruction(
             ground_truth_denormalized = ground_truth_denormalized[target_indx]
 
         filepath = os.path.join(
-            "reconstructions", f"img_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.png",
+            "reconstructions",
+            f"img_rec_{cfg.case.data.name}_{cfg.case.model}_user{cfg.case.user.user_idx}.png",
         )
 
         if not side_by_side:

@@ -7,6 +7,7 @@ sample_with_replacement: False
 dtype: float # this has to be float when mixed_precision is True
 non_blocking: True
 sharing_strategy: file_descriptor
+enable_gpu_acc: False # use this flag to disable GPU usage
 
 benchmark: True # CUDNN benchmarking
 deterministic: False # This option will disable non-deterministic ops
@@ -25,4 +26,4 @@ checkpoint:
   name:
   save_every_nth_step: 10
 
-enable_huggingface_offline_mode: False # Only set this to true after caching everything
+enable_huggingface_offline_mode: True # Only set this to true after caching everything

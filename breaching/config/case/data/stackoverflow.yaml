@@ -21,7 +21,7 @@ default_clients: 715 # number of unique characters in shakespeare plays
 # train: 16_068
 # test: 2_356
 partition: given # use natural data partition
-examples_from_split: test
+examples_from_split: train
 
 # Data-specific implementation constants:
 batch_size: 128

@@ -7,7 +7,7 @@ label_strategy: # Labels are not required for this attack, but see tokens a few 
 # Key hyperparameters:
 token_strategy: decoder-bias # This is actually the "token" recovery strategy as labels~=tokens
 token_cutoff: 1.5 # if the token strategy is "embedding-norm" and tied embeddings exist, then this is the cutoff
-embedding_token_weight: 0 # With this weight, greedy correlations to the full vocab are used in addition to leaked tokens
+embedding_token_weight: 0.25 # With this weight, greedy correlations to the full vocab are used in addition to leaked tokens
 sentence_algorithm: k-means # This algorithm decides how sentences are disambiguated
 
 # Experimental hyperparameters:

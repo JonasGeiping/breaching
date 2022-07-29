@@ -104,7 +104,7 @@ def _get_preprocessing(tokenizer, cfg_data):
             return result
 
         if cfg_data.task == "causal-lm":
-            # This setting added "labels" during "group_texts"
+            # This setting adds "labels" during "group_texts"
             collate_fn = default_data_collator
         else:
             # This collate_fn generates "labels" automatically after masking

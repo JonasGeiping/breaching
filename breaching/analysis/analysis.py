@@ -93,7 +93,12 @@ def report(
             f"max R-PSNR: {m['max_rpsnr']:4.2f} | max SSIM: {m['max_ssim']:2.4f} | Label Acc: {test_label_acc:2.2%}"
         )
 
-    metrics = dict(**modality_metrics, feat_mse=feat_mse, parameters=parameters, label_acc=test_label_acc,)
+    metrics = dict(
+        **modality_metrics,
+        feat_mse=feat_mse,
+        parameters=parameters,
+        label_acc=test_label_acc,
+    )
     return metrics
 
 
@@ -117,6 +122,8 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
         reconstructed_user_data["data"] = reconstructed_user_data["data"][order]
         if reconstructed_user_data["labels"] is not None:
             reconstructed_user_data["labels"] = reconstructed_user_data["labels"][order]
+        if "confidence" in reconstructed_user_data:
+            reconstructed_user_data["confidence"] = reconstructed_user_data["confidence"][order]
     else:
         order = None
     text_metrics["order"] = order
@@ -132,6 +139,14 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
     for rec_example, ref_example in zip(reconstructed_user_data["data"], true_user_data["data"]):
         metrics["accuracy"].add_batch(predictions=rec_example, references=ref_example)
     text_metrics["accuracy"] = metrics["accuracy"].compute()["accuracy"]
+
+    # Per sentence Accuracy:
+    B = reconstructed_user_data["data"].shape[0]
+    accuracies = []
+    for rec_sentence, ref_sentence in zip(reconstructed_user_data["data"], true_user_data["data"]):
+        accuracies.append((rec_sentence == ref_sentence).float().mean().item())
+    text_metrics["intra-sentence_accuracy"] = accuracies
+    text_metrics["max-sentence_accuracy"] = max(accuracies)
 
     for name in ["bleu", "google_bleu"]:
         # Metrics that operate on lists of words [re-encoded into word-level to reduce tokenizer impact]
@@ -327,12 +342,12 @@ def compute_text_order(reconstructed_user_data, true_user_data):
 
 def normalize_tensor(in_feat, eps=1e-10):
     """From https://github.com/richzhang/PerceptualSimilarity/blob/master/lpips/__init__.py."""
-    norm_factor = torch.sqrt(torch.sum(in_feat ** 2, dim=1, keepdim=True))
+    norm_factor = torch.sqrt(torch.sum(in_feat**2, dim=1, keepdim=True))
     return in_feat / (norm_factor + eps)
 
 
 def spatial_average(in_tens, keepdim=True):
-    """ https://github.com/richzhang/PerceptualSimilarity/blob/master/lpips/lpips.py ."""
+    """https://github.com/richzhang/PerceptualSimilarity/blob/master/lpips/lpips.py ."""
     return in_tens.mean([2, 3], keepdim=keepdim)
 
 

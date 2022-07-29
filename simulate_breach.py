@@ -75,7 +75,8 @@ def main_launcher(cfg):
 
     log.info("-------------------------------------------------------------")
     log.info(
-        f"Finished computations with total train time: " f"{str(datetime.timedelta(seconds=time.time() - launch_time))}"
+        f"Finished computations {cfg.name} with total train time: "
+        f"{str(datetime.timedelta(seconds=time.time() - launch_time))}"
     )
     log.info("-----------------Job finished.-------------------------------")
 

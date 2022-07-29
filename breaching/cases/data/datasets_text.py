@@ -28,15 +28,17 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
 
     cfg_data.path = os.path.expanduser(cfg_data.path)
 
-    if cfg_data.name == "wikitext":
+    if cfg_data.name == "wikitext":  # random tokens shares the wikitext tokenizer
         raw_dataset = load_dataset("wikitext", "wikitext-103-v1", cache_dir=cfg_data.path, split=split)
         raw_dataset = _split_wikipedia_into_articles(raw_dataset, user_idx, return_full_dataset, min_length=25)
     elif cfg_data.name == "stackoverflow":
         raw_texts = load_stackoverflow(cfg_data.path, user_idx, return_full_dataset, split=split)
-        raw_dataset = Dataset.from_dict(dict(text=raw_texts), cache_dir=cfg_data.path)
+        raw_dataset = Dataset.from_dict(dict(text=raw_texts))
     elif cfg_data.name == "shakespeare":
         raw_texts = load_shakespeare(cfg_data.path, user_idx, return_full_dataset, split=split)
-        raw_dataset = Dataset.from_dict(dict(text=raw_texts), cache_dir=cfg_data.path)
+        raw_dataset = Dataset.from_dict(dict(text=raw_texts))
+    elif cfg_data.name == "random-tokens":
+        pass
     elif cfg_data.name == "cola":
         if return_full_dataset:
             raw_datapoint = load_dataset("glue", "cola", cache_dir=cfg_data.path)[split]
@@ -46,15 +48,20 @@ def _build_and_split_dataset_text(cfg_data, split, user_idx=None, return_full_da
     else:
         raise ValueError(f"Invalid text dataset {cfg_data.name} provided.")
 
-    columns = raw_dataset.column_names
-    if "label" in columns:
-        columns.remove("label")
-        raw_dataset = raw_dataset.rename_column("label", "labels")
     tokenizer = _get_tokenizer(cfg_data.tokenizer, cfg_data.vocab_size, cache_dir=cfg_data.path)
     tokenize, group_texts, collate_fn = _get_preprocessing(tokenizer, cfg_data)
-
-    tokenized_dataset = raw_dataset.map(tokenize, batched=True, remove_columns=columns, load_from_cache_file=False)
-    tokenized_dataset = tokenized_dataset.map(group_texts, batched=True, load_from_cache_file=False)
+    if cfg_data.name != "random-tokens":
+        columns = raw_dataset.column_names
+        if "label" in columns:
+            columns.remove("label")
+            raw_dataset = raw_dataset.rename_column("label", "labels")
+        tokenized_dataset = raw_dataset.map(tokenize, batched=True, remove_columns=columns, load_from_cache_file=False)
+        tokenized_dataset = tokenized_dataset.map(group_texts, batched=True, load_from_cache_file=False)
+    else:
+        generator = torch.Generator()
+        generator.manual_seed(user_idx + 233)
+        random_tokens = torch.randint(0, cfg_data.vocab_size, (cfg_data.size, cfg_data.shape[0]), generator=generator)
+        tokenized_dataset = Dataset.from_dict(dict(input_ids=random_tokens, labels=random_tokens))
 
     tokenized_dataset.set_format("torch")
     tokenized_dataset.tokenizer = tokenizer  # Stash here

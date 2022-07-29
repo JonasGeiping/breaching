@@ -605,16 +605,20 @@ class DecepticonAttacker(AnalyticAttacker):
         all_tokens_embeddings_np = all_token_embeddings.detach()[1:].cpu().to(dtype=self.setup["dtype"]).numpy()
         for idx, entry in enumerate(breached_tokens_np):
             max_corr = self.vcorrcoef(all_tokens_embeddings_np, entry)
-            val, loc = torch.as_tensor(max_corr).max(dim=0)
+            if "abs" in self.cfg.matcher:
+                val, loc = torch.as_tensor(max_corr).abs().max(dim=0)
+            else:
+                val, loc = torch.as_tensor(max_corr).max(dim=0)
             if val * self.cfg.embedding_token_weight > costs[idx]:
                 num_replaced_tokens += 1
                 avg_costs += costs[idx]
                 avg_new_corr += val
                 recovered_tokens[idx] = loc + 1
-        log.info(
-            f"Replaced {num_replaced_tokens} tokens with avg. corr {avg_costs / num_replaced_tokens} "
-            f"with new tokens with avg corr {avg_new_corr / num_replaced_tokens}"
-        )
+        if num_replaced_tokens > 0:
+            log.info(
+                f"Replaced {num_replaced_tokens} tokens with avg. corr {avg_costs / num_replaced_tokens} "
+                f"with new tokens with avg corr {avg_new_corr / num_replaced_tokens}"
+            )
         return recovered_tokens
 
     def _match_breaches_to_sentences(self, sentence_id_components, shape, algorithm="dynamic-threshold"):

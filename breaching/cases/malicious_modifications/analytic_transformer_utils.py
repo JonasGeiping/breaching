@@ -38,7 +38,7 @@ def compute_feature_distribution(model, target_layer, measurement, server):
         cfg = server.cfg_data
         # weights = torch.ones((cfg.vocab_size))  # Uniform vocabulary
         # weights = 1 / torch.arange(1, cfg.vocab_size + 1)  # Zipfy enough?
-        for i in range(50):
+        for i in range(100):
             inputs = torch.randint(0, cfg.vocab_size, (cfg.batch_size, *cfg.shape), device=server.setup["device"])
             # sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=cfg.batch_size * cfg.shape[0])
             # samples = list(iter(sampler))

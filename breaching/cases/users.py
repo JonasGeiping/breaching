@@ -233,6 +233,38 @@ class UserSingleStep(torch.nn.Module):
         for line in decoded_tokens:
             print(line)
 
+    def print_with_confidence(self, user_data, **kwargs):
+        """Print decoded user data to output."""
+        tokenizer = self.dataloader.dataset.tokenizer
+        colors = [160, 166, 172, 178, 184, 190]
+        thresholds = torch.as_tensor([0, 0.5, 0.75, 0.95, 0.99, 0.9999])
+
+        def bg_color(text, confidence_score):
+            threshold = ((confidence_score > thresholds) + torch.arange(0, len(colors)) / 100).argmax()
+            return "\33[48;5;" + str(colors[threshold]) + "m" + text + "\33[0m"
+
+        for sequence, sequence_confidence in zip(user_data["data"], user_data["confidence"]):
+            for token, c in zip(sequence, sequence_confidence):
+                decoded_token = tokenizer.decode(token)
+                print(bg_color(decoded_token + " ", c), end="")
+            print("\n")
+
+    def print_and_mark_correct(self, user_data, true_user_data, **kwargs):
+        """Print decoded user data to output."""
+        tokenizer = self.dataloader.dataset.tokenizer
+
+        def bg_color(text, correct):
+            if correct:
+                return "\33[48;5;190m" + text + "\33[0m"
+            else:
+                return "\33[48;5;160m" + text + "\33[0m"
+
+        for sequence, gt_sequence in zip(user_data["data"], true_user_data["data"]):
+            for token, gt_token in zip(sequence, gt_sequence):
+                decoded_token = tokenizer.decode(token)
+                print(bg_color(decoded_token + " ", token == gt_token), end="")
+            print("\n")
+
     def plot(self, user_data, scale=False, print_labels=False):
         """Plot user data to output. Probably best called from a jupyter notebook."""
         import matplotlib.pyplot as plt  # lazily import this here

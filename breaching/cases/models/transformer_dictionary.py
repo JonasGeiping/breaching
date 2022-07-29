@@ -10,6 +10,7 @@ def lookup_module_names(model_name, model):
     if "transformer" in model_name:  # These are the basic transformers from language_models.py
         assert model_name in ["transformer1", "transformer3", "transformer3f", "transformer3t", "transformerS"]
 
+        lookup["loss"] = "causal"
         lookup["embedding"] = model.encoder
         lookup["pos_encoder"] = model.pos_encoder
 
@@ -47,6 +48,7 @@ def lookup_module_names(model_name, model):
     elif "gpt2" in model_name:  # This is huggingface's gpt2 implementation
         assert model_name in ["gpt2", "gpt2S"]
 
+        lookup["loss"] = "causal"
         lookup["embedding"] = model.model.transformer.wte
         lookup["pos_encoder"] = PositionalContainer(model.model.transformer.wpe)
 
@@ -91,11 +93,12 @@ def lookup_module_names(model_name, model):
             "huawei-noah/TinyBERT_General_4L_312D",
         ]
         bert = model.model.bert
+        lookup["loss"] = "mlm"
         lookup["embedding"] = bert.embeddings.word_embeddings
         lookup["pos_encoder"] = PositionalContainer(bert.embeddings.position_embeddings)
 
         lookup["norm_layer0"] = bert.embeddings.LayerNorm  # This would be a norm before the MHA
-        lookup["norm_layer1"] = torch.nn.Identity()  # ??? bert.encoder.layer[0].output.LayerNorm
+        lookup["norm_layer1"] = bert.encoder.layer[0].output.LayerNorm
 
         lookup["first_attention"] = dict()
         lookup["first_attention"]["mode"] = "bert"

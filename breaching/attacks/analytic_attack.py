@@ -316,7 +316,9 @@ class DecepticonAttacker(AnalyticAttacker):
         else:
             raise ValueError(f"Invalid recovery order {self.cfg.recovery_order} given.")
 
-        reconstructed_data = dict(data=final_tokens, labels=final_tokens)
+        confidence_per_token = self._compute_confidence_estimates(final_tokens, breached_embeddings, v_length, lookup)
+
+        reconstructed_data = dict(data=final_tokens, labels=final_tokens, confidence=confidence_per_token)
         return reconstructed_data, stats
 
     def _extract_breaches(self, shared_data, server_payload, server_secrets):
@@ -404,7 +406,7 @@ class DecepticonAttacker(AnalyticAttacker):
     ):
         """Fill missing positions in ordered_embeddings based on some heuristic
         with collisions from fillable_embeddings.
-        This method has a good amount of overlap with _backfill_embeddings but combining them was just a mess of
+        This method has a good amount of overlap with _backfill_tokens but combining them was just a mess of
         if inputs_are_tokens, then ...
         """
         free_positions = (ordered_embeddings.norm(dim=-1) == 0).nonzero().squeeze(dim=1)
@@ -778,6 +780,29 @@ class DecepticonAttacker(AnalyticAttacker):
         selection_tensor = torch.as_tensor(row_ind, device=inputs.device, dtype=torch.long)
         costs = torch.as_tensor(corr[row_ind, col_ind], device=inputs.device, dtype=torch.float)
         return order_tensor, selection_tensor, costs
+
+    def _compute_confidence_estimates(self, final_tokens, breached_embeddings, v_length, lookup):
+        """Rough estimates how confident the attacker is that the token is correctly identified. This is uncalibrated confidence!.
+        Or rather, a confidence of 1.0 is a good indicator that the token is correct, all lower confidences indicate mismatches."""
+        vocab_size = lookup["embedding"].weight.shape[0]
+        all_token_ids = torch.arange(0, vocab_size, device=self.setup["device"])
+        all_token_embeddings = lookup["embedding"](all_token_ids)
+
+        pure_positions = lookup["pos_encoder"](torch.zeros_like(lookup["embedding"](final_tokens))).view(
+            -1, all_token_embeddings.shape[1]
+        )
+        estimated_word_embeddings = all_token_embeddings[final_tokens.view(-1)]
+        estimated_final_embeddings = lookup["norm_layer1"](estimated_word_embeddings + pure_positions)[:, v_length:-1]
+        # free_positions = estimated_final_embeddings.shape[0] - breached_embeddings.shape[0]
+        # _, _, costs = self._match_embeddings(
+        #     estimated_final_embeddings,
+        #     breached_embeddings.repeat_interleave(free_positions // breached_embeddings.shape[0] + 2, dim=0),
+        #     measure=self.cfg.matcher,
+        # )
+        costs = torch.zeros_like(final_tokens.view(-1), dtype=torch.float)
+        for idx, embedding in enumerate(estimated_final_embeddings):
+            costs[idx] = self.vcorrcoef(breached_embeddings.numpy(), embedding.numpy()).max().item()
+        return costs.view_as(final_tokens)
 
     @staticmethod
     def vcorrcoef(X, y):

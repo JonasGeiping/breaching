@@ -40,3 +40,27 @@ class MLMLoss(torch.nn.Module):
         else:
             labels = labels.view(-1, self.vocab_size)
         return self.loss_fct(outputs.view(-1, self.vocab_size), labels)
+
+
+class MostlyCausalLoss(torch.nn.Module):
+    """Sanity check loss for last-token inconsistencies...
+    Do not use this for anything resembling actual language model training."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.loss_fct = torch.nn.CrossEntropyLoss(*args, **kwargs)
+
+    def forward(self, outputs: torch.Tensor, labels: Optional[torch.Tensor] = None):
+        """If no labels are given, then the same sequence is re-used."""
+        # Based on https://github.com/huggingface/transformers/blob/master/src/transformers/models/gpt2/modeling_gpt2.py#L1069
+        # Shift so that tokens < n predict n
+        shift_logits = outputs[:, :, :].contiguous()
+        if labels is None:
+            shift_labels = outputs[:, 1:].contiguous()
+        elif labels.dtype == torch.long:
+            shift_labels = torch.cat([labels[:, 1:], labels[:, -1:]], dim=1).contiguous().view(-1)
+        else:
+            shift_labels = labels[:, 1:, :].contiguous().view(-1, labels.shape[-1])
+
+        # Flatten the tokens
+        return self.loss_fct(shift_logits.view(-1, shift_logits.shape[-1]), shift_labels)

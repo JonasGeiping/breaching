@@ -11,7 +11,7 @@ from .nfnets import NFNet
 from .vgg import VGG
 
 from .language_models import RNNModel, TransformerModel, LinearModel
-from .losses import CausalLoss, MLMLoss
+from .losses import CausalLoss, MLMLoss, MostlyCausalLoss
 
 
 def construct_model(cfg_model, cfg_data, pretrained=True, **kwargs):
@@ -29,6 +29,8 @@ def construct_model(cfg_model, cfg_data, pretrained=True, **kwargs):
         loss_fn = torch.nn.CrossEntropyLoss()
     elif "causal-lm" in cfg_data.task:
         loss_fn = CausalLoss()
+    elif "causal-lm-sanity" in cfg_data.task:
+        loss_fn = MostlyCausalLoss()
     elif "masked-lm" in cfg_data.task:
         loss_fn = MLMLoss(vocab_size=cfg_data.vocab_size)
     else:

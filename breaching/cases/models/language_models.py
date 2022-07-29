@@ -161,6 +161,7 @@ class TransformerModel(nn.Module):
         encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid, dropout, batch_first=True)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.encoder = nn.Embedding(ntokens, ninp)
+        self.encoder.weight.data *= math.sqrt(ninp)
         self.ninp = ninp
         self.decoder = nn.Linear(ninp, ntokens)
         if tie_weights:
@@ -190,9 +191,9 @@ class TransformerModel(nn.Module):
             self.src_mask = None
 
         if inputs_embeds is None:
-            inputs = self.encoder(input_ids) * math.sqrt(self.ninp)  # this scaling is just a needless complication
+            inputs = self.encoder(input_ids)
         else:
-            inputs = inputs_embeds * math.sqrt(self.ninp)
+            inputs = inputs_embeds
         inputs = self.pos_encoder(inputs)
         output = self.transformer_encoder(inputs, self.src_mask)
         output = self.decoder(output)

@@ -452,7 +452,7 @@ class _BaseAttacker:
             labels = torch.randint(0, num_classes, (num_data_points,), device=self.setup["device"])
         elif self.cfg.label_strategy == "exhaustive":
             # Exhaustive search is possible in principle
-            combinations = num_classes ** num_data_points
+            combinations = num_classes**num_data_points
             raise ValueError(
                 f"Exhaustive label searching not implemented. Nothing stops you though from running your"
                 f"attack algorithm for any possible combination of labels, except computational effort."
@@ -509,8 +509,9 @@ class _BaseAttacker:
             average_bias = torch.stack(bias_per_query).mean(dim=0)
             average_wte_norm = torch.stack(wte_per_query).mean(dim=0).norm(dim=1)
             valid_classes = (average_bias < 0).nonzero().squeeze(dim=-1)
-            if len(valid_classes) > num_missing_tokens:  # This should only happen due to numerical errors for bias
-                valid_classes = (average_bias < 0).topk(k=num_missing_tokens, largest=False).indices
+            if len(valid_classes) > num_missing_tokens:
+                # This should only happen due to numerical errors for bias or gradient noise:
+                valid_classes = average_bias.topk(k=num_missing_tokens - 1, largest=False).indices
             token_list += [*valid_classes]
             # Supplement with missing tokens from input:
             std, mean = torch.std_mean(average_wte_norm.log())

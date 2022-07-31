@@ -82,7 +82,7 @@ def _get_preprocessing(tokenizer, cfg_data):
     def tokenize(examples):
         return tokenizer(examples["text"], return_special_tokens_mask=cfg_data == "masked-lm")
 
-    if cfg_data.task in ["causal-lm", "masked-lm"]:
+    if "causal-lm" in cfg_data.task or "masked-lm" in cfg_data.task:
         block_size = cfg_data.shape[0]
         tokenizer.model_max_length = 1e10  # Only for batched pre-processing
 
@@ -99,11 +99,11 @@ def _get_preprocessing(tokenizer, cfg_data):
                 k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
                 for k, t in concatenated_examples.items()
             }
-            if cfg_data.task == "causal-lm":
+            if "causal-lm" in cfg_data.task:
                 result["labels"] = result["input_ids"].copy()
             return result
 
-        if cfg_data.task == "causal-lm":
+        if "causal-lm" in cfg_data.task:
             # This setting adds "labels" during "group_texts"
             collate_fn = default_data_collator
         else:

@@ -27,10 +27,10 @@ def construct_model(cfg_model, cfg_data, pretrained=True, **kwargs):
     # Choose loss function according to data and model:
     if "classification" in cfg_data.task:
         loss_fn = torch.nn.CrossEntropyLoss()
-    elif "causal-lm" in cfg_data.task:
-        loss_fn = CausalLoss()
     elif "causal-lm-sanity" in cfg_data.task:
         loss_fn = MostlyCausalLoss()
+    elif "causal-lm" in cfg_data.task:
+        loss_fn = CausalLoss()
     elif "masked-lm" in cfg_data.task:
         loss_fn = MLMLoss(vocab_size=cfg_data.vocab_size)
     else:

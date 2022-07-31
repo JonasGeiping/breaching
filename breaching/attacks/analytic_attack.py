@@ -761,7 +761,7 @@ class DecepticonAttacker(AnalyticAttacker):
             references = references[None, :]
         if measure == "corrcoef":
             s, e = inputs.shape
-            corr = np.abs(np.corrcoef(inputs.detach().cpu().numpy(), references.detach().cpu().numpy())[s:, :s])
+            corr = np.corrcoef(inputs.detach().cpu().numpy(), references.detach().cpu().numpy())[s:, :s]
             corr[np.isnan(corr)] = 0
         elif measure == "abs-corrcoef":
             s, e = inputs.shape
@@ -805,7 +805,10 @@ class DecepticonAttacker(AnalyticAttacker):
         # )
         costs = torch.zeros_like(final_tokens.view(-1), dtype=torch.float)
         for idx, embedding in enumerate(estimated_final_embeddings):
-            costs[idx] = self.vcorrcoef(breached_embeddings.numpy(), embedding.numpy()).max().item()
+            if "abs" in self.cfg.matcher:
+                costs[idx] = np.abs(self.vcorrcoef(breached_embeddings.numpy(), embedding.numpy())).max().item()
+            else:
+                costs[idx] = self.vcorrcoef(breached_embeddings.numpy(), embedding.numpy()).max().item()
         return costs.view_as(final_tokens)
 
     @staticmethod

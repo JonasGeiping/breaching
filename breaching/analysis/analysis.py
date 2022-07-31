@@ -22,6 +22,7 @@ def report(
     cfg_case=None,
     setup=dict(device=torch.device("cpu"), dtype=torch.float),
 ):
+    log.info("Starting evaluations for attack effectiveness report...")
     model.to(**setup)
     metadata = server_payload[0]["metadata"]
     if metadata["modality"] == "text":
@@ -43,7 +44,9 @@ def report(
         )
     if reconstructed_user_data["labels"] is not None:
         test_label_acc = count_integer_overlap(
-            reconstructed_user_data["labels"].view(-1), true_user_data["labels"].view(-1)
+            reconstructed_user_data["labels"].view(-1),
+            true_user_data["labels"].view(-1),
+            maxlength=cfg_case.data.vocab_size,
         )
     else:
         test_label_acc = 0
@@ -258,21 +261,54 @@ def _run_vision_metrics(
     return vision_metrics
 
 
-def count_integer_overlap(rec_labels, true_labels):
+def count_integer_overlap(rec_labels, true_labels, maxlength=50527):
+    # if rec_labels is not None:
+    #     if any(rec_labels.sort()[0] != true_labels):
+    #         found_labels = 0
+    #         label_pool = true_labels.clone().tolist()
+    #         for label in rec_labels:
+    #             if label in label_pool:
+    #                 found_labels += 1
+    #                 label_pool.remove(label)
+    #         test_label_acc = found_labels / len(true_labels)
+    #     else:
+    #         test_label_acc = 1
+    # else:
+    #     test_label_acc = 0
+
+    # much faster (measured with timeit:)
     if rec_labels is not None:
-        if any(rec_labels.sort()[0] != true_labels):
-            found_labels = 0
-            label_pool = true_labels.clone().tolist()
-            for label in rec_labels:
-                if label in label_pool:
-                    found_labels += 1
-                    label_pool.remove(label)
-            test_label_acc = found_labels / len(true_labels)
-        else:
-            test_label_acc = 1
+        test_label_acc = (
+            1
+            - (
+                torch.bincount(rec_labels.view(-1), minlength=maxlength)
+                - torch.bincount(true_labels[true_labels != -100].view(-1), minlength=maxlength)
+            )
+            .abs()
+            .sum()
+            / 2
+            / rec_labels.numel()
+        )
     else:
         test_label_acc = 0
     return test_label_acc
+
+
+def average_per_token_accuracy(rec_labels, true_labels, maxlength=50527):
+    if rec_labels is not None:
+        binsrec = torch.bincount(rec_labels.view(-1), minlength=maxlength)
+        binstrue = torch.bincount(true_labels[true_labels != -100].view(-1), minlength=maxlength)
+
+        true_tokens = binstrue > 0
+        per_token_accuracy = torch.clamp(
+            binsrec[true_tokens] / binstrue[true_tokens], 0.0, 1.0
+        )  # discount overcounting
+
+        avg_token_val = per_token_accuracy.mean()
+        # avg_freq_adjusted_val = (per_token_accuracy * binstrue[true_tokens] / true_labels.numel()).sum() # total acc ;>
+    else:
+        avg_token_val = 0
+    return avg_token_val
 
 
 def compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalized, setup):

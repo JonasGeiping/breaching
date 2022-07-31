@@ -78,14 +78,14 @@ def report(
 
     if metadata["modality"] == "text":
         m = modality_metrics
-        test_word_acc = count_integer_overlap(reconstructed_user_data["data"].view(-1), true_user_data["data"].view(-1))
-        m["token_acc"] = test_word_acc
         log.info(
             f"METRICS: | Accuracy: {m['accuracy']:2.4f} | S-BLEU: {m['sacrebleu']:4.2f} | FMSE: {feat_mse:2.4e} | "
             + "\n"
             f" G-BLEU: {m['google_bleu']:4.2f} | ROUGE1: {m['rouge1']:4.2f}| ROUGE2: {m['rouge2']:4.2f} | ROUGE-L: {m['rougeL']:4.2f}"
-            f"| Token Acc: {test_word_acc:2.2%} | Label Acc: {test_label_acc:2.2%}"
+            f"| Token Acc T:{m['token_acc']:2.2%}/A:{m['token_avg_accuracy']:2.2%} "
+            f"| Label Acc: {test_label_acc:2.2%}"
         )
+
     else:
         m = modality_metrics
         iip_scoring = " | ".join([f"{k}: {v:5.2%}" for k, v in m.items() if "IIP" in k])
@@ -121,7 +121,7 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
     )
 
     if order_batch:
-        order = compute_text_order(reconstructed_user_data, true_user_data)
+        order = compute_text_order(reconstructed_user_data, true_user_data, vocab_size=cfg_case.data.vocab_size)
         reconstructed_user_data["data"] = reconstructed_user_data["data"][order]
         if reconstructed_user_data["labels"] is not None:
             reconstructed_user_data["labels"] = reconstructed_user_data["labels"][order]
@@ -130,13 +130,6 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
     else:
         order = None
     text_metrics["order"] = order
-
-    # Per sentence token overlap:
-    B = reconstructed_user_data["data"].shape[0]
-    overlaps = []
-    for rec_sentence, ref_sentence in zip(reconstructed_user_data["data"], true_user_data["data"]):
-        overlaps.append(count_integer_overlap(rec_sentence, ref_sentence))
-    text_metrics["intra-sentence_token_acc"] = overlaps
 
     # Accuracy:
     for rec_example, ref_example in zip(reconstructed_user_data["data"], true_user_data["data"]):
@@ -181,6 +174,29 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
             text_metrics["rouge1"] = score["rouge1"].mid.fmeasure
             text_metrics["rouge2"] = score["rouge2"].mid.fmeasure
             text_metrics["rougeL"] = score["rougeL"].mid.fmeasure
+
+    # Token measurements:
+    test_word_acc = count_integer_overlap(
+        reconstructed_user_data["data"].view(-1),
+        true_user_data["data"].view(-1),
+        maxlength=cfg_case.data.vocab_size,
+    )
+    text_metrics["token_acc"] = test_word_acc
+    # Per sentence token overlap:
+    B = reconstructed_user_data["data"].shape[0]
+    overlaps = []
+    for rec_sentence, ref_sentence in zip(reconstructed_user_data["data"], true_user_data["data"]):
+        overlaps.append(count_integer_overlap(rec_sentence, ref_sentence, maxlength=cfg_case.data.vocab_size))
+    text_metrics["intra-sentence_token_acc"] = overlaps
+
+    # Frequency-corrected token acc:
+    avg_token_val = average_per_token_accuracy(
+        reconstructed_user_data["data"].view(-1),
+        true_user_data["data"].view(-1),
+        maxlength=cfg_case.data.vocab_size,
+    )
+    text_metrics["token_avg_accuracy"] = avg_token_val
+
     return text_metrics
 
 
@@ -357,7 +373,7 @@ def compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalize
     return torch.as_tensor(rec_assignment, device=setup["device"], dtype=torch.long)
 
 
-def compute_text_order(reconstructed_user_data, true_user_data):
+def compute_text_order(reconstructed_user_data, true_user_data, vocab_size):
     from scipy.optimize import linear_sum_assignment  # Again a lazy import
 
     """Simple text ordering based just on token overlap."""
@@ -365,7 +381,7 @@ def compute_text_order(reconstructed_user_data, true_user_data):
     overlaps = torch.zeros(B, B, device=true_user_data["data"].device)
     for (idx, rec_sentence) in enumerate(reconstructed_user_data["data"]):
         for (idy, ref_sentence) in enumerate(true_user_data["data"]):
-            overlap = count_integer_overlap(rec_sentence, ref_sentence)
+            overlap = count_integer_overlap(rec_sentence, ref_sentence, maxlength=vocab_size)
             overlaps[idx, idy] = overlap
     try:
         _, rec_assignment = linear_sum_assignment(overlaps.T.cpu().numpy(), maximize=True)

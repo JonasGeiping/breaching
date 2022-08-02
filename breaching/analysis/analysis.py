@@ -47,7 +47,7 @@ def report(
             reconstructed_user_data["labels"].view(-1),
             true_user_data["labels"].view(-1),
             maxlength=cfg_case.data.vocab_size,
-        )
+        ).item()
     else:
         test_label_acc = 0
 
@@ -181,12 +181,12 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
         true_user_data["data"].view(-1),
         maxlength=cfg_case.data.vocab_size,
     )
-    text_metrics["token_acc"] = test_word_acc
+    text_metrics["token_acc"] = test_word_acc.item()
     # Per sentence token overlap:
     B = reconstructed_user_data["data"].shape[0]
     overlaps = []
     for rec_sentence, ref_sentence in zip(reconstructed_user_data["data"], true_user_data["data"]):
-        overlaps.append(count_integer_overlap(rec_sentence, ref_sentence, maxlength=cfg_case.data.vocab_size))
+        overlaps.append(count_integer_overlap(rec_sentence, ref_sentence, maxlength=cfg_case.data.vocab_size).item())
     text_metrics["intra-sentence_token_acc"] = overlaps
 
     # Frequency-corrected token acc:
@@ -195,7 +195,7 @@ def _run_text_metrics(reconstructed_user_data, true_user_data, server_payload, c
         true_user_data["data"].view(-1),
         maxlength=cfg_case.data.vocab_size,
     )
-    text_metrics["token_avg_accuracy"] = avg_token_val
+    text_metrics["token_avg_accuracy"] = avg_token_val.item()
 
     return text_metrics
 

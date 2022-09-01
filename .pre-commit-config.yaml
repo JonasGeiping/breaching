@@ -30,3 +30,28 @@ repos:
     rev: 4.0.1
     hooks:
       - id: flake8
+
+  # experimental: use nbdev rules for sane jupyter notebooks
+  - repo: local
+    hooks:
+      - id: nbdev_clean_nbs
+        name: Clean Notebooks
+        entry: nbdev_clean_nbs
+        additional_dependencies: [nbdev>=1.1.22, "black[jupyter]>=21.9b0"]
+        files: .ipynb
+        pass_filenames: false
+        language: python
+      - id: nbdev_merge_nbs
+        name: Fix Notebook Merges
+        entry: nbdev_merge_nbs
+        additional_dependencies: [nbdev>=1.1.22, "black[jupyter]>=21.9b0"]
+        files: .ipynb
+        pass_filenames: false
+        language: python
+      - id: nbdev_trust_nbs
+        name: Trust all commited Notebooks
+        entry: nbdev_trust_nbs
+        additional_dependencies: [nbdev>=1.1.22, "black[jupyter]>=21.9b0"]
+        files: .ipynb
+        pass_filenames: false
+        language: python

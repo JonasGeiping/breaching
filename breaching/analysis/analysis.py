@@ -64,7 +64,7 @@ def report(
                     buffer.copy_(server_state.to(**setup))
             else:
                 if len(true_user_data["buffers"]) > 0:
-                    for buffer, user_state in zip(model.buffers(), true_user_data["buffers"][idx]):
+                    for buffer, user_state in zip(model.buffers(), true_user_data["buffers"]):
                         buffer.copy_(user_state.to(**setup))
 
             # Compute the forward passes

@@ -417,7 +417,6 @@ class MaliciousTransformerServer(HonestServer):
         # Probe Length is embedding_dim minus v_proportion minus skip node
         measurements = []
         for layer in range(num_transformer_layers):
-            # Generate L measurement vectors, but if bin_setup=concat, only the first is used
             measurement_scale = self.cfg_server.param_modification.measurement_scale
             v_length = self.cfg_server.param_modification.v_length
             probe_dim = embedding_dim - v_length - 1
@@ -425,8 +424,9 @@ class MaliciousTransformerServer(HonestServer):
             std, mu = torch.std_mean(weights)  # correct sample toward perfect mean and std
             probe = (weights - mu) / std / torch.as_tensor(probe_dim, **self.setup).sqrt() * measurement_scale
 
-        measurement = torch.zeros(embedding_dim, **self.setup)
-        measurement[v_length:-1] = probe
+            measurement = torch.zeros(embedding_dim, **self.setup)
+            measurement[v_length:-1] = probe
+            measurements.append(measurement)
 
         # Reset the embedding?:
         if self.cfg_server.param_modification.reset_embedding:

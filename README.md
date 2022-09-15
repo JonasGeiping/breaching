@@ -89,7 +89,7 @@ All attacks can be run on both CPU/GPU (any `torch.device` actually). However, t
 It is probably best to have a look into `breaching/config` to see all possible options.
 
 ### Citation
-For now, please cite the respective publications for each attack and use case.
+For now, please cite the respective publications for each attack and use case and note in your appendix / supplementary material that you used this framework.
 
 
 ### License

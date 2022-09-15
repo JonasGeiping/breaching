@@ -160,7 +160,7 @@ class DecepticonAttacker(AnalyticAttacker):
     def reconstruct(self, server_payload, shared_data, server_secrets=None, dryrun=False):
         """Reconstruct both positions and token ids from the input sentence. Disambiguate sentences based on v_length."""
         # Initialize stats module for later usage:
-        rec_models, tokens, stats = self.prepare_attack(server_payload, shared_data)
+        rec_models, _, stats = self.prepare_attack(server_payload, shared_data)
         len_data = shared_data[0]["metadata"]["num_data_points"]  # Could be guessed as well
         lookup = lookup_module_names(rec_models[0].name, rec_models[0])
 

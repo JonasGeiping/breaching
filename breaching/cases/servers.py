@@ -414,12 +414,15 @@ class MaliciousTransformerServer(HonestServer):
 
         # Define "probe" function / measurement vector:
         # Probe Length is embedding_dim minus v_proportion minus skip node
-        measurement_scale = self.cfg_server.param_modification.measurement_scale
-        v_length = self.cfg_server.param_modification.v_length
-        probe_dim = embedding_dim - v_length - 1
-        weights = torch.randn(probe_dim, **self.setup)
-        std, mu = torch.std_mean(weights)  # correct sample toward perfect mean and std
-        probe = (weights - mu) / std / torch.as_tensor(probe_dim, **self.setup).sqrt() * measurement_scale
+        measurements = []
+        for layer in range(num_transformer_layers):
+            # Generate L measurement vectors, but if bin_setup=concat, only the first is used
+            measurement_scale = self.cfg_server.param_modification.measurement_scale
+            v_length = self.cfg_server.param_modification.v_length
+            probe_dim = embedding_dim - v_length - 1
+            weights = torch.randn(probe_dim, **self.setup)
+            std, mu = torch.std_mean(weights)  # correct sample toward perfect mean and std
+            probe = (weights - mu) / std / torch.as_tensor(probe_dim, **self.setup).sqrt() * measurement_scale
 
         measurement = torch.zeros(embedding_dim, **self.setup)
         measurement[v_length:-1] = probe
@@ -477,12 +480,24 @@ class MaliciousTransformerServer(HonestServer):
                 lookup["last_attention"]["out_proj_bias"].data.zero_()
 
         # Evaluate feature distribution of this model
-        std, mu = compute_feature_distribution(self.model, lookup["first_linear_layers"][0], measurement, self)
-        # And add imprint modification to the first linear layer
-        make_imprint_layer(
-            lookup["first_linear_layers"], measurement, mu, std, hidden_dim, embedding_dim, ff_transposed
-        )
-        # This should be all for the attack :>
+        if self.cfg_server.param_modification.bin_setup == "concatenate":
+            std, mu = compute_feature_distribution(self.model, lookup["first_linear_layers"][0], measurements[0], self)
+            # And add imprint modification to the first linear layer
+            make_imprint_layer(
+                lookup["first_linear_layers"], measurements[0], mu, std, hidden_dim, embedding_dim, ff_transposed
+            )
+        elif self.cfg_server.param_modification.bin_setup == "separate":
+            for idx, linear_layer in enumerate(lookup["first_linear_layers"]):
+                std, mu = compute_feature_distribution(self.model, linear_layer, measurements[idx], self)
+                # And add imprint modification to the first linear layer
+                make_imprint_layer([linear_layer], measurements[idx], mu, std, hidden_dim, embedding_dim, ff_transposed)
+        elif self.cfg_server.param_modification.bin_setup == "repeat":
+            for idx, linear_layer in enumerate(lookup["first_linear_layers"]):
+                std, mu = compute_feature_distribution(self.model, linear_layer, measurements[0], self)
+                # And add imprint modification to the first linear layer
+                make_imprint_layer([linear_layer], measurements[0], mu, std, hidden_dim, embedding_dim, ff_transposed)
+        else:
+            raise ValueError(f"Invalid bin setup {self.cfg_server.param_modification.bin_setup} given.")
 
         # We save secrets for the attack later on:
         num_layers = len(lookup["first_linear_layers"])
@@ -502,6 +517,7 @@ class MaliciousTransformerServer(HonestServer):
             structure="cumulative",
             v_length=v_length,
             ff_transposed=ff_transposed,
+            bin_setup=self.cfg_server.param_modification.bin_setup,
         )
         self.secrets["ImprintBlock"] = details
 

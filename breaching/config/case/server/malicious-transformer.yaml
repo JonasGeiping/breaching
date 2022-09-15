@@ -17,4 +17,6 @@ param_modification:
   eps: 1e-4
 
   measurement_scale: 1.0
+  bin_setup: "concatenate" # concatenate/repeat/separate
+  # bin_setup: The Decepticon default is concatenate where all layers are used for a single measurement with non-overlapping bins
   reset_embedding: False

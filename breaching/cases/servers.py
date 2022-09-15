@@ -411,6 +411,7 @@ class MaliciousTransformerServer(HonestServer):
         # For now this is non-automated. Add a new arch to this lookup function before running it.
         lookup = lookup_module_names(self.model.name, self.model)
         hidden_dim, embedding_dim, ff_transposed = lookup["dimensions"]
+        num_transformer_layers = len(lookup["first_linear_layers"])
 
         # Define "probe" function / measurement vector:
         # Probe Length is embedding_dim minus v_proportion minus skip node

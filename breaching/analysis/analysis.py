@@ -5,6 +5,7 @@ import re
 from .metrics import psnr_compute, registered_psnr_compute, image_identifiability_precision, cw_ssim
 from ..cases import construct_dataloader
 
+import copy
 import logging
 
 log = logging.getLogger(__name__)
@@ -14,7 +15,7 @@ def report(
     reconstructed_user_data,
     true_user_data,
     server_payload,
-    model,
+    model_template,
     order_batch=True,
     compute_full_iip=False,
     compute_rpsnr=True,
@@ -23,6 +24,7 @@ def report(
     setup=dict(device=torch.device("cpu"), dtype=torch.float),
 ):
     log.info("Starting evaluations for attack effectiveness report...")
+    model = copy.deepcopy(model_template)  # Copy just in case and discard later
     model.to(**setup)
     metadata = server_payload[0]["metadata"]
     if metadata["modality"] == "text":

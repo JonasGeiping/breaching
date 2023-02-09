@@ -1,7 +1,7 @@
 # Breaching - A Framework for Attacks against Privacy in Federated Learning
 
 This PyTorch framework implements a number of gradient inversion attacks that *breach* privacy in federated learning scenarios,
-covering examples with small and large aggregation sizes and examples both vision and text domains.
+covering examples with small and large aggregation sizes and examples both in vision and in text domains.
 
 
 ![](examples/teaser_breaching.png)

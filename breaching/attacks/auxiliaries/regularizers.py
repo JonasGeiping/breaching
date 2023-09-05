@@ -223,7 +223,7 @@ class DeepInversion(torch.nn.Module):
         rescale = [self.first_bn_multiplier] + [1.0 for _ in range(len(self.losses[0]) - 1)]
         feature_reg = 0
         for loss in self.losses:
-            feature_reg += np.dot([mod.r_feature for mod in loss], [rescale])
+            feature_reg += np.dot([mod.r_feature for mod in loss], rescale[:len(loss)])
         return self.scale * feature_reg
 
     def __repr__(self):

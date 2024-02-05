@@ -1,0 +1,41 @@
+name: CustomFolders
+modality: vision
+task: classification
+
+path: "C:/Users/johns/data/customnet"
+size: 300
+classes: 6
+shape:
+  - 3
+  - 224
+  - 224
+
+# Preprocessing:
+normalize: True
+mean:
+  - 0.46312353
+  - 0.5572165
+  - 0.57370394
+std:
+  - 0.31531358
+  - 0.28174448
+  - 0.27112168
+
+# Data Augmentations:
+augmentations_train:
+  RandomResizedCrop: 224
+  RandomHorizontalFlip: 0.5
+augmentations_val:
+  Resize: 256
+  CenterCrop: 224
+
+# Federated Learning specifics:
+default_clients: 1
+partition: balanced # used for synthetic splits. Current options for synthetic split: balanced / unique-class
+examples_from_split: validation
+
+# Data-specific implementation constants:
+batch_size: 1
+caching: False
+defaults:
+  - db: none # Database Setup # use the cmd-line to activate the LMDB module with data.db=LMDB

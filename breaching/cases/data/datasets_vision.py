@@ -16,6 +16,7 @@ import concurrent.futures
 
 import csv
 
+from .csv_dataset import CsvDataset
 
 def _build_dataset_vision(cfg_data, split, can_download=True):
     _default_t = torchvision.transforms.ToTensor()
@@ -52,6 +53,19 @@ def _build_dataset_vision(cfg_data, split, can_download=True):
     elif cfg_data.name == "Birdsnap":
         dataset = Birdsnap(root=cfg_data.path, split=split, download=can_download, transform=_default_t)
         dataset.lookup = dict(zip(list(range(len(dataset))), dataset.labels))
+    elif cfg_data.name == "CustomFolders":
+        #dataset = CustomDataset("labels.csv", cfg_data.path, torchvision.transforms.Compose([_default_t, torchvision.transforms.Resize((224, 224))]))
+        dataset = torchvision.datasets.ImageFolder(root=cfg_data.path,
+                              transform=torchvision.transforms.Compose([_default_t,
+                                                                         torchvision.transforms.Resize((224, 224))]))
+        #dataset.classes = sorted([i for i in os.listdir(cfg_data.path) if os.path.isdir(os.path.join(cfg_data.path, i))])
+        dataset.lookup = dict(zip(list(range(len(dataset))), [label for (_, label) in dataset.samples]))
+    elif cfg_data.name == "CustomCsv":
+        dataset = CsvDataset(csv_path=cfg_data.path, dir=cfg_data.dir if hasattr(cfg_data, 'dir') else None,
+                             transform=torchvision.transforms.Compose([_default_t,
+                                                                         torchvision.transforms.Resize((224, 224))]))
+        dataset.lookup = dict(zip(list(range(len(dataset))), [label for (_, label) in dataset.samples]))
+        print(dataset.lookup)
     else:
         raise ValueError(f"Invalid dataset {cfg_data.name} provided.")
 

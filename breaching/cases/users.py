@@ -4,6 +4,7 @@ import torch
 import copy
 from itertools import chain
 
+
 from .data import construct_dataloader
 import logging
 
@@ -265,7 +266,7 @@ class UserSingleStep(torch.nn.Module):
                 print(bg_color(decoded_token + " ", token == gt_token), end="")
             print("\n")
 
-    def plot(self, user_data, scale=False, print_labels=False):
+    def plot(self, user_data, scale=False, print_labels=False, saveFile=None):
         """Plot user data to output. Probably best called from a jupyter notebook."""
         import matplotlib.pyplot as plt  # lazily import this here
 
@@ -303,6 +304,11 @@ class UserSingleStep(torch.nn.Module):
                 axis.axis("off")
             if print_labels:
                 print(label_classes)
+        if saveFile:
+            plt.savefig(f"{saveFile}.png")
+            return
+        
+        plt.show()
 
 
 class UserMultiStep(UserSingleStep):

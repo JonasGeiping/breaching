@@ -167,7 +167,7 @@ def _construct_vision_model(cfg_model, cfg_data, pretrained=True, **kwargs):
 
     if "ImageNet" in cfg_data.name:
         try:
-            model = getattr(torchvision.models, cfg_model.lower())(pretrained=pretrained)
+            model = getattr(torchvision.models, cfg_model.lower())()
             try:
                 # Try to adjust the linear layer and fill with previous data
                 fc = torch.nn.Linear(model.fc.in_features, classes)

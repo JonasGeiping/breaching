@@ -44,6 +44,5 @@ class CsvDataset(torch.utils.data.Dataset):
         label = self.data[idx][1]
         if self.transform:
             image = self.transform(image)
-        sample = {'image': image, 'label': label}
 
-        return sample
+        return (image, self.class_to_idx[label])

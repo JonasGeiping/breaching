@@ -1,8 +1,9 @@
-name: CustomFolders
+name: CustomCsv
 modality: vision
 task: classification
 
-path: "C:/Users/johns/data/customnet"
+path: "C:/Users/johns/data/customcsvnet/csv.csv"
+dir: "C:/Users/johns/data/customcsvnet/images"
 size: 300
 classes: 6
 shape:

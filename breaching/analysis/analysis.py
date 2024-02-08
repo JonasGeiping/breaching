@@ -22,6 +22,7 @@ def report(
     compute_ssim=True,
     cfg_case=None,
     setup=dict(device=torch.device("cpu"), dtype=torch.float),
+    compute_lpips=False
 ):
     log.info("Starting evaluations for attack effectiveness report...")
     model = copy.deepcopy(model_template)  # Copy just in case and discard later
@@ -43,13 +44,20 @@ def report(
             compute_ssim,
             cfg_case,
             setup,
+            compute_lpips
         )
     if reconstructed_user_data["labels"] is not None:
-        test_label_acc = count_integer_overlap(
-            reconstructed_user_data["labels"].view(-1),
-            true_user_data["labels"].view(-1),
-            maxlength=cfg_case.data.vocab_size,
-        ).item()
+        if cfg_case.data.modality == "text":
+            test_label_acc = count_integer_overlap(
+                reconstructed_user_data["labels"].view(-1),
+                true_user_data["labels"].view(-1),
+                maxlength=cfg_case.data.vocab_size,
+            ).item()
+        else:
+            test_label_acc = count_integer_overlap(
+                reconstructed_user_data["labels"].view(-1),
+                true_user_data["labels"].view(-1)
+            ).item()
     else:
         test_label_acc = 0
 
@@ -91,13 +99,20 @@ def report(
     else:
         m = modality_metrics
         iip_scoring = " | ".join([f"{k}: {v:5.2%}" for k, v in m.items() if "IIP" in k])
-        log.info(
-            f"METRICS: | MSE: {m['mse']:2.4f} | PSNR: {m['psnr']:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {m['lpips']:4.2f}|"
-            + "\n"
-            f" R-PSNR: {m['rpsnr']:4.2f} | {iip_scoring} | SSIM: {m['ssim']:2.4f} | "
-            f"max R-PSNR: {m['max_rpsnr']:4.2f} | max SSIM: {m['max_ssim']:2.4f} | Label Acc: {test_label_acc:2.2%}"
-        )
-
+        if compute_lpips:
+            log.info(
+                f"METRICS: | MSE: {m['mse']:2.4f} | PSNR: {m['psnr']:4.2f} | FMSE: {feat_mse:2.4e} | LPIPS: {m['lpips']:4.2f}|"
+                + "\n"
+                f" R-PSNR: {m['rpsnr']:4.2f} | {iip_scoring} | SSIM: {m['ssim']:2.4f} | "
+                f"max R-PSNR: {m['max_rpsnr']:4.2f} | max SSIM: {m['max_ssim']:2.4f} | Label Acc: {test_label_acc:2.2%}"
+            )
+        else:
+            log.info(
+                f"METRICS: | MSE: {m['mse']:2.4f} | PSNR: {m['psnr']:4.2f} | FMSE: {feat_mse:2.4e} |"
+                + "\n"
+                f" R-PSNR: {m['rpsnr']:4.2f} | {iip_scoring} | SSIM: {m['ssim']:2.4f} | "
+                f"max R-PSNR: {m['max_rpsnr']:4.2f} | max SSIM: {m['max_ssim']:2.4f} | Label Acc: {test_label_acc:2.2%}"
+            )
     metrics = dict(
         **modality_metrics,
         feat_mse=feat_mse,
@@ -213,10 +228,12 @@ def _run_vision_metrics(
     compute_ssim=True,
     cfg_case=None,
     setup=dict(device=torch.device("cpu"), dtype=torch.float),
+    compute_lpips=False
 ):
-    import lpips  # lazily import this only if vision reporting is used.
+    if compute_lpips:
+        import lpips  # lazily import this only if vision reporting is used.
 
-    lpips_scorer = lpips.LPIPS(net="alex", verbose=False).to(**setup)
+        lpips_scorer = lpips.LPIPS(net="alex", verbose=False).to(**setup)
 
     metadata = server_payload[0]["metadata"]
     if hasattr(metadata, "mean"):
@@ -228,7 +245,7 @@ def _run_vision_metrics(
     rec_denormalized = torch.clamp(reconstructed_user_data["data"].to(**setup) * ds + dm, 0, 1)
     ground_truth_denormalized = torch.clamp(true_user_data["data"].to(**setup) * ds + dm, 0, 1)
 
-    if order_batch:
+    if order_batch and compute_lpips:
         order = compute_batch_order(lpips_scorer, rec_denormalized, ground_truth_denormalized, setup)
         reconstructed_user_data["data"] = reconstructed_user_data["data"][order]
         if reconstructed_user_data["labels"] is not None:
@@ -242,9 +259,7 @@ def _run_vision_metrics(
     avg_psnr, max_psnr = psnr_compute(rec_denormalized, ground_truth_denormalized, factor=1)
     avg_ssim, max_ssim = cw_ssim(rec_denormalized, ground_truth_denormalized, scales=5)
 
-    # Hint: This part switches to the lpips [-1, 1] normalization:
-    lpips_score = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True)
-    avg_lpips, max_lpips = lpips_score.mean().item(), lpips_score.max().item()
+    
 
     # Compute registered psnr. This is a bit computationally intensive:
     if compute_rpsnr:
@@ -253,7 +268,7 @@ def _run_vision_metrics(
         avg_rpsnr, max_rpsnr = float("nan"), float("nan")
 
     # Compute IIP score if data config is passed:
-    if cfg_case is not None:
+    if cfg_case is not None and compute_lpips:
         dataloader = construct_dataloader(cfg_case.data, cfg_case.impl, user_idx=None, return_full_dataset=True)
         if compute_full_iip:
             scores = ["pixel", "lpips", "self"]
@@ -268,7 +283,6 @@ def _run_vision_metrics(
     vision_metrics = dict(
         mse=avg_mse,
         psnr=avg_psnr,
-        lpips=avg_lpips,
         rpsnr=avg_rpsnr,
         ssim=avg_ssim,
         max_ssim=max_ssim,
@@ -276,6 +290,13 @@ def _run_vision_metrics(
         order=order,
         **{f"IIP-{k}": v for k, v in iip_scores.items()},
     )
+
+    if compute_lpips:
+        # Hint: This part switches to the lpips [-1, 1] normalization:
+        lpips_score = lpips_scorer(rec_denormalized, ground_truth_denormalized, normalize=True)
+        avg_lpips, max_lpips = lpips_score.mean().item(), lpips_score.max().item()
+        vision_metrics['lpips'] = avg_lpips
+    
     return vision_metrics
 
 

@@ -1,5 +1,6 @@
 import torch
 import breaching
+from torchvision import models
 
 def setup_attack(cfg, torch_model=None):
     device = torch.device(f'cuda:0') if torch.cuda.is_available() else torch.device('cpu')
@@ -36,11 +37,30 @@ def perform_attack(cfg, setup, user, server, attacker, model, loss_fn):
 def get_metrics(reconstructed_user_data, true_user_data, server_payload, server, cfg, setup):
     metrics = breaching.analysis.report(reconstructed_user_data, true_user_data, [server_payload], 
                                      server.model, order_batch=True, compute_full_iip=False, 
-                                     cfg_case=cfg.case, setup=setup)
+                                     cfg_case=cfg.case, setup=setup, compute_lpips=True)
     return metrics
     
 def check_image_size(model, shape):
     return True
+
+def buildUploadedModel(model_type, state_dict_path):
+    model = None
+    if model_type == "resnet18":
+        model = models.resnet18()
+    
+    if not model:
+        raise TypeError("given model type did not match any of the options")
+    
+    try:
+        model.load_state_dict(torch.load(state_dict_path))
+    except RuntimeError as r:
+        print(f'''Runtime error loading torch model from file:
+{r}
+Model is loaded from default values.
+''')
+    model.eval()
+    return model
+        
 
 # Total variation regularization needs to be smaller on CIFAR-10:
 # cfg.attack.regularization.total_variation.scale = 1e-3

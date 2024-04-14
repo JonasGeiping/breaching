@@ -223,7 +223,7 @@ class CuriousAbandonHonesty(ImprintBlock):
         negative_weight_indices = indices[:, : int(N / 2)]
         positive_weight_indices = indices[:, int(N / 2) :]
 
-        sampled_weights = torch.randn(K, int(N / 2)) * sigma
+        sampled_weights = torch.abs(torch.randn(K, int(N / 2)) * sigma) * -1
 
         negative_samples = sampled_weights
         positive_samples = -scale_factor * sampled_weights

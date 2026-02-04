@@ -117,7 +117,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
                     if self.cfg.optim.boxed:
                         candidate.data = torch.max(torch.min(candidate, (1 - self.dm) / self.ds), -self.dm / self.ds)
                     if objective_value < minimal_value_so_far:
-                        minimal_value_so_far = objective_value.detach()
+                        minimal_value_so_far = objective_value
                         best_candidate = candidate.detach().clone()
 
                 if iteration + 1 == self.cfg.optim.max_iterations or iteration % self.cfg.optim.callback == 0:
@@ -184,7 +184,7 @@ class OptimizationBasedAttacker(_BaseAttacker):
                         pass
 
             self.current_task_loss = total_task_loss  # Side-effect this because of L-BFGS closure limitations :<
-            return total_objective
+            return total_objective.detach()
 
         return closure
 

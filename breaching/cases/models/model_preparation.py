@@ -352,7 +352,7 @@ def _construct_vision_model(cfg_model, cfg_data, pretrained=True, **kwargs):
                         ("conv4", torch.nn.Conv2d(128, 256, 3, stride=1, padding=1)),
                         ("relu3", torch.nn.LeakyReLU()),
                         ("flatt", torch.nn.Flatten()),
-                        ("linear0", torch.nn.Linear(12544, 12544)),
+                        ("linear0", torch.nn.Linear(16384, 12544)),
                         ("relu4", torch.nn.LeakyReLU()),
                         ("linear1", torch.nn.Linear(12544, classes)),
                         ("softmax", torch.nn.Softmax(dim=1)),

@@ -12,6 +12,17 @@ local_diff_privacy:
   input_noise: 0.0
   distribution: laplacian
   per_example_clipping: 0.0
+
+# Gradient defenses (quantization and pruning):
+quantization:
+  nbits: 0 # 0 for disabled, 4 for INT4, 8 for INT8
+  block_size: 64
+  stochastic: false
+  preserve_norm: false
+
+pruning:
+  sparsity: 0.0 # 0.0 for disabled, e.g. 0.9 for 90% pruning
+  method: topk # 'topk' or 'random'
 # Specific to this user type:
 
 # This user can also be used to simulate a larger silo over which the gradient is aggregated.

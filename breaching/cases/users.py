@@ -5,6 +5,7 @@ import copy
 from itertools import chain
 
 from .data import construct_dataloader
+from .defenses import prune_gradient_list, quantize_gradient_list
 import logging
 
 log = logging.getLogger(__name__)
@@ -34,6 +35,10 @@ class UserSingleStep(torch.nn.Module):
     def __init__(self, model, loss, dataloader, setup, idx, cfg_user):
         """Initialize from cfg_user dict which contains atleast all keys in the matching .yaml :>"""
         super().__init__()
+        if isinstance(cfg_user, dict):
+            from omegaconf import OmegaConf
+            cfg_user = OmegaConf.create(cfg_user)
+
         self.num_data_points = cfg_user.num_data_points
 
         self.provide_labels = cfg_user.provide_labels
@@ -47,7 +52,7 @@ class UserSingleStep(torch.nn.Module):
         self.model.to(**setup)
 
         self.defense_repr = []
-        self._initialize_local_privacy_measures(cfg_user.local_diff_privacy)
+        self._initialize_local_privacy_measures(cfg_user.local_diff_privacy, cfg_user)
 
         self.dataloader = dataloader
         self.loss = copy.deepcopy(loss)  # Just in case the loss contains state
@@ -70,8 +75,8 @@ class UserSingleStep(torch.nn.Module):
     {n.join(self.defense_repr)}
         """
 
-    def _initialize_local_privacy_measures(self, local_diff_privacy):
-        """Initialize generators for noise in either gradient or input."""
+    def _initialize_local_privacy_measures(self, local_diff_privacy, cfg_user=None):
+        """Initialize generators for noise in either gradient or input, as well as quantization/pruning defenses."""
         if local_diff_privacy["gradient_noise"] > 0.0:
             loc = torch.as_tensor(0.0, **self.setup)
             scale = torch.as_tensor(local_diff_privacy["gradient_noise"], **self.setup)
@@ -103,6 +108,50 @@ class UserSingleStep(torch.nn.Module):
         self.clip_value = local_diff_privacy.get("per_example_clipping", 0.0)
         if self.clip_value > 0:
             self.defense_repr.append(f"Defense: Gradient clipping to maximum of {self.clip_value}.")
+
+        # Quantization defense
+        self.quantization_cfg = getattr(cfg_user, "quantization", None) if cfg_user is not None else None
+        if self.quantization_cfg is None and isinstance(cfg_user, dict):
+            self.quantization_cfg = cfg_user.get("quantization", None)
+        if self.quantization_cfg is not None and self.quantization_cfg.get("nbits", 0) > 0:
+            nbits = self.quantization_cfg["nbits"]
+            block_size = self.quantization_cfg.get("block_size", 64)
+            stochastic = self.quantization_cfg.get("stochastic", False)
+            self.defense_repr.append(
+                f"Defense: Gradient quantization to {nbits}-bit (block size {block_size}, stochastic={stochastic})."
+            )
+
+        # Pruning defense
+        self.pruning_cfg = getattr(cfg_user, "pruning", None) if cfg_user is not None else None
+        if self.pruning_cfg is None and isinstance(cfg_user, dict):
+            self.pruning_cfg = cfg_user.get("pruning", None)
+        if self.pruning_cfg is not None and self.pruning_cfg.get("sparsity", 0.0) > 0.0:
+            sparsity = self.pruning_cfg["sparsity"]
+            method = self.pruning_cfg.get("method", "topk")
+            self.defense_repr.append(f"Defense: Gradient pruning with {sparsity * 100:.1f}% sparsity ({method}).")
+
+    def _apply_compression_defenses(self, grads):
+        """Apply quantization or pruning defenses to the communicated gradients."""
+        if getattr(self, "pruning_cfg", None) is not None:
+            sparsity = self.pruning_cfg.get("sparsity", 0.0)
+            if sparsity > 0.0:
+                method = self.pruning_cfg.get("method", "topk")
+                prune_gradient_list(grads, sparsity=sparsity, method=method, in_place=True)
+
+        if getattr(self, "quantization_cfg", None) is not None:
+            nbits = self.quantization_cfg.get("nbits", 0)
+            if nbits > 0:
+                block_size = self.quantization_cfg.get("block_size", 64)
+                stochastic = self.quantization_cfg.get("stochastic", False)
+                preserve_norm = self.quantization_cfg.get("preserve_norm", False)
+                quantize_gradient_list(
+                    grads,
+                    nbits=nbits,
+                    block_size=block_size,
+                    stochastic=stochastic,
+                    preserve_norm=preserve_norm,
+                    in_place=True,
+                )
 
     def compute_local_updates(self, server_payload, custom_data=None):
         """Compute local updates to the given model based on server payload.
@@ -167,6 +216,7 @@ class UserSingleStep(torch.nn.Module):
             # Compute the forward pass
             shared_grads = _compute_batch_gradient(data)
         self._apply_differential_noise(shared_grads)
+        self._apply_compression_defenses(shared_grads)
 
         if buffers is not None:
             shared_buffers = None
@@ -390,6 +440,7 @@ class UserMultiStep(UserSingleStep):
             (p_local - p_server.to(**self.setup)).clone().detach()
             for (p_local, p_server) in zip(self.model.parameters(), parameters)
         ]
+        self._apply_compression_defenses(shared_grads)
 
         shared_buffers = [b.clone().detach() for b in self.model.buffers()]
         metadata = dict(

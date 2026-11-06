@@ -4,8 +4,26 @@ from breaching import analysis
 from breaching import attacks
 from breaching import cases
 from breaching import utils
+from breaching.cases.defenses import (
+    QuantizationDefense,
+    prune_gradient,
+    prune_gradient_list,
+    quantize_gradient,
+    quantize_gradient_list,
+)
 
-__all__ = ["analysis", "attacks", "cases", "servers", "utils"]
+__all__ = [
+    "QuantizationDefense",
+    "analysis",
+    "attacks",
+    "cases",
+    "prune_gradient",
+    "prune_gradient_list",
+    "quantize_gradient",
+    "quantize_gradient_list",
+    "servers",
+    "utils",
+]
 
 
 import hydra

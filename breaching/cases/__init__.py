@@ -4,8 +4,26 @@ from .servers import construct_server
 from .users import construct_user
 from .models import construct_model
 from .data import construct_dataloader
+from .defenses import (
+    quantize_gradient,
+    quantize_gradient_list,
+    prune_gradient,
+    prune_gradient_list,
+    QuantizationDefense,
+)
 
-__all__ = ["construct_server", "construct_user", "construct_model", "construct_case", "construct_dataloader"]
+__all__ = [
+    "QuantizationDefense",
+    "construct_case",
+    "construct_dataloader",
+    "construct_model",
+    "construct_server",
+    "construct_user",
+    "prune_gradient",
+    "prune_gradient_list",
+    "quantize_gradient",
+    "quantize_gradient_list",
+]
 
 
 import torch
